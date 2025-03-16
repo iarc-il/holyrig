@@ -1,3 +1,9 @@
+use relm4::RelmApp;
+
+mod main_window;
+mod rig;
+
 fn main() {
-    println!("Hello, world!");
+    let app = RelmApp::new("org.iarc.holyrig");
+    app.run::<main_window::MainWindowModel>(());
 }
