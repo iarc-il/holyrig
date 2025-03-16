@@ -1,16 +1,16 @@
 use relm4::{
-    component,
+    ComponentParts, ComponentSender, SimpleComponent, component,
     gtk::{
         self,
         prelude::{GridExt, WidgetExt},
     },
-    ComponentParts, ComponentSender, SimpleComponent,
 };
 
 #[derive(Debug)]
 pub enum RigMessage {}
 
 pub enum RigType {
+    Unspecified,
     IC7300,
     FT891,
 }
@@ -29,10 +29,10 @@ pub struct Rig {
     timeout: u16,
 }
 
-impl Rig {
-    pub fn new() -> Self {
+impl Default for Rig {
+    fn default() -> Self {
         Self {
-            rig_type: RigType::IC7300,
+            rig_type: RigType::Unspecified,
             port: String::new(),
             baud_rate: 0,
             data_bits: 0,
