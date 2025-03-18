@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::Ui;
-use egui_dock::{DockArea, DockState, Style, TabViewer};
+use egui_dock::{AllowedSplits, DockArea, DockState, Style, TabViewer};
 use rig::Rig;
 
 mod rig;
@@ -39,6 +39,13 @@ impl AppTabs {
     }
     fn ui(&mut self, ui: &mut Ui) {
         DockArea::new(&mut self.dock_state)
+            .show_add_buttons(true)
+            .show_close_buttons(false)
+            .tab_context_menus(false)
+            .draggable_tabs(false)
+            .show_leaf_close_all_buttons(false)
+            .show_leaf_collapse_buttons(false)
+            .allowed_splits(AllowedSplits::None)
             .style(Style::from_egui(ui.style().as_ref()))
             .show_inside(ui, &mut AppTabViewer);
     }
