@@ -13,13 +13,22 @@ fn main() -> eframe::Result {
     eframe::run_native("Holyrig", options, Box::new(|_| Ok(Box::new(App::new()))))
 }
 
-struct AppTabViewer;
+struct AppTabViewer {
+    current_index: u8,
+}
+
+impl AppTabViewer {
+    fn new() -> Self {
+        AppTabViewer { current_index: 0 }
+    }
+}
 
 impl TabViewer for AppTabViewer {
     type Tab = Rig;
 
-    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
-        format!("RIG {:?}", tab.rig_type).as_str().into()
+    fn title(&mut self, _tab: &mut Self::Tab) -> egui::WidgetText {
+        self.current_index += 1;
+        format!("RIG {:?}", self.current_index).as_str().into()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
@@ -47,7 +56,7 @@ impl AppTabs {
             .show_leaf_collapse_buttons(false)
             .allowed_splits(AllowedSplits::None)
             .style(Style::from_egui(ui.style().as_ref()))
-            .show_inside(ui, &mut AppTabViewer);
+            .show_inside(ui, &mut AppTabViewer::new());
     }
 }
 
@@ -58,7 +67,7 @@ struct App {
 impl App {
     fn new() -> Self {
         App {
-            tabs: AppTabs::new()
+            tabs: AppTabs::new(),
         }
     }
 }
@@ -66,8 +75,6 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_pixels_per_point(1.3);
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.tabs.ui(ui)
-        });
+        egui::CentralPanel::default().show(ctx, |ui| self.tabs.ui(ui));
     }
 }
