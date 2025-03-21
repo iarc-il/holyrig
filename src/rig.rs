@@ -1,9 +1,22 @@
-#[derive(Debug, Default)]
+use std::fmt::Display;
+
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum RigType {
     #[default]
     Unspecified,
     IC7300,
     FT891,
+}
+
+impl Display for RigType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = match self {
+            RigType::Unspecified => "Insert rig type...",
+            RigType::IC7300 => "IC7300",
+            RigType::FT891 => "FT891",
+        };
+        write!(f, "{}", formatted)
+    }
 }
 
 pub struct Rig {

@@ -1,13 +1,15 @@
 use eframe::egui;
-use egui::Ui;
+use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
-use rig::Rig;
+use rig::{Rig, RigType};
 
 mod rig;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([300.0, 400.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([350.0, 430.0])
+            .with_resizable(false),
         ..Default::default()
     };
     eframe::run_native("Holyrig", options, Box::new(|_| Ok(Box::new(App::new()))))
@@ -36,7 +38,86 @@ impl TabViewer for AppTabViewer {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-        ui.label(format!("THIS IS {:?}", &tab.rig_type));
+        ui.group(|ui| {
+            ui.style_mut().spacing.combo_width *= 0.75;
+
+            Grid::new("rig_settings").num_columns(2).show(ui, |ui| {
+                ui.label("Rig type:");
+                ComboBox::from_id_salt("rig_type")
+                    .selected_text(format!("{}", tab.rig_type))
+                    .show_ui(ui, |ui| {
+                        for rig_type in &[RigType::Unspecified, RigType::IC7300, RigType::FT891] {
+                            ui.selectable_value(
+                                &mut tab.rig_type,
+                                *rig_type,
+                                format!("{}", rig_type),
+                            );
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Port:");
+                ui.text_edit_singleline(&mut tab.port);
+                ui.end_row();
+
+                ui.label("Baud Rate:");
+                ComboBox::from_id_salt("baud_rate")
+                    .selected_text(format!("{}", tab.baud_rate))
+                    .show_ui(ui, |ui| {
+                        for rate in [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] {
+                            ui.selectable_value(&mut tab.baud_rate, rate, format!("{}", rate));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Data Bits:");
+                ComboBox::from_id_salt("data_bits")
+                    .selected_text(format!("{}", tab.data_bits))
+                    .show_ui(ui, |ui| {
+                        for bits in [7, 8] {
+                            ui.selectable_value(&mut tab.data_bits, bits, format!("{}", bits));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Stop Bits:");
+                ComboBox::from_id_salt("stop_bits")
+                    .selected_text(format!("{}", tab.stop_bits))
+                    .show_ui(ui, |ui| {
+                        for bits in [1, 2] {
+                            ui.selectable_value(&mut tab.stop_bits, bits, format!("{}", bits));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Parity:");
+                ui.checkbox(&mut tab.parity, "");
+                ui.end_row();
+
+                ui.label("RTS:");
+                ui.checkbox(&mut tab.rts, "");
+                ui.end_row();
+
+                ui.label("DTR:");
+                ui.checkbox(&mut tab.dtr, "");
+                ui.end_row();
+
+                ui.label("Poll Interval (ms):");
+                ui.add(egui::DragValue::new(&mut tab.poll_interval).range(10..=1000));
+                ui.end_row();
+
+                ui.label("Timeout (ms):");
+                ui.add(egui::DragValue::new(&mut tab.timeout).range(10..=5000));
+                ui.end_row();
+            });
+
+            ui.separator();
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.button("OK").clicked();
+                if ui.button("Cancel").clicked() {}
+            });
+        });
     }
 
     fn on_add(&mut self, _surface: SurfaceIndex, _node: NodeIndex) {
@@ -55,6 +136,7 @@ impl AppTabs {
     }
     fn ui(&mut self, ui: &mut Ui) {
         let mut tab_viewer = AppTabViewer::new();
+
         DockArea::new(&mut self.dock_state)
             .show_add_buttons(true)
             .show_close_buttons(false)
