@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::Ui;
-use egui_dock::{AllowedSplits, DockArea, DockState, Style, TabViewer};
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use rig::Rig;
 
 mod rig;
@@ -15,11 +15,15 @@ fn main() -> eframe::Result {
 
 struct AppTabViewer {
     current_index: u8,
+    add_tab_request: bool,
 }
 
 impl AppTabViewer {
     fn new() -> Self {
-        AppTabViewer { current_index: 0 }
+        AppTabViewer {
+            current_index: 0,
+            add_tab_request: false,
+        }
     }
 }
 
@@ -34,6 +38,10 @@ impl TabViewer for AppTabViewer {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         ui.label(format!("THIS IS {:?}", &tab.rig_type));
     }
+
+    fn on_add(&mut self, _surface: SurfaceIndex, _node: NodeIndex) {
+        self.add_tab_request = true;
+    }
 }
 
 struct AppTabs {
@@ -42,11 +50,11 @@ struct AppTabs {
 
 impl AppTabs {
     fn new() -> Self {
-        let rig = Rig::default();
-        let dock_state = DockState::new(vec![rig]);
+        let dock_state = DockState::new(vec![Rig::default()]);
         Self { dock_state }
     }
     fn ui(&mut self, ui: &mut Ui) {
+        let mut tab_viewer = AppTabViewer::new();
         DockArea::new(&mut self.dock_state)
             .show_add_buttons(true)
             .show_close_buttons(false)
@@ -56,7 +64,14 @@ impl AppTabs {
             .show_leaf_collapse_buttons(false)
             .allowed_splits(AllowedSplits::None)
             .style(Style::from_egui(ui.style().as_ref()))
-            .show_inside(ui, &mut AppTabViewer::new());
+            .show_inside(ui, &mut tab_viewer);
+
+        if tab_viewer.add_tab_request {
+            self.dock_state
+                .main_surface_mut()
+                .push_to_first_leaf(Rig::default());
+            tab_viewer.add_tab_request = false;
+        }
     }
 }
 
