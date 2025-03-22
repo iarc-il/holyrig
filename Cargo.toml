@@ -8,3 +8,9 @@ eframe = "0.31.1"
 egui = "0.31.1"
 egui_dock = "0.16.0"
 tokio = "1.44.1"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
