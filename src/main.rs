@@ -1,7 +1,9 @@
+use anyhow::Result;
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use rig::{Rig, RigType};
+use schema_parser::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod rig;
@@ -188,10 +190,18 @@ enum SerialMessage {
     ApplyRigConfig(u8, Rig),
 }
 
+fn load_schema_file() -> Result<Config> {
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
+    let config_path = xdg_dirs.place_config_file("schema.toml")?;
+    Ok(schema_parser::parse_schema_file(config_path)?)
+}
+
 async fn serial_thread(
     gui_sender: Sender<GuiMessage>,
     mut serial_receiver: Receiver<SerialMessage>,
 ) {
+    let config = load_schema_file().unwrap();
+    println!("Config: {config:#?}");
     loop {
         if let Some(message) = serial_receiver.recv().await {
             match message {

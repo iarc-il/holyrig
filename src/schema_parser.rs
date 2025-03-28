@@ -1,7 +1,9 @@
 use serde::Deserialize;
+use std::fmt::Display;
 use std::path::Path;
 use std::{collections::HashMap, fs};
 
+#[derive(Debug)]
 pub enum ParseError {
     IO(std::io::Error),
     TOML(toml::de::Error),
@@ -16,6 +18,12 @@ impl From<toml::de::Error> for ParseError {
         ParseError::TOML(value)
     }
 }
+impl Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl std::error::Error for ParseError {}
 
 #[derive(Debug, Deserialize)]
 pub struct General {
@@ -29,7 +37,8 @@ pub struct Enum {
 
 #[derive(Debug, Deserialize)]
 pub struct Command {
-    pub params: Option<Vec<(String, String)>>,
+    #[serde(default)]
+    pub params: Vec<(String, String)>,
 }
 
 #[derive(Debug, Deserialize)]
