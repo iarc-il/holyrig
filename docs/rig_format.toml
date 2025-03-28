@@ -1,5 +1,5 @@
 [general]
-type = "rig"
+rig_type = "rig"
 
 [enums.vfo]
 members = [
