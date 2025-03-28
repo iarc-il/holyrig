@@ -5,6 +5,7 @@ use rig::{Rig, RigType};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod rig;
+mod schema_parser;
 
 struct AppTabViewer {
     current_index: u8,
