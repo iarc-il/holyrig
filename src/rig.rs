@@ -19,6 +19,7 @@ impl Display for RigType {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Rig {
     pub rig_type: RigType,
     pub port: String,
