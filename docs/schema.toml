@@ -1,5 +1,6 @@
 [general]
-rig_type = "rig"
+rig_type = "tranceiver"
+version = 1
 
 [enums.vfo]
 members = [
