@@ -57,37 +57,37 @@ add = 100
 multiply = 1000
 index = 3
 length = 4
-format = "bcd_little_unsigned"
+format = "bcd_lu"
 ```
 
 ### Data types
 These are the data types in the `format` field that specifies how numeric values are converted to binary data.
 
-| Format name           | Meaning                                                          |
-|-----------------------|------------------------------------------------------------------|
-| `bcd_big_signed`      | Big endian signed BCD. The sign is in the MSB (0x00 or 0xFF)     |
-| `bcd_big_unsigned`    | Big endian unsigned BCD                                          |
-| `bcd_little_signed`   | Little endian signed BCD. The sign is in the MSB (0x00 or 0xFF)  |
-| `bcd_little_unsigned` | Little endian unsigned BCD                                       |
-| `int_big_unsigned`    | Big endian unsigned integer                                      |
-| `int_little_unsigned` | Little endian unsigned integer                                   |
-| `text`                | Store each digit as ASCII letter                                 |
-| `yaesu`               | Maybe will be supported in the future                            |
+| Format   | Meaning                                                          |
+|----------|------------------------------------------------------------------|
+| `bcd_bs` | Big endian signed BCD. The sign is in the MSB (0x00 or 0xFF)     |
+| `bcd_bu` | Big endian unsigned BCD                                          |
+| `bcd_ls` | Little endian signed BCD. The sign is in the MSB (0x00 or 0xFF)  |
+| `bcd_lu` | Little endian unsigned BCD                                       |
+| `int_bu` | Big endian unsigned integer                                      |
+| `int_lu` | Little endian unsigned integer                                   |
+| `text`   | Store each digit as ASCII letter                                 |
+| `yaesu`  | Maybe will be supported in the future                            |
 
 
-Example:
+For example:
 
-Value:                |     418     |    -418
-----------------------|-------------|------------
-`bcd_big_signed`      | 00.00.04.18 | FF.00.04.18
-`bcd_big_unsigned`    | 00.00.04.18 | -
-`bcd_little_signed`   | 18.04.00.00 | 18.04.00.FF
-`bcd_little_unsigned` | 18.04.00.00 | -
-`int_big_signed`      | 00.00.01.A2 | FF.FF.FE.5E
-`int_big_unsigned`    | 00.00.01.A2 | -
-`int_little_signed`   | A2.01.00.00 | 5E.FE.FF.FF
-`int_little_unsigned` | A2.01.00.00 | -
-`text`                | 30.34.31.38 | 2D.34.31.38
+Value:   |     418     |    -418
+---------|-------------|------------
+`bcd_bs` | 00.00.04.18 | FF.00.04.18
+`bcd_bu` | 00.00.04.18 | -
+`bcd_ls` | 18.04.00.00 | 18.04.00.FF
+`bcd_lu` | 18.04.00.00 | -
+`int_bs` | 00.00.01.A2 | FF.FF.FE.5E
+`int_bu` | 00.00.01.A2 | -
+`int_ls` | A2.01.00.00 | 5E.FE.FF.FF
+`int_lu` | A2.01.00.00 | -
+`text`   | 30.34.31.38 | 2D.34.31.38
 
 `int` values are limited to 32 bits. `bool` values are treated as 1 for `true` and 0 for `false`.
 Enum types are converted to the numerical values specified in the model file.
