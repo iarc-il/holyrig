@@ -35,7 +35,11 @@ Building or parsing commands and values is done with unified format.
 The fields define where to insert or extract the data, in which length and at which parsing format.
 
 The `index` field defines the starting index of the data (0 based).
+
 The `length` field defines the length of the data in bytes.
+The `length` can be ommitted when the `index` points at the start of a question mark sequence.
+Then, the length can be inferred from the length of the sequence.
+
 The `format` defines how to encode or decode the integer value (available option defined below).
 
 The optional `add` and `multiply` adds or multiplies the integer before encoding or after decoding, if present.
@@ -59,18 +63,34 @@ format = "bcd_little_unsigned"
 ### Data types
 These are the data types in the `format` field that specifies how numeric values are converted to binary data.
 
-*  text                    Store each digit as ASCII letter
-*  int_little_unsigned     Little endian unsigned integer
-*  int_big_unsigned        Big endian unsigned integer
-*  bcd_little_unsigned     Little endian unsigned BCD
-*  bcd_big_unsigned        Big endian unsigned BCD
-*  bcd_little_signed       Little endian signed BCD. The sign is in the MSB (0x00 or 0xFF)
-*  bcd_big_signed          Big endian signed BCD. The sign is in the MSB (0x00 or 0xFF)
-*  yaesu                   Custom yaesu format
+| Format name           | Meaning                                                          |
+|-----------------------|------------------------------------------------------------------|
+| `bcd_big_signed`      | Big endian signed BCD. The sign is in the MSB (0x00 or 0xFF)     |
+| `bcd_big_unsigned`    | Big endian unsigned BCD                                          |
+| `bcd_little_signed`   | Little endian signed BCD. The sign is in the MSB (0x00 or 0xFF)  |
+| `bcd_little_unsigned` | Little endian unsigned BCD                                       |
+| `int_big_unsigned`    | Big endian unsigned integer                                      |
+| `int_little_unsigned` | Little endian unsigned integer                                   |
+| `text`                | Store each digit as ASCII letter                                 |
+| `yaesu`               | Maybe will be supported in the future                            |
+
+
+Example:
+
+Value:                |     418     |    -418
+----------------------|-------------|------------
+`bcd_big_signed`      | 00.00.04.18 | FF.00.04.18
+`bcd_big_unsigned`    | 00.00.04.18 | -
+`bcd_little_signed`   | 18.04.00.00 | 18.04.00.FF
+`bcd_little_unsigned` | 18.04.00.00 | -
+`int_big_signed`      | 00.00.01.A2 | FF.FF.FE.5E
+`int_big_unsigned`    | 00.00.01.A2 | -
+`int_little_signed`   | A2.01.00.00 | 5E.FE.FF.FF
+`int_little_unsigned` | A2.01.00.00 | -
+`text`                | 30.34.31.38 | 2D.34.31.38
 
 `int` values are limited to 32 bits. `bool` values are treated as 1 for `true` and 0 for `false`.
 Enum types are converted to the numerical values specified in the model file.
-
 
 ## Sections
 The model file is a `.toml` file that has the following sections:
