@@ -1,14 +1,17 @@
-# Specification files
-A core principle of the holyrig is extensibility.
-The user/software developer must be able to add any command with any format that they choose.
+# Specification Files
 
-In fact, the holyrig isn't strictly a transceiver software,
-And it is quite possible to extend the current command set to support antenna rotator, tuners, amplifiers,
-and every other piece of hardware that communicates via serial.
+A core principle of Holyrig is **extensibility**.  
+Users and developers should be able to define custom commands in any format they choose.
 
-## File types
-There are 2 types of files: schema file and model file.
-The schema describes the commands and data types used to communicate with the rig.
-The model file defines the format of the commands sent to the rig's serial port.
-The schema and model files are both standard `.toml` files.
+Holyrig is not strictly limited to transceiver control,
+It can easily be extended to support other serial-based hardware such as antenna rotators, tuners, amplifiers,  
+or any device that communicates over a serial connection.
 
+## File Types
+
+There are two types of configuration files: **schema files** and **model files**.
+
+* The **schema file** defines the commands and data types used to communicate with the rig.
+* The **model file** defines the binary format in which those commands that are sent.
+
+Both schema and model files use the standard [TOML](https://toml.io/en/) format.
