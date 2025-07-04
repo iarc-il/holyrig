@@ -103,9 +103,9 @@ pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
         command.flags = flags.into_iter().map(|(_, value)| value).collect();
         command.values = values.into_iter().map(|(_, value)| value).collect();
 
-        if section.starts_with("INIT") {
+        if section.to_uppercase().starts_with("INIT") {
             rig_description.init_commands.push(command);
-        } else if section.starts_with("STATUS") {
+        } else if section.to_uppercase().starts_with("STATUS") {
             rig_description.status_commands.push(command);
         } else {
             rig_description.param_commands.push(command);
