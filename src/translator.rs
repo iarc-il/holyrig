@@ -35,21 +35,16 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
 
 fn convert_command(cmd: &Command) -> CommandFormat {
     let validator = match &cmd.end_of_data {
-        EndOfData::Length(length) => {
-            CommandValidator::ReplyLength(*length)
-        },
-        EndOfData::String(delimiter) => {
-            CommandValidator::ReplyEnd(delimiter.clone())
-        },
+        EndOfData::Length(length) => CommandValidator::ReplyLength(*length),
+        EndOfData::String(delimiter) => CommandValidator::ReplyEnd(delimiter.clone()),
     };
-    let command_format = CommandFormat {
+
+    CommandFormat {
         command: cmd.command.clone(),
         validator: Some(validator),
         // TODO: Missing validate field
         // validate: cmd.validate.clone(),
-    };
-
-    command_format
+    }
 }
 
 fn determine_command_name(cmd: &Command) -> String {

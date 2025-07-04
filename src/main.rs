@@ -6,11 +6,11 @@ use rig::{Rig, RigType};
 use schema_parser::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-mod rig;
-mod schema_parser;
 mod omnirig_parser;
-mod translator;
+mod rig;
 mod rig_file;
+mod schema_parser;
+mod translator;
 
 struct AppTabViewer {
     current_index: u8,
@@ -64,7 +64,7 @@ impl TabViewer for AppTabViewer {
                     .selected_text(format!("{}", rig.baud_rate))
                     .show_ui(ui, |ui| {
                         for rate in [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] {
-                            ui.selectable_value(&mut rig.baud_rate, rate, format!("{}", rate));
+                            ui.selectable_value(&mut rig.baud_rate, rate, format!("{rate}"));
                         }
                     });
                 ui.end_row();
@@ -74,7 +74,7 @@ impl TabViewer for AppTabViewer {
                     .selected_text(format!("{}", rig.data_bits))
                     .show_ui(ui, |ui| {
                         for bits in [7, 8] {
-                            ui.selectable_value(&mut rig.data_bits, bits, format!("{}", bits));
+                            ui.selectable_value(&mut rig.data_bits, bits, format!("{bits}"));
                         }
                     });
                 ui.end_row();
@@ -84,7 +84,7 @@ impl TabViewer for AppTabViewer {
                     .selected_text(format!("{}", rig.stop_bits))
                     .show_ui(ui, |ui| {
                         for bits in [1, 2] {
-                            ui.selectable_value(&mut rig.stop_bits, bits, format!("{}", bits));
+                            ui.selectable_value(&mut rig.stop_bits, bits, format!("{bits}"));
                         }
                     });
                 ui.end_row();

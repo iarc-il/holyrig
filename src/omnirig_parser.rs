@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use configparser::ini::Ini;
 use std::path::Path;
 
