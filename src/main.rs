@@ -8,7 +8,9 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod rig;
 mod schema_parser;
-pub mod omnirig_parser;
+mod omnirig_parser;
+mod translator;
+mod rig_file;
 
 struct AppTabViewer {
     current_index: u8,
