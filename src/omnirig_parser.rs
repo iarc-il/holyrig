@@ -36,13 +36,15 @@ impl RigDescription {
 }
 
 pub fn parse_ini_file<P: AsRef<Path>>(path: P) -> Result<RigDescription> {
+    let raw_ini = std::fs::read_to_string(path.as_ref())?;
+    parse_ini_data(raw_ini)
+}
+
+pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
     let mut parser = Ini::new();
-    let mut config = parser
-        .read(std::fs::read_to_string(path.as_ref())?)
-        .unwrap();
+    let mut config = parser.read(ini_data).unwrap();
     let mut rig_description = RigDescription::new();
 
-    println!("THE CONFIG:\n{config:#?}");
     for (section, prop) in &mut config {
         let command = if let Some(command) = prop.remove("command").flatten() {
             command
