@@ -114,3 +114,8 @@ members that is specified in the schema.
 ### init
 The `init` is a list of dicts and each one of the define a single initialization command that
 sets the rig to the required state.
+
+### command
+The `command` section defines a dict of command according to the commnads defined in a schema file.
+Commands that are defined in the schema files can be ommitted if the rig doesn't support them.
+All commands must appear in the schema file, and "custom" commands are not allowed.
