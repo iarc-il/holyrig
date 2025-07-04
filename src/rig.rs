@@ -15,7 +15,7 @@ impl Display for RigType {
             RigType::IC7300 => "IC7300",
             RigType::FT891 => "FT891",
         };
-        write!(f, "{}", formatted)
+        write!(f, "{formatted}")
     }
 }
 

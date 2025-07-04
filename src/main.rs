@@ -47,7 +47,7 @@ impl TabViewer for AppTabViewer {
                             ui.selectable_value(
                                 &mut rig.rig_type,
                                 *rig_type,
-                                format!("{}", rig_type),
+                                format!("{rig_type}"),
                             );
                         }
                     });
