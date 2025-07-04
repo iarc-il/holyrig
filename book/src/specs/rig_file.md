@@ -1,5 +1,5 @@
-# Model file
-The model file defines the communication protocol with one rig model.
+# Rig file
+The rig file defines the communication protocol with one rig model.
 
 ## File name
 The file name is the model name that will be displayed in the GUI, with the `.toml` extension.
@@ -96,10 +96,10 @@ Value:   |     418     |    -418
 `text`   | 30.34.31.38 | 2D.34.31.38
 
 `int` values are limited to 32 bits. `bool` values are treated as 1 for `true` and 0 for `false`.
-Enum types are converted to the numerical values specified in the model file.
+Enum types are converted to the numerical values specified in the rig file.
 
 ## Sections
-The model file is a `.toml` file that has the following sections:
+The rig file is a `.toml` file that has the following sections:
 
 ### general
 The general section has 2 fields:
