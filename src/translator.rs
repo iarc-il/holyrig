@@ -40,7 +40,7 @@ fn convert_command(cmd: &Command) -> CommandFormat {
     };
 
     CommandFormat {
-        command: cmd.command.clone(),
+        command: cmd.command.as_str().try_into().unwrap(),
         validator: Some(validator),
         // TODO: Missing validate field
         // validate: cmd.validate.clone(),

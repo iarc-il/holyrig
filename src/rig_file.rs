@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(Debug)]
@@ -105,9 +105,33 @@ impl TryFrom<&str> for HexMask {
     }
 }
 
+impl From<&HexMask> for String {
+    fn from(_value: &HexMask) -> Self {
+        todo!()
+    }
+}
+
+fn serialize_hex_mask<S>(hex_mask: &HexMask, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let raw: String = hex_mask.into();
+    serializer.serialize_str(raw.as_str())
+}
+
+fn deserialize_hex_mask<'de, D>(deserializer: D) -> Result<HexMask, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: &str = Deserialize::deserialize(deserializer)?;
+    Ok(HexMask::try_from(raw).unwrap())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommandFormat {
-    pub command: String,
+    #[serde(serialize_with = "serialize_hex_mask")]
+    #[serde(deserialize_with = "deserialize_hex_mask")]
+    pub command: HexMask,
     #[serde(flatten)]
     pub validator: Option<CommandValidator>,
     // pub reply_length: Option<u32>,
