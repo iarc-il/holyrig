@@ -18,8 +18,6 @@ When a command or response have values that should be built or parsed,
 The unknown parts must be a `?`. Currently, it is only supported in hexadecimal data.
 For example, the command "1122??44" can only have at offset 3 with length 1.
 
-TODO: masks
-
 ## Command format
 The `init`, `command` and `status` sections all define binary format of commands and their responses.
 They share a common format of command building and response parsing.
@@ -59,6 +57,14 @@ index = 3
 length = 4
 format = "bcd_lu"
 ```
+
+### Validation
+A command can have a field named `validate` that defines a mask that being matched over the received data.
+The mask has the same format as a command with missing values ("AA.BB.??.DD").
+The received response from the rig will be matched against the mask and raise an error if needed.
+
+The `validate` field cannot be used with `reply_length` or `reply_end`,
+since it already inherently defines this values.
 
 ### Data types
 These are the data types in the `format` field that specifies how numeric values are converted to binary data.
