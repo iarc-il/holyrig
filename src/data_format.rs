@@ -610,4 +610,142 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn test_decode_bcd_edge_cases() -> Result<(), DataFormatError> {
+        assert_eq!(DataFormat::BcdBs.decode(&[0x00, 0x00, 0x00, 0x05])?, 5);
+        assert_eq!(DataFormat::BcdBs.decode(&[0x00, 0x00, 0x00, 0x42])?, 42);
+        assert_eq!(DataFormat::BcdBs.decode(&[0x00, 0x00, 0x00, 0x00])?, 0);
+        assert_eq!(
+            DataFormat::BcdBs.decode(&[0x21, 0x47, 0x48, 0x36])?,
+            21474836
+        );
+        assert_eq!(DataFormat::BcdBs.decode(&[0xFF, 0x00, 0x00, 0x00])?, 0);
+        assert_eq!(DataFormat::BcdBs.decode(&[0x42])?, 42);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_int_edge_cases() -> Result<(), DataFormatError> {
+        assert_eq!(DataFormat::IntBs.decode(&[0x42])?, 66);
+        assert_eq!(DataFormat::IntLs.decode(&[0x42])?, 66);
+        assert_eq!(DataFormat::IntBs.decode(&[0xFF])?, -1);
+        assert_eq!(DataFormat::IntLs.decode(&[0xFF])?, -1);
+        assert_eq!(DataFormat::IntBs.decode(&[0xFF, 0xFE])?, -2);
+        assert_eq!(DataFormat::IntLs.decode(&[0xFE, 0xFF])?, -2);
+        assert_eq!(
+            DataFormat::IntBs.decode(&[0x7F, 0xFF, 0xFF, 0xFF])?,
+            i32::MAX
+        );
+        assert_eq!(
+            DataFormat::IntLs.decode(&[0xFF, 0xFF, 0xFF, 0x7F])?,
+            i32::MAX
+        );
+        assert_eq!(
+            DataFormat::IntBs.decode(&[0x80, 0x00, 0x00, 0x00])?,
+            i32::MIN
+        );
+        assert_eq!(
+            DataFormat::IntLs.decode(&[0x00, 0x00, 0x00, 0x80])?,
+            i32::MIN
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_text_edge_cases() -> Result<(), DataFormatError> {
+        assert!(matches!(
+            DataFormat::Text.decode(b"-"),
+            Err(DataFormatError::NumberOutOfRange { value: 0 })
+        ));
+
+        assert!(matches!(
+            DataFormat::Text.decode(b"--123"),
+            Err(DataFormatError::InvalidTextFormat {
+                byte: b'-',
+                position: 1
+            })
+        ));
+
+        assert!(matches!(
+            DataFormat::Text.decode(b"12-3"),
+            Err(DataFormatError::InvalidTextFormat {
+                byte: b'-',
+                position: 2
+            })
+        ));
+
+        assert_eq!(DataFormat::Text.decode(b"2147483647")?, i32::MAX);
+        assert_eq!(DataFormat::Text.decode(b"-2147483648")?, i32::MIN);
+        assert_eq!(DataFormat::Text.decode(b"-0042")?, -42);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_bcd_invalid_cases() {
+        assert!(matches!(
+            DataFormat::BcdBs.decode(&[0x00, 0xA0, 0x00, 0x00]),
+            Err(DataFormatError::InvalidBcdDigit {
+                byte: 10,
+                position: 2
+            })
+        ));
+
+        assert!(matches!(
+            DataFormat::BcdBs.decode(&[0x00, 0x0A, 0x00, 0x00]),
+            Err(DataFormatError::InvalidBcdDigit {
+                byte: 10,
+                position: 3
+            })
+        ));
+
+        assert!(matches!(
+            DataFormat::BcdBs.decode(&[0x22, 0x47, 0x48, 0x36, 0x48]),
+            Err(DataFormatError::NumberOutOfRange { value: 2247483648 })
+        ));
+    }
+
+    #[test]
+    fn test_decode_int_invalid_cases() {
+        assert!(matches!(
+            DataFormat::IntBu.decode(&[0xFF, 0xFF, 0xFF, 0xFF]),
+            Err(DataFormatError::NumberOutOfRange { value: 4294967295 })
+        ));
+        assert!(matches!(
+            DataFormat::IntLu.decode(&[0xFF, 0xFF, 0xFF, 0xFF]),
+            Err(DataFormatError::NumberOutOfRange { value: 4294967295 })
+        ));
+    }
+
+    #[test]
+    fn test_decode_variable_length() -> Result<(), DataFormatError> {
+        assert_eq!(
+            DataFormat::IntBs.decode(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0x5E])?,
+            -418
+        );
+        assert_eq!(
+            DataFormat::IntLs.decode(&[0x5E, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF])?,
+            -418
+        );
+
+        assert_eq!(
+            DataFormat::IntBu.decode(&[0x00, 0x00, 0x00, 0x00, 0x01, 0xA2])?,
+            418
+        );
+        assert_eq!(
+            DataFormat::IntLu.decode(&[0xA2, 0x01, 0x00, 0x00, 0x00, 0x00])?,
+            418
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_short_length() -> Result<(), DataFormatError> {
+        assert_eq!(DataFormat::IntBs.decode(&[0xFF, 0xFE])?, -2);
+        assert_eq!(DataFormat::IntLs.decode(&[0xFE, 0xFF])?, -2);
+        Ok(())
+    }
 }
