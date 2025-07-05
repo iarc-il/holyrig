@@ -18,6 +18,7 @@ pub struct RigCommand {
     pub reply_end: Option<String>,
     pub validate: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub params: HashMap<String, RigBinaryParam>,
 }
 
@@ -86,9 +87,11 @@ impl TryFrom<RigCommand> for Command {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RigFile {
     pub general: General,
-    pub init: HashMap<String, RigCommand>,
+    #[serde(default)]
+    pub init: Vec<RigCommand>,
     pub commands: HashMap<String, RigCommand>,
-    pub status: HashMap<String, RigCommand>,
+    #[serde(default)]
+    pub status: Vec<RigCommand>,
 }
 
 impl RigFile {
@@ -98,9 +101,9 @@ impl RigFile {
                 r#type: "transceiver".to_string(),
                 version: 1,
             },
-            init: HashMap::new(),
+            init: Vec::new(),
             commands: HashMap::new(),
-            status: HashMap::new(),
+            status: Vec::new(),
         }
     }
 }

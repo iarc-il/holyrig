@@ -9,11 +9,9 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
     let mut rig_file = RigFile::new();
 
     // Convert init commands
-    for (idx, cmd) in omnirig.init_commands.iter().enumerate() {
+    for cmd in omnirig.init_commands.iter() {
         let command_format = convert_command(cmd);
-        rig_file
-            .init
-            .insert(format!("init{}", idx + 1), command_format);
+        rig_file.init.push(command_format);
     }
 
     // Convert parameter commands
@@ -25,11 +23,9 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
     }
 
     // Convert status commands
-    for (idx, cmd) in omnirig.status_commands.iter().enumerate() {
+    for cmd in omnirig.status_commands.iter() {
         let command_format = convert_command(cmd);
-        rig_file
-            .status
-            .insert(format!("status{}", idx + 1), command_format);
+        rig_file.status.push(command_format);
     }
 
     rig_file
