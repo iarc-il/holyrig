@@ -7,7 +7,7 @@ use std::{
 use crate::data_format::DataFormat;
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum CommandError {
     InvalidMask,
     OddMaskLength,
     OddPlaceholdersLength,
@@ -18,25 +18,25 @@ pub enum ParseError {
     InvalidArgumentValue(String),
 }
 
-impl Display for ParseError {
+impl Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::InvalidMask => write!(f, "Invalid mask format"),
-            ParseError::OddMaskLength => write!(f, "Mask length must be even"),
-            ParseError::OddPlaceholdersLength => write!(f, "Placeholder length must be even"),
-            ParseError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
-            ParseError::OverlappingParams => write!(f, "Parameters overlap"),
-            ParseError::MissingArgument(param) => {
+            CommandError::InvalidMask => write!(f, "Invalid mask format"),
+            CommandError::OddMaskLength => write!(f, "Mask length must be even"),
+            CommandError::OddPlaceholdersLength => write!(f, "Placeholder length must be even"),
+            CommandError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
+            CommandError::OverlappingParams => write!(f, "Parameters overlap"),
+            CommandError::MissingArgument(param) => {
                 write!(f, "Missing argument for parameter {param}")
             }
-            ParseError::UnexpectedArgument(param) => {
+            CommandError::UnexpectedArgument(param) => {
                 write!(f, "Unexpected argument for parameter {param}")
             }
-            ParseError::InvalidArgumentValue(msg) => write!(f, "Invalid argument value: {msg}"),
+            CommandError::InvalidArgumentValue(msg) => write!(f, "Invalid argument value: {msg}"),
         }
     }
 }
-impl Error for ParseError {}
+impl Error for CommandError {}
 
 #[derive(Debug)]
 pub enum CommandValidator {
@@ -54,7 +54,7 @@ pub struct HexMask {
 }
 
 impl TryFrom<&str> for HexMask {
-    type Error = ParseError;
+    type Error = CommandError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut result = HexMask {
@@ -70,7 +70,7 @@ impl TryFrom<&str> for HexMask {
             match c {
                 '?' => {
                     if current_byte.is_some() {
-                        return Err(ParseError::OddMaskLength);
+                        return Err(CommandError::OddMaskLength);
                     }
                     placeholder_count += 1;
                     if placeholder_count == 2 {
@@ -82,7 +82,7 @@ impl TryFrom<&str> for HexMask {
                 }
                 '0'..='9' | 'a'..='f' | 'A'..='F' => {
                     if placeholder_count > 0 {
-                        return Err(ParseError::OddPlaceholdersLength);
+                        return Err(CommandError::OddPlaceholdersLength);
                     }
                     let digit = c.to_digit(16).unwrap() as u8;
                     if let Some(high) = current_byte.take() {
@@ -97,11 +97,11 @@ impl TryFrom<&str> for HexMask {
         }
 
         if placeholder_count > 0 {
-            return Err(ParseError::OddPlaceholdersLength);
+            return Err(CommandError::OddPlaceholdersLength);
         }
 
         if current_byte.is_some() {
-            return Err(ParseError::OddMaskLength);
+            return Err(CommandError::OddMaskLength);
         }
 
         Ok(result)
@@ -132,7 +132,10 @@ impl From<&HexMask> for String {
 }
 
 impl HexMask {
-    pub fn validate_params(&self, params: &HashMap<String, BinaryParam>) -> Result<(), ParseError> {
+    pub fn validate_params(
+        &self,
+        params: &HashMap<String, BinaryParam>,
+    ) -> Result<(), CommandError> {
         let mut param_regions: Vec<(usize, usize)> = params
             .values()
             .map(|param| (param.index as usize, param.length as usize))
@@ -145,7 +148,7 @@ impl HexMask {
             let (start2, _) = param_regions[i + 1];
 
             if start1 + len1 > start2 {
-                return Err(ParseError::OverlappingParams);
+                return Err(CommandError::OverlappingParams);
             }
         }
 
@@ -163,7 +166,7 @@ impl HexMask {
             }
 
             if !is_covered {
-                return Err(ParseError::UncoveredMask);
+                return Err(CommandError::UncoveredMask);
             }
         }
 
@@ -200,19 +203,19 @@ impl Command {
     pub fn build_command(
         &self,
         args: &HashMap<String, BinaryParamArg>,
-    ) -> Result<Vec<u8>, ParseError> {
+    ) -> Result<Vec<u8>, CommandError> {
         // Validate parameters first
         self.command.validate_params(&self.params)?;
 
         // Validate arguments match parameters
         for param_name in self.params.keys() {
             if !args.contains_key(param_name) {
-                return Err(ParseError::MissingArgument(param_name.clone()));
+                return Err(CommandError::MissingArgument(param_name.clone()));
             }
         }
         for arg_name in args.keys() {
             if !self.params.contains_key(arg_name) {
-                return Err(ParseError::UnexpectedArgument(arg_name.clone()));
+                return Err(CommandError::UnexpectedArgument(arg_name.clone()));
             }
         }
 
@@ -233,7 +236,7 @@ impl Command {
         &self,
         arg: &BinaryParamArg,
         param: &BinaryParam,
-    ) -> Result<i64, ParseError> {
+    ) -> Result<i64, CommandError> {
         let raw_value = match arg {
             BinaryParamArg::Int(v) => *v,
             BinaryParamArg::Bool(v) => {
@@ -256,12 +259,12 @@ impl Command {
         data: &mut [u8],
         value: i64,
         param: &BinaryParam,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), CommandError> {
         let start = param.index as usize;
         let len = param.length as usize;
 
         if start + len > data.len() {
-            return Err(ParseError::InvalidArgumentValue(
+            return Err(CommandError::InvalidArgumentValue(
                 "Parameter position exceeds command length".to_string(),
             ));
         }
@@ -269,13 +272,13 @@ impl Command {
         match param.format {
             DataFormat::BcdBu => {
                 if value < 0 {
-                    return Err(ParseError::InvalidArgumentValue(
+                    return Err(CommandError::InvalidArgumentValue(
                         "Negative value not allowed for unsigned BCD".to_string(),
                     ));
                 }
                 let bcd = format!("{:0width$}", value, width = len * 2);
                 if bcd.len() != len * 2 {
-                    return Err(ParseError::InvalidArgumentValue(
+                    return Err(CommandError::InvalidArgumentValue(
                         "Value too large for BCD format".to_string(),
                     ));
                 }
@@ -375,7 +378,7 @@ mod tests {
         );
         assert!(matches!(
             mask.validate_params(&params),
-            Err(ParseError::OverlappingParams)
+            Err(CommandError::OverlappingParams)
         ));
     }
 
@@ -395,7 +398,7 @@ mod tests {
         );
         assert!(matches!(
             mask.validate_params(&params),
-            Err(ParseError::UncoveredMask)
+            Err(CommandError::UncoveredMask)
         ));
     }
 
@@ -425,7 +428,7 @@ mod tests {
         );
         assert!(matches!(
             mask.validate_params(&params),
-            Err(ParseError::UncoveredMask)
+            Err(CommandError::UncoveredMask)
         ));
     }
 
@@ -481,7 +484,7 @@ mod tests {
         let args = HashMap::new();
         assert!(matches!(
             cmd.build_command(&args),
-            Err(ParseError::MissingArgument(_))
+            Err(CommandError::MissingArgument(_))
         ));
     }
 
@@ -512,7 +515,7 @@ mod tests {
 
         assert!(matches!(
             cmd.build_command(&args),
-            Err(ParseError::UnexpectedArgument(_))
+            Err(CommandError::UnexpectedArgument(_))
         ));
     }
 
@@ -570,13 +573,13 @@ mod tests {
 
         assert!(matches!(
             cmd.build_command(&args),
-            Err(ParseError::InvalidArgumentValue(_))
+            Err(CommandError::InvalidArgumentValue(_))
         ));
 
         args.insert("freq".to_string(), BinaryParamArg::Int(100));
         assert!(matches!(
             cmd.build_command(&args),
-            Err(ParseError::InvalidArgumentValue(_))
+            Err(CommandError::InvalidArgumentValue(_))
         ));
     }
 }

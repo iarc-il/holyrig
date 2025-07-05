@@ -114,12 +114,12 @@ impl Default for RigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{HexMask, ParseError};
+    use crate::commands::{CommandError, HexMask};
     use crate::data_format::DataFormat;
     use anyhow::Result;
 
     #[test]
-    fn test_basic_mask() -> Result<(), ParseError> {
+    fn test_basic_mask() -> Result<(), CommandError> {
         let mask = HexMask::try_from("FEFE94E025??FD")?;
         assert_eq!(mask.data, vec![0xFE, 0xFE, 0x94, 0xE0, 0x25, 0x00, 0xFD]);
         assert_eq!(mask.masks, vec![(5, 1)]);
