@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::sync::broadcast;
 use anyhow::Result;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
-use crate::rig::RigSettings;
 use crate::commands::BinaryParamArg;
+use crate::rig::RigSettings;
 
 #[derive(Debug, Clone)]
 pub enum DeviceMessage {
