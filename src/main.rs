@@ -2,12 +2,13 @@ use anyhow::Result;
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
-use rig::{Rig, RigType};
+use rig::{RigSettings, RigType};
 use schema_parser::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod commands;
 mod data_format;
+mod messaging;
 mod omnirig_parser;
 mod rig;
 mod rig_file;
@@ -31,7 +32,7 @@ impl AppTabViewer {
 }
 
 impl TabViewer for AppTabViewer {
-    type Tab = Rig;
+    type Tab = RigSettings;
 
     fn title(&mut self, _tab: &mut Self::Tab) -> egui::WidgetText {
         self.current_index += 1;
@@ -43,7 +44,7 @@ impl TabViewer for AppTabViewer {
             ui.style_mut().spacing.combo_width *= 0.75;
 
             Grid::new("rig_settings").num_columns(2).show(ui, |ui| {
-                ui.label("Rig type:");
+                ui.label("RigSettings type:");
                 ComboBox::from_id_salt("rig_type")
                     .selected_text(format!("{}", rig.rig_type))
                     .show_ui(ui, |ui| {
@@ -137,13 +138,13 @@ impl TabViewer for AppTabViewer {
 }
 
 struct AppTabs {
-    dock_state: DockState<Rig>,
+    dock_state: DockState<RigSettings>,
     sender: Sender<SerialMessage>,
 }
 
 impl AppTabs {
     fn new(sender: Sender<SerialMessage>) -> Self {
-        let dock_state = DockState::new(vec![Rig::default()]);
+        let dock_state = DockState::new(vec![RigSettings::default()]);
         Self { dock_state, sender }
     }
     fn ui(&mut self, ui: &mut Ui) {
@@ -163,7 +164,7 @@ impl AppTabs {
         if tab_viewer.add_tab_request {
             self.dock_state
                 .main_surface_mut()
-                .push_to_first_leaf(Rig::default());
+                .push_to_first_leaf(RigSettings::default());
             tab_viewer.add_tab_request = false;
         }
     }
@@ -192,7 +193,7 @@ impl eframe::App for App {
 
 enum GuiMessage {}
 enum SerialMessage {
-    ApplyRigConfig(u8, Rig),
+    ApplyRigConfig(u8, RigSettings),
 }
 
 fn load_schema_file() -> Result<Config> {

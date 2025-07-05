@@ -20,7 +20,7 @@ impl Display for RigType {
 }
 
 #[derive(Debug, Clone)]
-pub struct Rig {
+pub struct RigSettings {
     pub rig_type: RigType,
     pub port: String,
     pub baud_rate: u32,
@@ -34,7 +34,7 @@ pub struct Rig {
     pub timeout: u16,
 }
 
-impl Default for Rig {
+impl Default for RigSettings {
     fn default() -> Self {
         Self {
             rig_type: RigType::Unspecified,

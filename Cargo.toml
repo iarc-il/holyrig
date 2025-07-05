@@ -18,12 +18,13 @@ path = "src/bin/omnirig2holyrig.rs"
 [dependencies]
 anyhow = "1.0.97"
 argh = "0.1.12"
+async-trait = "0.1.77"
 configparser = "3.1.0"
 eframe = "0.31.1"
 egui = "0.31.1"
 egui_dock = "0.16.0"
-serde = "1.0.219"
-tokio = { version = "1.44.1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+serde = { version = "1.0.219", features = ["derive"] }
+tokio = { version = "1.44.1", features = ["macros", "rt", "rt-multi-thread", "sync", "time", "io-util"] }
 toml = "0.8.20"
 xdg = "2.5.2"
 
