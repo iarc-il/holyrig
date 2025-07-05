@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::commands::CommandFormat;
+use crate::commands::Command;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct General {
@@ -12,9 +12,9 @@ pub struct General {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RigFile {
     pub general: General,
-    pub init: HashMap<String, CommandFormat>,
-    pub commands: HashMap<String, CommandFormat>,
-    pub status: HashMap<String, CommandFormat>,
+    pub init: HashMap<String, Command>,
+    pub commands: HashMap<String, Command>,
+    pub status: HashMap<String, Command>,
 }
 
 impl RigFile {
@@ -68,7 +68,7 @@ mod tests {
             format = "int_lu"
         "#;
 
-        let cmd: CommandFormat = toml::from_str(toml_str).unwrap();
+        let cmd: Command = toml::from_str(toml_str).unwrap();
 
         let freq_param = cmd.params.get("freq").unwrap();
         assert_eq!(freq_param.index, 6);
@@ -98,7 +98,7 @@ mod tests {
             multiply = 4
         "#;
 
-        let cmd: CommandFormat = toml::from_str(toml_str).unwrap();
+        let cmd: Command = toml::from_str(toml_str).unwrap();
 
         let pitch_param = cmd.params.get("pitch").unwrap();
         assert_eq!(pitch_param.index, 6);

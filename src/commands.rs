@@ -128,7 +128,7 @@ where
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CommandFormat {
+pub struct Command {
     #[serde(serialize_with = "serialize_hex_mask")]
     #[serde(deserialize_with = "deserialize_hex_mask")]
     pub command: HexMask,

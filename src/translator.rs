@@ -1,4 +1,4 @@
-use crate::commands::{BinaryParam, CommandFormat, CommandValidator};
+use crate::commands::{BinaryParam, Command as RigCommand, CommandValidator};
 use crate::{
     data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
@@ -36,7 +36,7 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
     rig_file
 }
 
-fn convert_command(cmd: &Command) -> CommandFormat {
+fn convert_command(cmd: &Command) -> RigCommand {
     let validator = match &cmd.end_of_data {
         EndOfData::Length(length) => CommandValidator::ReplyLength(*length),
         EndOfData::String(delimiter) => CommandValidator::ReplyEnd(delimiter.clone()),
@@ -80,7 +80,7 @@ fn convert_command(cmd: &Command) -> CommandFormat {
         }
     }
 
-    CommandFormat {
+    RigCommand {
         command: cmd.command.as_str().try_into().unwrap(),
         validator: Some(validator),
         params,
