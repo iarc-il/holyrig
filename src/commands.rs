@@ -13,11 +13,27 @@ pub enum ParseError {
     OddPlaceholdersLength,
     UncoveredMask,
     OverlappingParams,
+    MissingArgument(String),
+    UnexpectedArgument(String),
+    InvalidArgumentValue(String),
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            ParseError::InvalidMask => write!(f, "Invalid mask format"),
+            ParseError::OddMaskLength => write!(f, "Mask length must be even"),
+            ParseError::OddPlaceholdersLength => write!(f, "Placeholder length must be even"),
+            ParseError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
+            ParseError::OverlappingParams => write!(f, "Parameters overlap"),
+            ParseError::MissingArgument(param) => {
+                write!(f, "Missing argument for parameter {param}")
+            }
+            ParseError::UnexpectedArgument(param) => {
+                write!(f, "Unexpected argument for parameter {param}")
+            }
+            ParseError::InvalidArgumentValue(msg) => write!(f, "Invalid argument value: {msg}"),
+        }
     }
 }
 impl Error for ParseError {}
@@ -173,6 +189,108 @@ pub struct BinaryParam {
     pub multiply: u32,
 }
 
+#[derive(Debug, Clone)]
+pub enum BinaryParamArg {
+    Int(i64),
+    Bool(bool),
+    Enum(String),
+}
+
+impl Command {
+    pub fn build_command(
+        &self,
+        args: &HashMap<String, BinaryParamArg>,
+    ) -> Result<Vec<u8>, ParseError> {
+        // Validate parameters first
+        self.command.validate_params(&self.params)?;
+
+        // Validate arguments match parameters
+        for param_name in self.params.keys() {
+            if !args.contains_key(param_name) {
+                return Err(ParseError::MissingArgument(param_name.clone()));
+            }
+        }
+        for arg_name in args.keys() {
+            if !self.params.contains_key(arg_name) {
+                return Err(ParseError::UnexpectedArgument(arg_name.clone()));
+            }
+        }
+
+        // Start with the base command data
+        let mut result = self.command.data.clone();
+
+        // Apply each argument to its parameter
+        for (param_name, param) in &self.params {
+            let arg = args.get(param_name).unwrap();
+            let value = self.convert_arg_to_value(arg, param)?;
+            self.apply_value_to_command(&mut result, value, param)?;
+        }
+
+        Ok(result)
+    }
+
+    fn convert_arg_to_value(
+        &self,
+        arg: &BinaryParamArg,
+        param: &BinaryParam,
+    ) -> Result<i64, ParseError> {
+        let raw_value = match arg {
+            BinaryParamArg::Int(v) => *v,
+            BinaryParamArg::Bool(v) => {
+                if *v {
+                    1
+                } else {
+                    0
+                }
+            }
+            BinaryParamArg::Enum(_) => todo!("Enum handling not implemented yet"),
+        };
+
+        let value = (raw_value + param.add as i64) * param.multiply as i64;
+
+        Ok(value)
+    }
+
+    fn apply_value_to_command(
+        &self,
+        data: &mut [u8],
+        value: i64,
+        param: &BinaryParam,
+    ) -> Result<(), ParseError> {
+        let start = param.index as usize;
+        let len = param.length as usize;
+
+        if start + len > data.len() {
+            return Err(ParseError::InvalidArgumentValue(
+                "Parameter position exceeds command length".to_string(),
+            ));
+        }
+
+        match param.format {
+            DataFormat::BcdBu => {
+                if value < 0 {
+                    return Err(ParseError::InvalidArgumentValue(
+                        "Negative value not allowed for unsigned BCD".to_string(),
+                    ));
+                }
+                let bcd = format!("{:0width$}", value, width = len * 2);
+                if bcd.len() != len * 2 {
+                    return Err(ParseError::InvalidArgumentValue(
+                        "Value too large for BCD format".to_string(),
+                    ));
+                }
+                for (i, chunk) in bcd.as_bytes().chunks(2).enumerate() {
+                    let byte = ((chunk[0] - b'0') << 4) | (chunk[1] - b'0');
+                    data[start + i] = byte;
+                }
+            }
+            _ => todo!("Other formats not implemented yet"),
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +426,157 @@ mod tests {
         assert!(matches!(
             mask.validate_params(&params),
             Err(ParseError::UncoveredMask)
+        ));
+    }
+
+    #[test]
+    fn test_build_command_valid() {
+        let mask = HexMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            validator: None,
+            params,
+        };
+
+        let mut args = HashMap::new();
+        args.insert("freq".to_string(), BinaryParamArg::Int(42));
+
+        let result = cmd.build_command(&args).unwrap();
+        assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
+    }
+
+    #[test]
+    fn test_build_command_missing_arg() {
+        let mask = HexMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            validator: None,
+            params,
+        };
+
+        let args = HashMap::new();
+        assert!(matches!(
+            cmd.build_command(&args),
+            Err(ParseError::MissingArgument(_))
+        ));
+    }
+
+    #[test]
+    fn test_build_command_unexpected_arg() {
+        let mask = HexMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            validator: None,
+            params,
+        };
+
+        let mut args = HashMap::new();
+        args.insert("freq".to_string(), BinaryParamArg::Int(42));
+        args.insert("unknown".to_string(), BinaryParamArg::Int(10));
+
+        assert!(matches!(
+            cmd.build_command(&args),
+            Err(ParseError::UnexpectedArgument(_))
+        ));
+    }
+
+    #[test]
+    fn test_build_command_with_transforms() {
+        let mask = HexMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 10,
+                multiply: 2,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            validator: None,
+            params,
+        };
+
+        let mut args = HashMap::new();
+        args.insert("freq".to_string(), BinaryParamArg::Int(11));
+
+        let result = cmd.build_command(&args).unwrap();
+        assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
+    }
+
+    #[test]
+    fn test_build_command_invalid_bcd() {
+        let mask = HexMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            validator: None,
+            params,
+        };
+
+        let mut args = HashMap::new();
+        args.insert("freq".to_string(), BinaryParamArg::Int(-1));
+
+        assert!(matches!(
+            cmd.build_command(&args),
+            Err(ParseError::InvalidArgumentValue(_))
+        ));
+
+        args.insert("freq".to_string(), BinaryParamArg::Int(100));
+        assert!(matches!(
+            cmd.build_command(&args),
+            Err(ParseError::InvalidArgumentValue(_))
         ));
     }
 }
