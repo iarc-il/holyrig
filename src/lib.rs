@@ -1,3 +1,4 @@
+pub mod data_format;
 pub mod omnirig_parser;
 pub mod rig;
 pub mod rig_file;

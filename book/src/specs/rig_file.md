@@ -83,7 +83,7 @@ These are the data types in the `format` field that specifies how numeric values
 
 For example:
 
-Value:   |     418     |    -418
+Value    |     418     |    -418
 ---------|-------------|------------
 `bcd_bs` | 00.00.04.18 | FF.00.04.18
 `bcd_bu` | 00.00.04.18 | -
