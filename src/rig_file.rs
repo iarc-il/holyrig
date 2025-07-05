@@ -1,5 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::HashMap, error::Error, fmt::Display};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt::{Display, Write},
+};
 
 use crate::data_format::DataFormat;
 
@@ -33,9 +37,9 @@ pub enum CommandValidator {
 // This is the "11.22.??.44" syntax that defines masks
 #[derive(Debug, PartialEq, Eq)]
 pub struct HexMask {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     // (index, length)
-    masks: Vec<(usize, usize)>,
+    pub masks: Vec<(usize, usize)>,
 }
 
 impl TryFrom<&str> for HexMask {
@@ -46,57 +50,43 @@ impl TryFrom<&str> for HexMask {
             data: vec![],
             masks: vec![],
         };
-        let mut current_byte = None;
-        let mut current_mask = None;
-        let mut index = 0;
-        for byte in value.bytes() {
-            match byte as char {
-                '.' => {
-                    continue;
-                }
-                '?' => {
-                    if let Some((index, length)) = current_mask {
-                        current_mask = Some((index, length + 1));
-                    } else {
-                        current_mask = Some((index, 1));
-                    }
-                }
-                current_char => {
-                    if let Some((mask_index, length)) = std::mem::take(&mut current_mask) {
-                        if length % 2 != 0 {
-                            return Err(ParseError::OddPlaceholdersLength);
-                        }
-                        let length = length / 2;
-                        index += length;
-                        result.data.extend(std::iter::repeat_n(0, length));
-                        result.masks.push((mask_index, length));
-                    }
-                    let base_value = match current_char {
-                        '0'..='9' => '0',
-                        'A'..='F' => 'A',
-                        _ => {
-                            return Err(ParseError::InvalidMask);
-                        }
-                    };
 
-                    let value = byte - (base_value as u8);
-                    if let Some(byte) = current_byte {
-                        result.data.push((byte << 4) + value);
+        let mut current_byte: Option<u8> = None;
+        let mut placeholder_count = 0;
+        let mut index = 0;
+
+        for c in value.chars().filter(|c| !c.is_whitespace() && *c != '.') {
+            match c {
+                '?' => {
+                    if current_byte.is_some() {
+                        return Err(ParseError::OddMaskLength);
+                    }
+                    placeholder_count += 1;
+                    if placeholder_count == 2 {
+                        result.data.push(0);
+                        result.masks.push((index, 1));
                         index += 1;
-                        current_byte = None;
-                    } else {
-                        current_byte = Some(value);
+                        placeholder_count = 0;
                     }
                 }
+                '0'..='9' | 'a'..='f' | 'A'..='F' => {
+                    if placeholder_count > 0 {
+                        return Err(ParseError::OddPlaceholdersLength);
+                    }
+                    let digit = c.to_digit(16).unwrap() as u8;
+                    if let Some(high) = current_byte.take() {
+                        result.data.push((high << 4) | digit);
+                        index += 1;
+                    } else {
+                        current_byte = Some(digit);
+                    }
+                }
+                _ => continue,
             }
         }
 
-        if let Some((index, length)) = std::mem::take(&mut current_mask) {
-            if length % 2 != 0 {
-                return Err(ParseError::OddPlaceholdersLength);
-            }
-            result.data.extend(std::iter::repeat_n(0, length / 2));
-            result.masks.push((index, length / 2));
+        if placeholder_count > 0 {
+            return Err(ParseError::OddPlaceholdersLength);
         }
 
         if current_byte.is_some() {
@@ -108,8 +98,25 @@ impl TryFrom<&str> for HexMask {
 }
 
 impl From<&HexMask> for String {
-    fn from(_value: &HexMask) -> Self {
-        todo!()
+    fn from(value: &HexMask) -> Self {
+        let mut result = String::new();
+        let mut mask_iter = value.masks.iter().peekable();
+        let mut current_mask = mask_iter.next();
+
+        for (i, byte) in value.data.iter().enumerate() {
+            if let Some(&(start, len)) = current_mask {
+                if i == start {
+                    result.push_str(&"?".repeat(len * 2));
+                    current_mask = mask_iter.next();
+                    continue;
+                }
+            }
+            if i > 0 {
+                result.push('.');
+            }
+            write!(result, "{byte:02X}").unwrap();
+        }
+        result
     }
 }
 
@@ -125,8 +132,8 @@ fn deserialize_hex_mask<'de, D>(deserializer: D) -> Result<HexMask, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let raw: &str = Deserialize::deserialize(deserializer)?;
-    Ok(HexMask::try_from(raw).unwrap())
+    let raw = String::deserialize(deserializer)?;
+    HexMask::try_from(raw.as_str()).map_err(serde::de::Error::custom)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -136,12 +143,11 @@ pub struct CommandFormat {
     pub command: HexMask,
     #[serde(flatten)]
     pub validator: Option<CommandValidator>,
-    // pub reply_length: Option<u32>,
-    // pub reply_end: Option<String>,
-    // pub validate: Option<String>,
+    #[serde(default)]
+    pub params: HashMap<String, CommandParam>,
 }
 
-fn default_multiply() -> i32 {
+fn default_multiply() -> u32 {
     1
 }
 
@@ -154,7 +160,7 @@ pub struct CommandParam {
     #[serde(default)]
     pub add: i32,
     #[serde(default = "default_multiply")]
-    pub multiply: i32,
+    pub multiply: u32,
 }
 
 fn deserialize_data_format<'de, D>(deserializer: D) -> Result<DataFormat, D::Error>
@@ -199,14 +205,66 @@ mod tests {
     use anyhow::Result;
 
     #[test]
-    fn test_basic_mask() -> Result<()> {
-        let mask = "11.22.??.44";
-        let result = HexMask::try_from(mask)?;
-        let expected = HexMask {
-            data: vec![0x11, 0x22, 0, 0x44],
-            masks: vec![(2, 1)],
-        };
-        assert!(result == expected);
+    fn test_basic_mask() -> Result<(), ParseError> {
+        let mask = HexMask::try_from("FEFE94E025??FD")?;
+        assert_eq!(mask.data, vec![0xFE, 0xFE, 0x94, 0xE0, 0x25, 0x00, 0xFD]);
+        assert_eq!(mask.masks, vec![(5, 1)]);
         Ok(())
+    }
+
+    #[test]
+    fn test_command_params() {
+        let toml_str = r#"
+            command = 'FEFE94E0.25.??.??.FD'
+
+            [params.freq]
+            index = 6
+            length = 5
+            format = "bcd_lu"
+
+            [params.vfo]
+            index = 5
+            length = 1
+            format = "int_lu"
+        "#;
+
+        let cmd: CommandFormat = toml::from_str(toml_str).unwrap();
+
+        let freq_param = cmd.params.get("freq").unwrap();
+        assert_eq!(freq_param.index, 6);
+        assert_eq!(freq_param.length, 5);
+        assert!(matches!(freq_param.format, DataFormat::BcdLu));
+        assert_eq!(freq_param.add, 0);
+        assert_eq!(freq_param.multiply, 1);
+
+        let vfo_param = cmd.params.get("vfo").unwrap();
+        assert_eq!(vfo_param.index, 5);
+        assert_eq!(vfo_param.length, 1);
+        assert!(matches!(vfo_param.format, DataFormat::IntLu));
+        assert_eq!(vfo_param.add, 0);
+        assert_eq!(vfo_param.multiply, 1);
+    }
+
+    #[test]
+    fn test_command_params_with_add_multiply() {
+        let toml_str = r#"
+            command = 'FEFE94E0.14.09.00.00'
+
+            [params.pitch]
+            index = 6
+            length = 2
+            format = "bcd_bu"
+            add = -127
+            multiply = 4
+        "#;
+
+        let cmd: CommandFormat = toml::from_str(toml_str).unwrap();
+
+        let pitch_param = cmd.params.get("pitch").unwrap();
+        assert_eq!(pitch_param.index, 6);
+        assert_eq!(pitch_param.length, 2);
+        assert!(matches!(pitch_param.format, DataFormat::BcdBu));
+        assert_eq!(pitch_param.add, -127);
+        assert_eq!(pitch_param.multiply, 4);
     }
 }
