@@ -1,7 +1,10 @@
+use crate::commands::{BinaryParam, CommandFormat, CommandValidator};
 use crate::{
+    data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
-    rig_file::{CommandFormat, CommandValidator, RigFile},
+    rig_file::RigFile,
 };
+use std::collections::HashMap;
 
 pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
     let mut rig_file = RigFile::new();
@@ -39,11 +42,48 @@ fn convert_command(cmd: &Command) -> CommandFormat {
         EndOfData::String(delimiter) => CommandValidator::ReplyEnd(delimiter.clone()),
     };
 
+    let mut params = HashMap::new();
+    if let Some(value) = &cmd.value {
+        // Parse value field in format: <start_pos>|<length>|<format>|<multiply>|<add>
+        let parts: Vec<&str> = value.split('|').collect();
+        if parts.len() >= 3 {
+            let index = parts[0].parse().unwrap();
+            let length = parts[1].parse().unwrap();
+            let format = match parts[2] {
+                "vfBcdBU" => DataFormat::BcdBu,
+                "vfBcdLU" => DataFormat::BcdLu,
+                "vfText" => DataFormat::Text,
+                // Add more format mappings as needed
+                _ => DataFormat::Text, // Default to text for now
+            };
+            let multiply = if parts.len() > 3 {
+                parts[3].parse().unwrap_or(1)
+            } else {
+                1
+            };
+            let add = if parts.len() > 4 {
+                parts[4].parse().unwrap_or(0)
+            } else {
+                0
+            };
+
+            params.insert(
+                "value".to_string(),
+                BinaryParam {
+                    index,
+                    length,
+                    format,
+                    multiply,
+                    add,
+                },
+            );
+        }
+    }
+
     CommandFormat {
         command: cmd.command.as_str().try_into().unwrap(),
         validator: Some(validator),
-        // TODO: Missing validate field
-        // validate: cmd.validate.clone(),
+        params,
     }
 }
 
@@ -64,7 +104,7 @@ fn determine_command_name(cmd: &Command) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::omnirig_parser::parse_ini_file;
+    use crate::{commands::HexMask, omnirig_parser::parse_ini_file};
     use anyhow::Result;
     use std::path::PathBuf;
 

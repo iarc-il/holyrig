@@ -6,6 +6,7 @@ use rig::{Rig, RigType};
 use schema_parser::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
+mod commands;
 mod data_format;
 mod omnirig_parser;
 mod rig;
