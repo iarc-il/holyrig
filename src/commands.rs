@@ -11,6 +11,8 @@ pub enum ParseError {
     InvalidMask,
     OddMaskLength,
     OddPlaceholdersLength,
+    UncoveredMask,
+    OverlappingParams,
 }
 
 impl Display for ParseError {
@@ -113,6 +115,46 @@ impl From<&HexMask> for String {
     }
 }
 
+impl HexMask {
+    pub fn validate_params(&self, params: &HashMap<String, BinaryParam>) -> Result<(), ParseError> {
+        let mut param_regions: Vec<(usize, usize)> = params
+            .values()
+            .map(|param| (param.index as usize, param.length as usize))
+            .collect();
+
+        param_regions.sort_by_key(|&(start, _)| start);
+
+        for i in 0..param_regions.len() - 1 {
+            let (start1, len1) = param_regions[i];
+            let (start2, _) = param_regions[i + 1];
+
+            if start1 + len1 > start2 {
+                return Err(ParseError::OverlappingParams);
+            }
+        }
+
+        let mut covered_regions: Vec<(usize, usize)> = param_regions;
+        covered_regions.sort_by_key(|&(start, _)| start);
+
+        for &(mask_start, mask_len) in &self.masks {
+            let mut is_covered = false;
+
+            for &(param_start, param_len) in &covered_regions {
+                if param_start <= mask_start && param_start + param_len >= mask_start + mask_len {
+                    is_covered = true;
+                    break;
+                }
+            }
+
+            if !is_covered {
+                return Err(ParseError::UncoveredMask);
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Command {
     pub command: HexMask,
@@ -129,4 +171,143 @@ pub struct BinaryParam {
     pub format: DataFormat,
     pub add: i32,
     pub multiply: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_params() {
+        let mask = HexMask::try_from("1122??44??66").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "param1".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        params.insert(
+            "param2".to_string(),
+            BinaryParam {
+                index: 4,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        assert!(mask.validate_params(&params).is_ok());
+    }
+
+    #[test]
+    fn test_valid_subsequent_params() {
+        let mask = HexMask::try_from("11????????66").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "param1".to_string(),
+            BinaryParam {
+                index: 1,
+                length: 2,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        params.insert(
+            "param2".to_string(),
+            BinaryParam {
+                index: 3,
+                length: 2,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        assert!(mask.validate_params(&params).is_ok());
+    }
+
+    #[test]
+    fn test_overlapping_params() {
+        let mask = HexMask::try_from("11????44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "param1".to_string(),
+            BinaryParam {
+                index: 1,
+                length: 2,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        params.insert(
+            "param2".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        assert!(matches!(
+            mask.validate_params(&params),
+            Err(ParseError::OverlappingParams)
+        ));
+    }
+
+    #[test]
+    fn test_uncovered_mask() {
+        let mask = HexMask::try_from("11????44??").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "param1".to_string(),
+            BinaryParam {
+                index: 1,
+                length: 2,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        assert!(matches!(
+            mask.validate_params(&params),
+            Err(ParseError::UncoveredMask)
+        ));
+    }
+
+    #[test]
+    fn test_gap_between_params() {
+        let mask = HexMask::try_from("11????????66").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "param1".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        params.insert(
+            "param2".to_string(),
+            BinaryParam {
+                index: 4,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 0,
+                multiply: 1,
+            },
+        );
+        assert!(matches!(
+            mask.validate_params(&params),
+            Err(ParseError::UncoveredMask)
+        ));
+    }
 }
