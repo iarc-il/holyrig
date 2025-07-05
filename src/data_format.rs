@@ -45,7 +45,7 @@ impl Display for DataFormatError {
 
 impl std::error::Error for DataFormatError {}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub enum DataFormat {
     BcdBs,
     BcdBu,

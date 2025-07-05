@@ -13,6 +13,7 @@ mod omnirig_parser;
 mod rig;
 mod rig_file;
 mod schema_parser;
+mod serial_manager;
 mod translator;
 
 struct AppTabViewer {

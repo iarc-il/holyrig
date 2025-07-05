@@ -1,12 +1,42 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
-
 use anyhow::Result;
+use std::collections::HashMap;
 
 use crate::rig::RigSettings;
+use crate::commands::BinaryParamArg;
 
 #[derive(Debug, Clone)]
-pub enum DeviceMessage {}
+pub enum DeviceMessage {
+    ExecuteCommand {
+        device_id: String,
+        command_name: String,
+        params: HashMap<String, BinaryParamArg>,
+    },
+    CommandResponse {
+        device_id: String,
+        command_name: String,
+        response: Vec<u8>,
+    },
+    Connect {
+        device_id: String,
+        settings: Arc<RigSettings>,
+    },
+    Disconnect {
+        device_id: String,
+    },
+    // Status
+    DeviceConnected {
+        device_id: String,
+    },
+    DeviceDisconnected {
+        device_id: String,
+    },
+    DeviceError {
+        device_id: String,
+        error: String,
+    },
+}
 
 #[derive(Debug, Clone)]
 pub enum GuiMessage {

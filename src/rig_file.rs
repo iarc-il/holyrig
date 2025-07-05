@@ -11,7 +11,7 @@ pub struct General {
     pub version: u8,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigCommand {
     pub command: String,
     pub reply_length: Option<u32>,
@@ -30,7 +30,7 @@ where
     DataFormat::try_from(buf.as_str()).map_err(serde::de::Error::custom)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigBinaryParam {
     pub index: u32,
     pub length: u32,
