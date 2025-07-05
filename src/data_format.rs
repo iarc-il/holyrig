@@ -338,10 +338,11 @@ impl DataFormat {
     fn decode_int_bs(data: &[u8]) -> Result<i32, DataFormatError> {
         let mut bytes = [0u8; 4];
         let start = bytes.len() - data.len().min(4);
-        bytes[start..].copy_from_slice(&data[data.len().saturating_sub(4)..]);
+        let data_slice = &data[data.len().saturating_sub(4)..];
+        bytes[start..].copy_from_slice(data_slice);
 
-        // Fill with sign extension
-        if data[0] & 0x80 != 0 {
+        // Fill with sign extension - check the first byte after alignment
+        if bytes[start] & 0x80 != 0 {
             bytes[..start].fill(0xFF);
         }
 
@@ -364,11 +365,11 @@ impl DataFormat {
 
     fn decode_int_ls(data: &[u8]) -> Result<i32, DataFormatError> {
         let mut bytes = [0u8; 4];
-        bytes[..data.len().min(4)].copy_from_slice(&data[..data.len().min(4)]);
+        let len = data.len().min(4);
+        bytes[..len].copy_from_slice(&data[..len]);
 
-        // Fill with sign extension
-        if data[data.len().min(4) - 1] & 0x80 != 0 {
-            bytes[data.len().min(4)..].fill(0xFF);
+        if bytes[len - 1] & 0x80 != 0 {
+            bytes[len..].fill(0xFF);
         }
 
         Ok(i32::from_le_bytes(bytes))
@@ -412,7 +413,7 @@ impl DataFormat {
 
         let text = String::from_utf8(chars).unwrap();
         text.parse().map_err(|_| DataFormatError::NumberOutOfRange {
-            value: text.parse::<i64>().unwrap_or(i64::MAX),
+            value: text.parse::<i64>().unwrap_or(0),
         })
     }
 }
