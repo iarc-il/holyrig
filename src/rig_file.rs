@@ -1,7 +1,9 @@
-use serde::{Deserialize, Serialize};
+use anyhow::bail;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-use crate::commands::Command;
+use crate::commands::{BinaryParam, Command, CommandValidator, HexMask};
+use crate::data_format::DataFormat;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct General {
@@ -10,11 +12,83 @@ pub struct General {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct RigCommand {
+    pub command: String,
+    pub reply_length: Option<u32>,
+    pub reply_end: Option<String>,
+    pub validate: Option<String>,
+    #[serde(default)]
+    pub params: HashMap<String, RigBinaryParam>,
+}
+
+fn deserialize_data_format<'de, D>(deserializer: D) -> Result<DataFormat, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+    DataFormat::try_from(buf.as_str()).map_err(serde::de::Error::custom)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RigBinaryParam {
+    pub index: u32,
+    pub length: u32,
+    #[serde(deserialize_with = "deserialize_data_format")]
+    pub format: DataFormat,
+    #[serde(default)]
+    pub add: i32,
+    #[serde(default = "default_multiply")]
+    pub multiply: u32,
+}
+
+fn default_multiply() -> u32 {
+    1
+}
+
+impl TryFrom<RigCommand> for Command {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RigCommand) -> Result<Self, Self::Error> {
+        let command = HexMask::try_from(value.command.as_str())?;
+
+        let validator = match (value.reply_length, value.reply_end, value.validate) {
+            (Some(length), None, None) => Some(CommandValidator::ReplyLength(length)),
+            (None, Some(end), None) => Some(CommandValidator::ReplyEnd(end)),
+            (None, None, Some(mask)) => Some(CommandValidator::Mask(
+                HexMask::try_from(mask.as_str()).unwrap(),
+            )),
+            (None, None, None) => None,
+            _ => bail!("Cannot have multiple validators"),
+        };
+
+        let mut params = HashMap::new();
+        for (name, param) in value.params {
+            params.insert(
+                name,
+                BinaryParam {
+                    index: param.index,
+                    length: param.length,
+                    format: param.format,
+                    add: param.add,
+                    multiply: param.multiply,
+                },
+            );
+        }
+
+        Ok(Command {
+            command,
+            validator,
+            params,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RigFile {
     pub general: General,
-    pub init: HashMap<String, Command>,
-    pub commands: HashMap<String, Command>,
-    pub status: HashMap<String, Command>,
+    pub init: HashMap<String, RigCommand>,
+    pub commands: HashMap<String, RigCommand>,
+    pub status: HashMap<String, RigCommand>,
 }
 
 impl RigFile {
@@ -68,7 +142,7 @@ mod tests {
             format = "int_lu"
         "#;
 
-        let cmd: Command = toml::from_str(toml_str).unwrap();
+        let cmd: RigCommand = toml::from_str(toml_str).unwrap();
 
         let freq_param = cmd.params.get("freq").unwrap();
         assert_eq!(freq_param.index, 6);
@@ -98,7 +172,7 @@ mod tests {
             multiply = 4
         "#;
 
-        let cmd: Command = toml::from_str(toml_str).unwrap();
+        let cmd: RigCommand = toml::from_str(toml_str).unwrap();
 
         let pitch_param = cmd.params.get("pitch").unwrap();
         assert_eq!(pitch_param.index, 6);

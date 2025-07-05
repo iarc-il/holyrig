@@ -1,8 +1,7 @@
-use crate::commands::{BinaryParam, Command as RigCommand, CommandValidator};
 use crate::{
     data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
-    rig_file::RigFile,
+    rig_file::{RigBinaryParam, RigCommand, RigFile},
 };
 use std::collections::HashMap;
 
@@ -37,11 +36,6 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
 }
 
 fn convert_command(cmd: &Command) -> RigCommand {
-    let validator = match &cmd.end_of_data {
-        EndOfData::Length(length) => CommandValidator::ReplyLength(*length),
-        EndOfData::String(delimiter) => CommandValidator::ReplyEnd(delimiter.clone()),
-    };
-
     let mut params = HashMap::new();
     if let Some(value) = &cmd.value {
         // Parse value field in format: <start_pos>|<length>|<format>|<multiply>|<add>
@@ -50,11 +44,11 @@ fn convert_command(cmd: &Command) -> RigCommand {
             let index = parts[0].parse().unwrap();
             let length = parts[1].parse().unwrap();
             let format = match parts[2] {
-                "vfBcdBU" => DataFormat::BcdBu,
-                "vfBcdLU" => DataFormat::BcdLu,
-                "vfText" => DataFormat::Text,
+                "vfBcdBU" => "bcd_bu",
+                "vfBcdLU" => "bcd_lu",
+                "vfText" => "text",
                 // Add more format mappings as needed
-                _ => DataFormat::Text, // Default to text for now
+                _ => "text", // Default to text for now
             };
             let multiply = if parts.len() > 3 {
                 parts[3].parse().unwrap_or(1)
@@ -69,10 +63,10 @@ fn convert_command(cmd: &Command) -> RigCommand {
 
             params.insert(
                 "value".to_string(),
-                BinaryParam {
+                RigBinaryParam {
                     index,
                     length,
-                    format,
+                    format: DataFormat::try_from(format).unwrap(),
                     multiply,
                     add,
                 },
@@ -80,9 +74,16 @@ fn convert_command(cmd: &Command) -> RigCommand {
         }
     }
 
+    let (reply_length, reply_end) = match &cmd.end_of_data {
+        EndOfData::Length(length) => (Some(*length), None),
+        EndOfData::String(delimiter) => (None, Some(delimiter.clone())),
+    };
+
     RigCommand {
-        command: cmd.command.as_str().try_into().unwrap(),
-        validator: Some(validator),
+        command: cmd.command.clone(),
+        reply_length,
+        reply_end,
+        validate: cmd.validate.clone(),
         params,
     }
 }
@@ -104,7 +105,7 @@ fn determine_command_name(cmd: &Command) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{commands::HexMask, omnirig_parser::parse_ini_file};
+    use crate::{data_format::DataFormat, omnirig_parser::parse_ini_file};
     use anyhow::Result;
     use std::path::PathBuf;
 
@@ -117,5 +118,45 @@ mod tests {
         let rig_data = translate_omnirig_to_rig(rig_desc);
         println!("Rig data: {rig_data:?}");
         Ok(())
+    }
+
+    #[test]
+    fn test_convert_command_with_value() {
+        let cmd = Command {
+            command: "FEFE94E0140900FD".to_string(),
+            end_of_data: EndOfData::Length(15),
+            validate: None,
+            value: Some("6|2|vfBcdBU|4|-127".to_string()),
+            values: vec![],
+            flags: vec![],
+        };
+
+        let cmd_format = convert_command(&cmd);
+        assert_eq!(cmd_format.command.as_str(), "FEFE94E0140900FD");
+        assert!(matches!(cmd_format.reply_length, Some(15)));
+
+        let param = cmd_format.params.get("value").unwrap();
+        assert_eq!(param.index, 6);
+        assert_eq!(param.length, 2);
+        assert!(matches!(param.format, DataFormat::BcdBu));
+        assert_eq!(param.multiply, 4);
+        assert_eq!(param.add, -127);
+    }
+
+    #[test]
+    fn test_convert_command_without_value() {
+        let cmd = Command {
+            command: "FEFE94E02100000000FD".to_string(),
+            end_of_data: EndOfData::String("FEFEE094FBFD".to_string()),
+            validate: None,
+            value: None,
+            values: vec![],
+            flags: vec![],
+        };
+
+        let cmd_format = convert_command(&cmd);
+        assert_eq!(cmd_format.command.as_str(), "FEFE94E02100000000FD");
+        assert!(cmd_format.reply_end == Some("FEFEE094FBFD".to_string()));
+        assert!(cmd_format.params.is_empty());
     }
 }
