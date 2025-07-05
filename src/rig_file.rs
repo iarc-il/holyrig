@@ -1,6 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::HashMap, error::Error, fmt::Display};
 
+use crate::data_format::DataFormat;
+
 #[derive(Debug)]
 pub enum ParseError {
     InvalidMask,
@@ -147,11 +149,20 @@ fn default_multiply() -> i32 {
 pub struct CommandParam {
     pub index: u32,
     pub length: u32,
-    pub format: String,
+    #[serde(deserialize_with = "deserialize_data_format")]
+    pub format: DataFormat,
     #[serde(default)]
     pub add: i32,
     #[serde(default = "default_multiply")]
     pub multiply: i32,
+}
+
+fn deserialize_data_format<'de, D>(deserializer: D) -> Result<DataFormat, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+    DataFormat::try_from(buf.as_str()).map_err(serde::de::Error::custom)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
