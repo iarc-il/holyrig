@@ -6,12 +6,12 @@ use rig::{Rig, RigType};
 use schema_parser::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
+mod data_format;
 mod omnirig_parser;
 mod rig;
 mod rig_file;
 mod schema_parser;
 mod translator;
-mod data_format;
 
 struct AppTabViewer {
     current_index: u8,
