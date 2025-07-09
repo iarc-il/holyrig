@@ -6,7 +6,6 @@ use tokio::sync::mpsc::{self, Receiver};
 mod commands;
 mod data_format;
 mod gui;
-mod messaging;
 mod omnirig_parser;
 mod rig;
 mod rig_file;
