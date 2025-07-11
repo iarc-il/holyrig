@@ -16,6 +16,7 @@ pub enum CommandError {
     MissingArgument(String),
     UnexpectedArgument(String),
     InvalidArgumentValue(String),
+    ReturnValuesWithoutResponse,
 }
 
 impl Display for CommandError {
@@ -33,6 +34,7 @@ impl Display for CommandError {
                 write!(f, "Unexpected argument for parameter {param}")
             }
             CommandError::InvalidArgumentValue(msg) => write!(f, "Invalid argument value: {msg}"),
+            CommandError::ReturnValuesWithoutResponse => write!(f, "Return values without response"),
         }
     }
 }
@@ -171,6 +173,25 @@ impl BinMask {
 
         Ok(())
     }
+
+    pub fn validate_data(&self, data: &[u8]) -> Result<(), CommandError> {
+        if data.len() != self.data.len() {
+            return Err(CommandError::InvalidMask);
+        }
+        Ok(())
+    }
+
+    pub fn extract_value<'a>(
+        &self,
+        data: &'a [u8],
+        start: usize,
+        length: usize,
+    ) -> Result<&'a [u8], CommandError> {
+        if start + length > data.len() {
+            return Err(CommandError::InvalidMask);
+        }
+        Ok(&data[start..start + length])
+    }
 }
 
 #[derive(Debug)]
@@ -179,6 +200,7 @@ pub struct Command {
     pub response: Option<BinMask>,
     pub validator: Option<CommandValidator>,
     pub params: HashMap<String, BinaryParam>,
+    pub returns: HashMap<String, BinaryParam>,
 }
 
 // The binary param struct is used to build commands from given argument and parse data from
@@ -200,14 +222,53 @@ pub enum Value {
 }
 
 impl Command {
-    pub fn build_command(
-        &self,
-        args: &HashMap<String, Value>,
-    ) -> Result<Vec<u8>, CommandError> {
-        // Validate parameters first
+    pub fn validate(&self) -> Result<(), CommandError> {
         self.command.validate_params(&self.params)?;
 
-        // Validate arguments match parameters
+        if let Some(response_mask) = &self.response {
+            response_mask.validate_params(&self.returns)?;
+        }
+
+        if self.response.is_none() && !self.returns.is_empty() {
+            return Err(CommandError::ReturnValuesWithoutResponse);
+        }
+
+        Ok(())
+    }
+
+    pub fn parse_response(&self, response: &[u8]) -> Result<HashMap<String, Value>, CommandError> {
+        let mut result = HashMap::new();
+
+        let response_mask = match &self.response {
+            Some(mask) => mask,
+            None => return Ok(result),
+        };
+
+        response_mask.validate_data(response)?;
+
+        for (key, param) in &self.returns {
+            let start = param.index as usize;
+            let length = param.length as usize;
+
+            let bytes = response_mask.extract_value(response, start, length)?;
+
+            let raw_value = param.format.decode(bytes).map_err(|e| {
+                CommandError::InvalidArgumentValue(format!("Failed to decode value: {}", e))
+            })?;
+
+            let transformed_value =
+                ((raw_value as f64 - param.add as f64) / param.multiply as f64) as i64;
+
+            // TODO: support parsing return type
+            result.insert(key.clone(), Value::Int(transformed_value));
+        }
+
+        Ok(result)
+    }
+
+    pub fn build_command(&self, args: &HashMap<String, Value>) -> Result<Vec<u8>, CommandError> {
+        self.validate()?;
+
         for param_name in self.params.keys() {
             if !args.contains_key(param_name) {
                 return Err(CommandError::MissingArgument(param_name.clone()));
@@ -219,10 +280,8 @@ impl Command {
             }
         }
 
-        // Start with the base command data
         let mut result = self.command.data.clone();
 
-        // Apply each argument to its parameter
         for (param_name, param) in &self.params {
             let arg = args.get(param_name).unwrap();
             let value = self.convert_arg_to_value(arg, param)?;
@@ -232,11 +291,7 @@ impl Command {
         Ok(result)
     }
 
-    fn convert_arg_to_value(
-        &self,
-        arg: &Value,
-        param: &BinaryParam,
-    ) -> Result<i64, CommandError> {
+    fn convert_arg_to_value(&self, arg: &Value, param: &BinaryParam) -> Result<i64, CommandError> {
         let raw_value = match arg {
             Value::Int(v) => *v,
             Value::Bool(v) => {
@@ -452,6 +507,7 @@ mod tests {
             response: None,
             validator: None,
             params,
+            returns: HashMap::new(),
         };
 
         let mut args = HashMap::new();
@@ -481,6 +537,7 @@ mod tests {
             response: None,
             validator: None,
             params,
+            returns: HashMap::new(),
         };
 
         let args = HashMap::new();
@@ -510,6 +567,7 @@ mod tests {
             response: None,
             validator: None,
             params,
+            returns: HashMap::new(),
         };
 
         let mut args = HashMap::new();
@@ -542,6 +600,7 @@ mod tests {
             response: None,
             validator: None,
             params,
+            returns: HashMap::new(),
         };
 
         let mut args = HashMap::new();
@@ -571,6 +630,7 @@ mod tests {
             response: None,
             validator: None,
             params,
+            returns: HashMap::new(),
         };
 
         let mut args = HashMap::new();
