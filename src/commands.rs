@@ -12,6 +12,7 @@ pub enum CommandError {
     OddMaskLength,
     OddPlaceholdersLength,
     UncoveredMask,
+    UncoveredParam,
     OverlappingParams,
     MissingArgument(String),
     UnexpectedArgument(String),
@@ -26,6 +27,7 @@ impl Display for CommandError {
             CommandError::OddMaskLength => write!(f, "Mask length must be even"),
             CommandError::OddPlaceholdersLength => write!(f, "Placeholder length must be even"),
             CommandError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
+            CommandError::UncoveredParam => write!(f, "Parameter is not covered by mask region"),
             CommandError::OverlappingParams => write!(f, "Parameters overlap"),
             CommandError::MissingArgument(param) => {
                 write!(f, "Missing argument for parameter {param}")
@@ -34,7 +36,9 @@ impl Display for CommandError {
                 write!(f, "Unexpected argument for parameter {param}")
             }
             CommandError::InvalidArgumentValue(msg) => write!(f, "Invalid argument value: {msg}"),
-            CommandError::ReturnValuesWithoutResponse => write!(f, "Return values without response"),
+            CommandError::ReturnValuesWithoutResponse => {
+                write!(f, "Return values without response")
+            }
         }
     }
 }
@@ -137,6 +141,10 @@ impl BinMask {
         &self,
         params: &HashMap<String, BinaryParam>,
     ) -> Result<(), CommandError> {
+        if params.is_empty() {
+            return Ok(());
+        }
+
         let mut param_regions: Vec<(usize, usize)> = params
             .values()
             .map(|param| (param.index as usize, param.length as usize))
@@ -153,7 +161,7 @@ impl BinMask {
             }
         }
 
-        let mut covered_regions: Vec<(usize, usize)> = param_regions;
+        let mut covered_regions = param_regions.clone();
         covered_regions.sort_by_key(|&(start, _)| start);
 
         for &(mask_start, mask_len) in &self.masks {
@@ -168,6 +176,21 @@ impl BinMask {
 
             if !is_covered {
                 return Err(CommandError::UncoveredMask);
+            }
+        }
+
+        for &(param_start, param_len) in &param_regions {
+            let mut is_covered = false;
+
+            for &(mask_start, mask_len) in &self.masks {
+                if mask_start <= param_start && mask_start + mask_len >= param_start + param_len {
+                    is_covered = true;
+                    break;
+                }
+            }
+
+            if !is_covered {
+                return Err(CommandError::UncoveredParam);
             }
         }
 
@@ -252,8 +275,8 @@ impl Command {
 
             let bytes = response_mask.extract_value(response, start, length)?;
 
-            let raw_value = param.format.decode(bytes).map_err(|e| {
-                CommandError::InvalidArgumentValue(format!("Failed to decode value: {}", e))
+            let raw_value = param.format.decode(bytes).map_err(|err| {
+                CommandError::InvalidArgumentValue(format!("Failed to decode value: {err}"))
             })?;
 
             let transformed_value =
@@ -352,6 +375,7 @@ impl Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_format::DataFormat;
 
     #[test]
     fn test_valid_params() {

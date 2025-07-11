@@ -84,6 +84,7 @@ impl TryFrom<RigCommand> for Command {
             response,
             validator,
             params,
+            returns: HashMap::new(),
         })
     }
 }
