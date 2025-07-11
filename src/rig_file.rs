@@ -2,7 +2,7 @@ use anyhow::bail;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-use crate::commands::{BinaryParam, Command, CommandValidator, BinMask};
+use crate::commands::{BinMask, BinaryParam, Command, CommandValidator};
 use crate::data_format::DataFormat;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,7 +122,7 @@ impl Default for RigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{CommandError, BinMask};
+    use crate::commands::{BinMask, CommandError};
     use crate::data_format::DataFormat;
     use anyhow::Result;
 
