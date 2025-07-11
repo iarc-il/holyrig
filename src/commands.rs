@@ -668,4 +668,265 @@ mod tests {
             Err(CommandError::InvalidArgumentValue(_))
         ));
     }
+
+    #[test]
+    fn test_parse_response_without_response_mask() {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: None,
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 1,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        assert!(matches!(
+            command.validate(),
+            Err(CommandError::ReturnValuesWithoutResponse)
+        ));
+    }
+
+    #[test]
+    fn test_parse_response_with_transforms() -> Result<(), CommandError> {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![50],
+                masks: vec![(0, 1)],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 1,
+                        format: DataFormat::IntBu,
+                        add: 10,
+                        multiply: 2,
+                    },
+                );
+                returns
+            },
+        };
+        command.validate()?;
+
+        let response = vec![50];
+        let result = command.parse_response(&response)?;
+
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result.get("value"), Some(Value::Int(20))));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_response_multiple_values() -> Result<(), CommandError> {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![0, 0, 0, 0],
+                masks: vec![(0, 2), (2, 2)],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "first".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 2,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns.insert(
+                    "second".to_string(),
+                    BinaryParam {
+                        index: 2,
+                        length: 2,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        let response = vec![0x01, 0x02, 0x03, 0x04];
+        let result = command.parse_response(&response)?;
+
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result.get("first"), Some(Value::Int(258))));
+        assert!(matches!(result.get("second"), Some(Value::Int(772))));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_response_uncovered_return() {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![0x01, 0x02],
+                masks: vec![(0, 1)],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 2,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        assert!(matches!(
+            command.validate(),
+            Err(CommandError::UncoveredParam)
+        ));
+    }
+
+    #[test]
+    fn test_parse_response_invalid_length() {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![0x01, 0x02],
+                masks: vec![],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 3,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        let response = vec![0x01, 0x02];
+        assert!(matches!(
+            command.parse_response(&response),
+            Err(CommandError::InvalidMask)
+        ));
+    }
+
+    #[test]
+    fn test_parse_response_invalid_data() {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![0xFF],
+                masks: vec![],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 1,
+                        format: DataFormat::BcdBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        let response = vec![0xFF];
+        assert!(matches!(
+            command.parse_response(&response),
+            Err(CommandError::InvalidArgumentValue(_))
+        ));
+    }
+
+    #[test]
+    fn test_parse_response_wrong_length() {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![0x01],
+                masks: vec![],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 1,
+                        format: DataFormat::IntBu,
+                        add: 0,
+                        multiply: 1,
+                    },
+                );
+                returns
+            },
+        };
+
+        let response = vec![0x01, 0x02];
+        assert!(matches!(
+            command.parse_response(&response),
+            Err(CommandError::InvalidMask)
+        ));
+    }
 }
