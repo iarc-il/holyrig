@@ -193,7 +193,7 @@ pub struct BinaryParam {
 }
 
 #[derive(Debug, Clone)]
-pub enum BinaryParamArg {
+pub enum Value {
     Int(i64),
     Bool(bool),
     Enum(String),
@@ -202,7 +202,7 @@ pub enum BinaryParamArg {
 impl Command {
     pub fn build_command(
         &self,
-        args: &HashMap<String, BinaryParamArg>,
+        args: &HashMap<String, Value>,
     ) -> Result<Vec<u8>, CommandError> {
         // Validate parameters first
         self.command.validate_params(&self.params)?;
@@ -234,19 +234,19 @@ impl Command {
 
     fn convert_arg_to_value(
         &self,
-        arg: &BinaryParamArg,
+        arg: &Value,
         param: &BinaryParam,
     ) -> Result<i64, CommandError> {
         let raw_value = match arg {
-            BinaryParamArg::Int(v) => *v,
-            BinaryParamArg::Bool(v) => {
+            Value::Int(v) => *v,
+            Value::Bool(v) => {
                 if *v {
                     1
                 } else {
                     0
                 }
             }
-            BinaryParamArg::Enum(_) => todo!("Enum handling not implemented yet"),
+            Value::Enum(_) => todo!("Enum handling not implemented yet"),
         };
 
         let value = (raw_value + param.add as i64) * param.multiply as i64;
@@ -454,7 +454,7 @@ mod tests {
         };
 
         let mut args = HashMap::new();
-        args.insert("freq".to_string(), BinaryParamArg::Int(42));
+        args.insert("freq".to_string(), Value::Int(42));
 
         let result = cmd.build_command(&args).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
@@ -510,8 +510,8 @@ mod tests {
         };
 
         let mut args = HashMap::new();
-        args.insert("freq".to_string(), BinaryParamArg::Int(42));
-        args.insert("unknown".to_string(), BinaryParamArg::Int(10));
+        args.insert("freq".to_string(), Value::Int(42));
+        args.insert("unknown".to_string(), Value::Int(10));
 
         assert!(matches!(
             cmd.build_command(&args),
@@ -541,7 +541,7 @@ mod tests {
         };
 
         let mut args = HashMap::new();
-        args.insert("freq".to_string(), BinaryParamArg::Int(11));
+        args.insert("freq".to_string(), Value::Int(11));
 
         let result = cmd.build_command(&args).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
@@ -569,14 +569,14 @@ mod tests {
         };
 
         let mut args = HashMap::new();
-        args.insert("freq".to_string(), BinaryParamArg::Int(-1));
+        args.insert("freq".to_string(), Value::Int(-1));
 
         assert!(matches!(
             cmd.build_command(&args),
             Err(CommandError::InvalidArgumentValue(_))
         ));
 
-        args.insert("freq".to_string(), BinaryParamArg::Int(100));
+        args.insert("freq".to_string(), Value::Int(100));
         assert!(matches!(
             cmd.build_command(&args),
             Err(CommandError::InvalidArgumentValue(_))
