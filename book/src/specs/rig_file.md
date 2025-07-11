@@ -66,6 +66,17 @@ The received response from the rig will be matched against the mask and raise an
 The `validate` field cannot be used with `reply_length` or `reply_end`,
 since it already inherently defines this values.
 
+### Return values
+Return values are data extracted from the response and returned to the user.
+The format is exactly the same as the parameters format, but it extracts data from the response,
+instead of building data into the commands.
+
+When specifying parameters to build the command, it must cover all the placeholders.
+When specifying return values, placeholders can be left without parsing them.
+
+Currently, it is supported only in the status section, and used to query the radio status.
+It may be supported in commands or init in the future if needed.
+
 ### Data types
 These are the data types in the `format` field that specifies how numeric values are converted to binary data.
 
