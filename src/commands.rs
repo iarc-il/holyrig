@@ -42,22 +42,22 @@ impl Error for CommandError {}
 pub enum CommandValidator {
     ReplyLength(u32),
     ReplyEnd(String),
-    Mask(HexMask),
+    Mask(BinMask),
 }
 
 // This is the "11.22.??.44" syntax that defines masks
 #[derive(Debug, PartialEq, Eq)]
-pub struct HexMask {
+pub struct BinMask {
     pub data: Vec<u8>,
     // (index, length)
     pub masks: Vec<(usize, usize)>,
 }
 
-impl TryFrom<&str> for HexMask {
+impl TryFrom<&str> for BinMask {
     type Error = CommandError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut result = HexMask {
+        let mut result = BinMask {
             data: vec![],
             masks: vec![],
         };
@@ -108,8 +108,8 @@ impl TryFrom<&str> for HexMask {
     }
 }
 
-impl From<&HexMask> for String {
-    fn from(value: &HexMask) -> Self {
+impl From<&BinMask> for String {
+    fn from(value: &BinMask) -> Self {
         let mut result = String::new();
         let mut mask_iter = value.masks.iter().peekable();
         let mut current_mask = mask_iter.next();
@@ -131,7 +131,7 @@ impl From<&HexMask> for String {
     }
 }
 
-impl HexMask {
+impl BinMask {
     pub fn validate_params(
         &self,
         params: &HashMap<String, BinaryParam>,
@@ -176,7 +176,7 @@ impl HexMask {
 
 #[derive(Debug)]
 pub struct Command {
-    pub command: HexMask,
+    pub command: BinMask,
     pub validator: Option<CommandValidator>,
     pub params: HashMap<String, BinaryParam>,
 }
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_valid_params() {
-        let mask = HexMask::try_from("1122??44??66").unwrap();
+        let mask = BinMask::try_from("1122??44??66").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "param1".to_string(),
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_valid_subsequent_params() {
-        let mask = HexMask::try_from("11????????66").unwrap();
+        let mask = BinMask::try_from("11????????66").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "param1".to_string(),
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_overlapping_params() {
-        let mask = HexMask::try_from("11????44").unwrap();
+        let mask = BinMask::try_from("11????44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "param1".to_string(),
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_uncovered_mask() {
-        let mask = HexMask::try_from("11????44??").unwrap();
+        let mask = BinMask::try_from("11????44??").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "param1".to_string(),
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_gap_between_params() {
-        let mask = HexMask::try_from("11????????66").unwrap();
+        let mask = BinMask::try_from("11????????66").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "param1".to_string(),
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_build_command_valid() {
-        let mask = HexMask::try_from("1122??44").unwrap();
+        let mask = BinMask::try_from("1122??44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "freq".to_string(),
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_build_command_missing_arg() {
-        let mask = HexMask::try_from("1122??44").unwrap();
+        let mask = BinMask::try_from("1122??44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "freq".to_string(),
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_build_command_unexpected_arg() {
-        let mask = HexMask::try_from("1122??44").unwrap();
+        let mask = BinMask::try_from("1122??44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "freq".to_string(),
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_build_command_with_transforms() {
-        let mask = HexMask::try_from("1122??44").unwrap();
+        let mask = BinMask::try_from("1122??44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "freq".to_string(),
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_build_command_invalid_bcd() {
-        let mask = HexMask::try_from("1122??44").unwrap();
+        let mask = BinMask::try_from("1122??44").unwrap();
         let mut params = HashMap::new();
         params.insert(
             "freq".to_string(),

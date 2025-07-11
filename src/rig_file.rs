@@ -2,7 +2,7 @@ use anyhow::bail;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-use crate::commands::{BinaryParam, Command, CommandValidator, HexMask};
+use crate::commands::{BinaryParam, Command, CommandValidator, BinMask};
 use crate::data_format::DataFormat;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,13 +50,13 @@ impl TryFrom<RigCommand> for Command {
     type Error = anyhow::Error;
 
     fn try_from(value: RigCommand) -> Result<Self, Self::Error> {
-        let command = HexMask::try_from(value.command.as_str())?;
+        let command = BinMask::try_from(value.command.as_str())?;
 
         let validator = match (value.reply_length, value.reply_end, value.validate) {
             (Some(length), None, None) => Some(CommandValidator::ReplyLength(length)),
             (None, Some(end), None) => Some(CommandValidator::ReplyEnd(end)),
             (None, None, Some(mask)) => Some(CommandValidator::Mask(
-                HexMask::try_from(mask.as_str()).unwrap(),
+                BinMask::try_from(mask.as_str()).unwrap(),
             )),
             (None, None, None) => None,
             _ => bail!("Cannot have multiple validators"),
@@ -117,13 +117,13 @@ impl Default for RigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{CommandError, HexMask};
+    use crate::commands::{CommandError, BinMask};
     use crate::data_format::DataFormat;
     use anyhow::Result;
 
     #[test]
     fn test_basic_mask() -> Result<(), CommandError> {
-        let mask = HexMask::try_from("FEFE94E025??FD")?;
+        let mask = BinMask::try_from("FEFE94E025??FD")?;
         assert_eq!(mask.data, vec![0xFE, 0xFE, 0x94, 0xE0, 0x25, 0x00, 0xFD]);
         assert_eq!(mask.masks, vec![(5, 1)]);
         Ok(())
