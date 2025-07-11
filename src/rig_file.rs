@@ -14,9 +14,9 @@ pub struct General {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigCommand {
     pub command: String,
+    pub response: Option<String>,
     pub reply_length: Option<u32>,
     pub reply_end: Option<String>,
-    pub validate: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub params: HashMap<String, RigBinaryParam>,
@@ -52,14 +52,17 @@ impl TryFrom<RigCommand> for Command {
     fn try_from(value: RigCommand) -> Result<Self, Self::Error> {
         let command = BinMask::try_from(value.command.as_str())?;
 
-        let validator = match (value.reply_length, value.reply_end, value.validate) {
-            (Some(length), None, None) => Some(CommandValidator::ReplyLength(length)),
-            (None, Some(end), None) => Some(CommandValidator::ReplyEnd(end)),
-            (None, None, Some(mask)) => Some(CommandValidator::Mask(
-                BinMask::try_from(mask.as_str()).unwrap(),
-            )),
-            (None, None, None) => None,
+        let validator = match (value.reply_length, value.reply_end) {
+            (Some(length), None) => Some(CommandValidator::ReplyLength(length)),
+            (None, Some(end)) => Some(CommandValidator::ReplyEnd(end)),
+            (None, None) => None,
             _ => bail!("Cannot have multiple validators"),
+        };
+
+        let response = if let Some(response) = value.response {
+            Some(BinMask::try_from(response.as_str())?)
+        } else {
+            None
         };
 
         let mut params = HashMap::new();
@@ -78,6 +81,7 @@ impl TryFrom<RigCommand> for Command {
 
         Ok(Command {
             command,
+            response,
             validator,
             params,
         })

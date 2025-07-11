@@ -79,7 +79,7 @@ fn convert_command(cmd: &Command) -> RigCommand {
         command: cmd.command.clone(),
         reply_length,
         reply_end,
-        validate: cmd.validate.clone(),
+        response: cmd.validate.clone(),
         params,
     }
 }

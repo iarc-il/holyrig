@@ -42,7 +42,6 @@ impl Error for CommandError {}
 pub enum CommandValidator {
     ReplyLength(u32),
     ReplyEnd(String),
-    Mask(BinMask),
 }
 
 // This is the "11.22.??.44" syntax that defines masks
@@ -177,6 +176,7 @@ impl BinMask {
 #[derive(Debug)]
 pub struct Command {
     pub command: BinMask,
+    pub response: Option<BinMask>,
     pub validator: Option<CommandValidator>,
     pub params: HashMap<String, BinaryParam>,
 }
@@ -449,6 +449,7 @@ mod tests {
 
         let cmd = Command {
             command: mask,
+            response: None,
             validator: None,
             params,
         };
@@ -477,6 +478,7 @@ mod tests {
 
         let cmd = Command {
             command: mask,
+            response: None,
             validator: None,
             params,
         };
@@ -505,6 +507,7 @@ mod tests {
 
         let cmd = Command {
             command: mask,
+            response: None,
             validator: None,
             params,
         };
@@ -536,6 +539,7 @@ mod tests {
 
         let cmd = Command {
             command: mask,
+            response: None,
             validator: None,
             params,
         };
@@ -564,6 +568,7 @@ mod tests {
 
         let cmd = Command {
             command: mask,
+            response: None,
             validator: None,
             params,
         };
