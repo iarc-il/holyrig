@@ -258,6 +258,13 @@ impl DataFormat {
 
     fn decode_bcd_bs(data: &[u8]) -> Result<i32, DataFormatError> {
         let is_negative = data[0] == 0xFF;
+        if is_negative && data.len() == 1 {
+            return Err(DataFormatError::InvalidBcdDigit {
+                byte: data[0],
+                position: 0,
+            });
+        }
+
         let start = if is_negative { 1 } else { 0 };
         let mut skip_leading = true;
         let mut result = 0i64;

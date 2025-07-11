@@ -161,24 +161,6 @@ impl BinMask {
             }
         }
 
-        let mut covered_regions = param_regions.clone();
-        covered_regions.sort_by_key(|&(start, _)| start);
-
-        for &(mask_start, mask_len) in &self.masks {
-            let mut is_covered = false;
-
-            for &(param_start, param_len) in &covered_regions {
-                if param_start <= mask_start && param_start + param_len >= mask_start + mask_len {
-                    is_covered = true;
-                    break;
-                }
-            }
-
-            if !is_covered {
-                return Err(CommandError::UncoveredMask);
-            }
-        }
-
         for &(param_start, param_len) in &param_regions {
             let mut is_covered = false;
 
@@ -191,6 +173,21 @@ impl BinMask {
 
             if !is_covered {
                 return Err(CommandError::UncoveredParam);
+            }
+        }
+
+        for &(mask_start, mask_len) in &self.masks {
+            let mut is_covered = false;
+
+            for &(param_start, param_len) in &param_regions {
+                if param_start <= mask_start && param_start + param_len >= mask_start + mask_len {
+                    is_covered = true;
+                    break;
+                }
+            }
+
+            if !is_covered {
+                return Err(CommandError::UncoveredMask);
             }
         }
 
