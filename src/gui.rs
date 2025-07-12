@@ -1,4 +1,7 @@
-use crate::serial::ManagerCommand;
+use crate::{
+    rig::{BaudRate, DataBits, StopBits},
+    serial::ManagerCommand,
+};
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
@@ -59,7 +62,7 @@ impl TabViewer for AppTabViewer {
                 ComboBox::from_id_salt("baud_rate")
                     .selected_text(format!("{}", rig.baud_rate))
                     .show_ui(ui, |ui| {
-                        for rate in [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] {
+                        for rate in BaudRate::iter_rates() {
                             ui.selectable_value(&mut rig.baud_rate, rate, format!("{rate}"));
                         }
                     });
@@ -69,7 +72,7 @@ impl TabViewer for AppTabViewer {
                 ComboBox::from_id_salt("data_bits")
                     .selected_text(format!("{}", rig.data_bits))
                     .show_ui(ui, |ui| {
-                        for bits in [7, 8] {
+                        for bits in DataBits::iter_data_bits() {
                             ui.selectable_value(&mut rig.data_bits, bits, format!("{bits}"));
                         }
                     });
@@ -79,7 +82,7 @@ impl TabViewer for AppTabViewer {
                 ComboBox::from_id_salt("stop_bits")
                     .selected_text(format!("{}", rig.stop_bits))
                     .show_ui(ui, |ui| {
-                        for bits in [1, 2] {
+                        for bits in [StopBits::Bits1, StopBits::Bits2] {
                             ui.selectable_value(&mut rig.stop_bits, bits, format!("{bits}"));
                         }
                     });

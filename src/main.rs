@@ -22,10 +22,7 @@ fn load_schema_file() -> Result<Config> {
     Ok(schema_parser::parse_schema_file(config_path)?)
 }
 
-async fn serial_thread(
-    gui_sender: mpsc::Sender<GuiMessage>,
-    device_manager: DeviceManager,
-) {
+async fn serial_thread(gui_sender: mpsc::Sender<GuiMessage>, device_manager: DeviceManager) {
     let config = load_schema_file().unwrap();
     println!("Config: {config:#?}");
 
@@ -52,6 +49,11 @@ async fn main() -> eframe::Result {
     eframe::run_native(
         "Holyrig",
         options,
-        Box::new(|_| Ok(Box::new(gui::App::new(gui_receiver, manager_command_sender)))),
+        Box::new(|_| {
+            Ok(Box::new(gui::App::new(
+                gui_receiver,
+                manager_command_sender,
+            )))
+        }),
     )
 }
