@@ -4,7 +4,7 @@ use std::{
     fmt::{Display, Write},
 };
 
-use crate::data_format::DataFormat;
+use crate::data_format::{DataFormat, DataFormatError};
 
 #[derive(Debug)]
 pub enum CommandError {
@@ -14,6 +14,7 @@ pub enum CommandError {
     UncoveredMask,
     UncoveredParam,
     OverlappingParams,
+    DataFormat(DataFormatError),
     MissingArgument(String),
     UnexpectedArgument(String),
     InvalidArgumentValue(String),
@@ -30,6 +31,9 @@ impl Display for CommandError {
             CommandError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
             CommandError::UncoveredParam => write!(f, "Parameter is not covered by mask region"),
             CommandError::OverlappingParams => write!(f, "Parameters overlap"),
+            CommandError::DataFormat(data_format_error) => {
+                write!(f, "Data format error: {data_format_error}")
+            }
             CommandError::MissingArgument(param) => {
                 write!(f, "Missing argument for parameter {param}")
             }
@@ -45,6 +49,12 @@ impl Display for CommandError {
     }
 }
 impl Error for CommandError {}
+
+impl From<DataFormatError> for CommandError {
+    fn from(value: DataFormatError) -> Self {
+        CommandError::DataFormat(value)
+    }
+}
 
 #[derive(Debug)]
 pub enum CommandValidator {
@@ -346,26 +356,8 @@ impl Command {
             ));
         }
 
-        match param.format {
-            DataFormat::BcdBu => {
-                if value < 0 {
-                    return Err(CommandError::InvalidArgumentValue(
-                        "Negative value not allowed for unsigned BCD".to_string(),
-                    ));
-                }
-                let bcd = format!("{:0width$}", value, width = len * 2);
-                if bcd.len() != len * 2 {
-                    return Err(CommandError::InvalidArgumentValue(
-                        "Value too large for BCD format".to_string(),
-                    ));
-                }
-                for (i, chunk) in bcd.as_bytes().chunks(2).enumerate() {
-                    let byte = ((chunk[0] - b'0') << 4) | (chunk[1] - b'0');
-                    data[start + i] = byte;
-                }
-            }
-            _ => todo!("Other formats not implemented yet"),
-        }
+        let bytes = param.format.encode(value as i32, len)?;
+        data[len..len + bytes.len()].copy_from_slice(&bytes);
 
         Ok(())
     }
