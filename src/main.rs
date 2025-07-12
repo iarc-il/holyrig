@@ -1,7 +1,7 @@
 use anyhow::Result;
 use eframe::egui;
 use schema_parser::Config;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc;
 
 mod commands;
 mod data_format;
@@ -13,7 +13,7 @@ mod schema_parser;
 mod serial;
 mod translator;
 
-use gui::{GuiMessage, SerialMessage};
+use gui::GuiMessage;
 use serial::manager::DeviceManager;
 
 fn load_schema_file() -> Result<Config> {
@@ -24,24 +24,10 @@ fn load_schema_file() -> Result<Config> {
 
 async fn serial_thread(
     gui_sender: mpsc::Sender<GuiMessage>,
-    mut serial_receiver: Receiver<SerialMessage>,
+    device_manager: DeviceManager,
 ) {
     let config = load_schema_file().unwrap();
     println!("Config: {config:#?}");
-
-    let device_manager = DeviceManager::new();
-    let manager_sender = device_manager.command_sender();
-
-    let manager_sender_clone = manager_sender.clone();
-    tokio::spawn(async move {
-        while let Some(message) = serial_receiver.recv().await {
-            match message {
-                SerialMessage::ApplyRigConfig(rig_index, rig) => {
-                    println!("Changed rig {rig_index}:\n{rig:#?}");
-                }
-            }
-        }
-    });
 
     if let Err(err) = device_manager.run(gui_sender).await {
         eprintln!("Device manager error: {err}");
@@ -51,9 +37,11 @@ async fn serial_thread(
 #[tokio::main]
 async fn main() -> eframe::Result {
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
-    let (serial_sender, serial_receiver) = mpsc::channel::<SerialMessage>(10);
+    let device_manager = DeviceManager::new();
 
-    tokio::spawn(async move { serial_thread(gui_sender, serial_receiver).await });
+    let manager_command_sender = device_manager.command_sender();
+
+    tokio::spawn(async move { serial_thread(gui_sender, device_manager).await });
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -64,6 +52,6 @@ async fn main() -> eframe::Result {
     eframe::run_native(
         "Holyrig",
         options,
-        Box::new(|_| Ok(Box::new(gui::App::new(gui_receiver, serial_sender)))),
+        Box::new(|_| Ok(Box::new(gui::App::new(gui_receiver, manager_command_sender)))),
     )
 }

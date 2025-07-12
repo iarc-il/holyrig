@@ -1,3 +1,4 @@
+use crate::serial::ManagerCommand;
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
@@ -6,18 +7,15 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use crate::rig::{RigSettings, RigType};
 
 pub enum GuiMessage {}
-pub enum SerialMessage {
-    ApplyRigConfig(u8, RigSettings),
-}
 
 struct AppTabViewer {
     current_index: u8,
     add_tab_request: bool,
-    sender: Sender<SerialMessage>,
+    sender: Sender<ManagerCommand>,
 }
 
 impl AppTabViewer {
-    fn new(sender: Sender<SerialMessage>) -> Self {
+    fn new(sender: Sender<ManagerCommand>) -> Self {
         AppTabViewer {
             current_index: 0,
             add_tab_request: false,
@@ -117,7 +115,10 @@ impl TabViewer for AppTabViewer {
                     let tab = rig.clone();
                     tokio::task::spawn(async move {
                         sender
-                            .send(SerialMessage::ApplyRigConfig(current_index, tab.clone()))
+                            .send(ManagerCommand::ChangeSettings {
+                                device_id: current_index.to_string(),
+                                settings: tab.clone(),
+                            })
                             .await
                             .unwrap();
                     });
@@ -134,11 +135,11 @@ impl TabViewer for AppTabViewer {
 
 struct AppTabs {
     dock_state: DockState<RigSettings>,
-    sender: Sender<SerialMessage>,
+    sender: Sender<ManagerCommand>,
 }
 
 impl AppTabs {
-    fn new(sender: Sender<SerialMessage>) -> Self {
+    fn new(sender: Sender<ManagerCommand>) -> Self {
         let dock_state = DockState::new(vec![RigSettings::default()]);
         Self { dock_state, sender }
     }
@@ -171,7 +172,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(gui_receiver: Receiver<GuiMessage>, serial_sender: Sender<SerialMessage>) -> Self {
+    pub fn new(gui_receiver: Receiver<GuiMessage>, serial_sender: Sender<ManagerCommand>) -> Self {
         App {
             gui_receiver,
             tabs: AppTabs::new(serial_sender.clone()),
