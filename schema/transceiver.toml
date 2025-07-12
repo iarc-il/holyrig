@@ -1,0 +1,84 @@
+[general]
+rig_type = "tranceiver"
+version = 1
+
+[enums.vfo]
+members = [
+    "current",
+    "A",
+    "B",
+    "unknown"
+]
+
+[enums.mode]
+members = [
+    "CWU",
+    "CWL",
+    "USB",
+    "LSB",
+    "DIGIU",
+    "DIGIL",
+    "AM",
+    "FM",
+]
+
+# pmFreq, pmFreqA, pmFreqB
+[commands.set_freq]
+params = [
+    ["freq", "int"],
+    ["target", "vfo"],
+]
+
+# pmPitch
+[commands.cw_pitch]
+params = [
+    ["pitch", "int"],
+]
+
+# pmRitOffset
+[commands.rit_offset]
+params = [
+    ["offset", "int"]
+]
+
+# pmRit0
+[commands.clear_rit]
+
+# pmVfoAA, pmVfoAB, pmVfoBA, pmVfoBB, pmVfoA, pmVfoB
+[commands.set_vfo]
+params = [
+    ["tx", "vfo"],
+    ["rx", "vfo"],
+]
+
+# pmVfoEqual
+[commands.vfo_equal]
+
+# pmVfoSwap
+[commands.vfo_swap]
+
+# pmSplitOn, pmSplitOff
+[commands.set_split]
+params = [
+    ["split", "bool"]
+]
+
+# pmRitOn, pmRitOff
+[commands.set_rit]
+params = [
+    ["rit", "bool"]
+]
+
+# pmXitOn, pmXitOff
+[commands.set_xit]
+params = [
+    ["rit", "bool"]
+]
+
+# What are enable RX/TX?
+
+# pmCW_U, pmCW_L, pmSSB_U, pmSSB_L, pmDIG_U, pmDIG_L, pmAM, pmFM
+[commands.set_mode]
+params = [
+    ["mode", "mode"]
+]
