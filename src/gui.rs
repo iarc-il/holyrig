@@ -115,16 +115,23 @@ impl TabViewer for AppTabViewer {
                 if ui.button("OK").clicked() {
                     let sender = self.sender.clone();
                     let current_index = self.current_index;
-                    let tab = rig.clone();
-                    tokio::task::spawn(async move {
-                        sender
-                            .send(ManagerCommand::ChangeSettings {
-                                device_id: current_index.to_string(),
-                                settings: tab.clone(),
-                            })
-                            .await
-                            .unwrap();
-                    });
+                    match rig.validate() {
+                        Ok(_) => {
+                            let tab = rig.clone();
+                            tokio::task::spawn(async move {
+                                sender
+                                    .send(ManagerCommand::ChangeSettings {
+                                        device_id: current_index.to_string(),
+                                        settings: tab.clone(),
+                                    })
+                                    .await
+                                    .unwrap();
+                            });
+                        },
+                        Err(err) => {
+                            println!("{err}");
+                        },
+                    }
                 }
                 if ui.button("Cancel").clicked() {}
             });
