@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::commands::{BinMask, BinaryParam, Command, CommandValidator};
 use crate::data_format::DataFormat;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct General {
     pub r#type: String,
     pub version: u8,
@@ -91,7 +91,7 @@ impl TryFrom<RigCommand> for Command {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigFile {
     pub general: General,
     #[serde(default)]

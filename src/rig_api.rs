@@ -124,7 +124,6 @@ impl TryFrom<RigFile> for RigApi {
 
 impl RigApi {
     fn validate(&self) -> Result<(), RigApiError> {
-        // Check init commands
         for (i, cmd) in self.init_commands.iter().enumerate() {
             if !cmd.params.is_empty() {
                 return Err(RigApiError::InvalidInit {
@@ -140,7 +139,6 @@ impl RigApi {
             }
         }
 
-        // Check status commands
         let mut seen_return_values = HashMap::new();
         for (i, cmd) in self.status_commands.iter().enumerate() {
             if !cmd.params.is_empty() {
@@ -150,7 +148,6 @@ impl RigApi {
                 });
             }
 
-            // Check for conflicting return value names
             for return_name in cmd.returns.keys() {
                 if let Some(&prev_cmd_idx) = seen_return_values.get(return_name) {
                     return Err(RigApiError::ConflictingStatusReturns {
