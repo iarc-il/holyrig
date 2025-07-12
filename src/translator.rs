@@ -81,6 +81,7 @@ fn convert_command(cmd: &Command) -> RigCommand {
         reply_end,
         response: cmd.validate.clone(),
         params,
+        returns: HashMap::new(),
     }
 }
 

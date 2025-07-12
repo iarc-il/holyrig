@@ -20,6 +20,9 @@ pub struct RigCommand {
     #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub params: HashMap<String, RigBinaryParam>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub returns: HashMap<String, RigBinaryParam>,
 }
 
 fn deserialize_data_format<'de, D>(deserializer: D) -> Result<DataFormat, D::Error>
@@ -81,13 +84,29 @@ impl TryFrom<RigCommand> for Command {
             );
         }
 
-        Ok(Command {
+        let mut returns = HashMap::new();
+        for (name, param) in value.returns {
+            returns.insert(
+                name,
+                BinaryParam {
+                    index: param.index,
+                    length: param.length,
+                    format: param.format,
+                    add: param.add,
+                    multiply: param.multiply,
+                },
+            );
+        }
+
+        let result = Command {
             command,
             response,
             validator,
             params,
-            returns: HashMap::new(),
-        })
+            returns,
+        };
+        result.validate()?;
+        Ok(result)
     }
 }
 
@@ -190,5 +209,101 @@ mod tests {
         assert!(matches!(pitch_param.format, DataFormat::BcdBu));
         assert_eq!(pitch_param.add, -127);
         assert_eq!(pitch_param.multiply, 4);
+    }
+
+    #[test]
+    fn test_command_returns() {
+        let toml_str = r#"
+            command = 'FEFE94E0.25.00.FD'
+            response = 'FEFE94E0.25.??.??.FD'
+
+            [returns.freq]
+            index = 5
+            length = 2
+            format = "bcd_lu"
+            add = 0
+            multiply = 1
+        "#;
+
+        let cmd: RigCommand = toml::from_str(toml_str).unwrap();
+
+        let freq_return = cmd.returns.get("freq").unwrap();
+        assert_eq!(freq_return.index, 5);
+        assert_eq!(freq_return.length, 2);
+        assert!(matches!(freq_return.format, DataFormat::BcdLu));
+        assert_eq!(freq_return.add, 0);
+        assert_eq!(freq_return.multiply, 1);
+    }
+
+    #[test]
+    fn test_command_returns_with_add_multiply() {
+        let toml_str = r#"
+            command = 'FEFE94E0.14.09.00.00'
+            response = 'FEFE94E0.14.??.??.00'
+
+            [returns.pitch]
+            index = 5
+            length = 2
+            format = "bcd_bu"
+            add = -127
+            multiply = 4
+        "#;
+
+        let cmd: RigCommand = toml::from_str(toml_str).unwrap();
+
+        let pitch_return = cmd.returns.get("pitch").unwrap();
+        assert_eq!(pitch_return.index, 5);
+        assert_eq!(pitch_return.length, 2);
+        assert!(matches!(pitch_return.format, DataFormat::BcdBu));
+        assert_eq!(pitch_return.add, -127);
+        assert_eq!(pitch_return.multiply, 4);
+    }
+
+    #[test]
+    fn test_command_returns_conversion() -> Result<(), CommandError> {
+        let toml_str = r#"
+            command = 'FEFE94E0.25.00.FD'
+            response = 'FEFE94E0.25.??.??.FD'
+
+            [returns.freq]
+            index = 5
+            length = 2
+            format = "bcd_lu"
+            add = 0
+            multiply = 1
+        "#;
+
+        let rig_cmd: RigCommand = toml::from_str(toml_str).unwrap();
+        let cmd = Command::try_from(rig_cmd)?;
+
+        let freq_return = cmd.returns.get("freq").unwrap();
+        assert_eq!(freq_return.index, 5);
+        assert_eq!(freq_return.length, 2);
+        assert!(matches!(freq_return.format, DataFormat::BcdLu));
+        assert_eq!(freq_return.add, 0);
+        assert_eq!(freq_return.multiply, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_returns_without_response() {
+        let toml_str = r#"
+            command = 'FEFE94E0.25.00.FD'
+
+            [returns.freq]
+            index = 5
+            length = 2
+            format = "bcd_lu"
+        "#;
+
+        let rig_cmd: RigCommand = toml::from_str(toml_str).unwrap();
+        println!("Rig cmd: {rig_cmd:?}");
+        let result = Command::try_from(rig_cmd);
+
+        assert!(matches!(
+            result,
+            Err(CommandError::ReturnValuesWithoutResponse)
+        ));
     }
 }
