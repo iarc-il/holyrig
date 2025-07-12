@@ -753,6 +753,82 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_int_variable_length() -> Result<(), DataFormatError> {
+        assert_eq!(DataFormat::IntBs.encode(0x12, 1)?, vec![0x12]);
+        assert_eq!(DataFormat::IntBs.encode(-0x12, 1)?, vec![0xEE]);
+        assert_eq!(DataFormat::IntBs.encode(0x1234, 2)?, vec![0x12, 0x34]);
+        assert_eq!(DataFormat::IntBs.encode(-0x1234, 2)?, vec![0xED, 0xCC]);
+        assert_eq!(DataFormat::IntBs.encode(0x12, 2)?, vec![0x00, 0x12]);
+        assert_eq!(DataFormat::IntBs.encode(-0x12, 2)?, vec![0xFF, 0xEE]);
+        assert_eq!(
+            DataFormat::IntBs.encode(0x123456, 4)?,
+            vec![0x00, 0x12, 0x34, 0x56]
+        );
+        assert_eq!(
+            DataFormat::IntBs.encode(-0x123456, 4)?,
+            vec![0xFF, 0xED, 0xCB, 0xAA]
+        );
+
+        assert_eq!(DataFormat::IntBu.encode(0x12, 1)?, vec![0x12]);
+        assert_eq!(DataFormat::IntBu.encode(0xFF, 1)?, vec![0xFF]);
+        assert_eq!(DataFormat::IntBu.encode(0x1234, 2)?, vec![0x12, 0x34]);
+        assert_eq!(DataFormat::IntBu.encode(0x12, 2)?, vec![0x00, 0x12]);
+        assert_eq!(
+            DataFormat::IntBu.encode(0x123456, 3)?,
+            vec![0x12, 0x34, 0x56]
+        );
+
+        assert_eq!(DataFormat::IntLs.encode(0x12, 1)?, vec![0x12]);
+        assert_eq!(DataFormat::IntLs.encode(-0x12, 1)?, vec![0xEE]);
+        assert_eq!(DataFormat::IntLs.encode(0x1234, 2)?, vec![0x34, 0x12]);
+        assert_eq!(DataFormat::IntLs.encode(-0x1234, 2)?, vec![0xCC, 0xED]);
+        assert_eq!(DataFormat::IntLs.encode(0x12, 2)?, vec![0x12, 0x00]);
+        assert_eq!(DataFormat::IntLs.encode(-0x12, 2)?, vec![0xEE, 0xFF]);
+        assert_eq!(
+            DataFormat::IntLs.encode(0x123456, 4)?,
+            vec![0x56, 0x34, 0x12, 0x00]
+        );
+        assert_eq!(
+            DataFormat::IntLs.encode(-0x123456, 4)?,
+            vec![0xAA, 0xCB, 0xED, 0xFF]
+        );
+
+        assert_eq!(DataFormat::IntLu.encode(0x12, 1)?, vec![0x12]);
+        assert_eq!(DataFormat::IntLu.encode(0xFF, 1)?, vec![0xFF]);
+        assert_eq!(DataFormat::IntLu.encode(0x1234, 2)?, vec![0x34, 0x12]);
+        assert_eq!(DataFormat::IntLu.encode(0x12, 2)?, vec![0x12, 0x00]);
+        assert_eq!(
+            DataFormat::IntLu.encode(0x123456, 3)?,
+            vec![0x56, 0x34, 0x12]
+        );
+
+        for format in [
+            DataFormat::IntBs,
+            DataFormat::IntBu,
+            DataFormat::IntLs,
+            DataFormat::IntLu,
+        ] {
+            assert!(matches!(
+                format.encode(0x100, 1),
+                Err(DataFormatError::NumberTooLong {
+                    value: 256,
+                    length: 1
+                })
+            ));
+
+            assert!(matches!(
+                format.encode(0x10000, 2),
+                Err(DataFormatError::NumberTooLong {
+                    value: 65536,
+                    length: 2
+                })
+            ));
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_decode_variable_length() -> Result<(), DataFormatError> {
         assert_eq!(
             DataFormat::IntBs.decode(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0x5E])?,
