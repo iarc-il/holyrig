@@ -10,10 +10,11 @@ mod omnirig_parser;
 mod rig;
 mod rig_file;
 mod schema_parser;
-mod serial_manager;
+mod serial;
 mod translator;
 
 use gui::{GuiMessage, SerialMessage};
+use serial::manager::DeviceManager;
 
 fn load_schema_file() -> Result<Config> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
@@ -22,19 +23,28 @@ fn load_schema_file() -> Result<Config> {
 }
 
 async fn serial_thread(
-    _gui_sender: mpsc::Sender<GuiMessage>,
+    gui_sender: mpsc::Sender<GuiMessage>,
     mut serial_receiver: Receiver<SerialMessage>,
 ) {
     let config = load_schema_file().unwrap();
     println!("Config: {config:#?}");
-    loop {
-        if let Some(message) = serial_receiver.recv().await {
+
+    let device_manager = DeviceManager::new();
+    let manager_sender = device_manager.command_sender();
+
+    let manager_sender_clone = manager_sender.clone();
+    tokio::spawn(async move {
+        while let Some(message) = serial_receiver.recv().await {
             match message {
                 SerialMessage::ApplyRigConfig(rig_index, rig) => {
                     println!("Changed rig {rig_index}:\n{rig:#?}");
                 }
             }
         }
+    });
+
+    if let Err(err) = device_manager.run(gui_sender).await {
+        eprintln!("Device manager error: {err}");
     }
 }
 

@@ -46,7 +46,7 @@ impl Error for CommandError {}
 
 #[derive(Debug)]
 pub enum CommandValidator {
-    ReplyLength(u32),
+    ReplyLength(usize),
     ReplyEnd(String),
 }
 
@@ -366,6 +366,19 @@ impl Command {
         }
 
         Ok(())
+    }
+
+    pub fn response_length(&self) -> Option<usize> {
+        self.response
+            .as_ref()
+            .map(|mask| mask.data.len())
+            .or(self
+                .validator
+                .as_ref()
+                .and_then(|validator| match validator {
+                    CommandValidator::ReplyLength(length) => Some(*length),
+                    CommandValidator::ReplyEnd(_) => None,
+                }))
     }
 }
 

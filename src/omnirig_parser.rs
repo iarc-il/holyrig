@@ -4,7 +4,7 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub enum EndOfData {
-    Length(u32),
+    Length(usize),
     String(String),
 }
 

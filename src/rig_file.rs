@@ -15,7 +15,7 @@ pub struct General {
 pub struct RigCommand {
     pub command: String,
     pub response: Option<String>,
-    pub reply_length: Option<u32>,
+    pub reply_length: Option<usize>,
     pub reply_end: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
