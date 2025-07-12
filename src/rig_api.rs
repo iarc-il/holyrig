@@ -261,3 +261,175 @@ impl RigApi {
         Ok(command.response_length())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rig_file::RigCommand;
+
+    fn create_test_command(has_params: bool, has_returns: bool, has_response: bool) -> RigCommand {
+        let mut toml_str = String::from("command = \"00\"\n");
+
+        if has_response {
+            toml_str.push_str("reply_length = 2\n");
+            if has_returns {
+                toml_str.push_str("response = \"00.??\"\n");
+            } else {
+                toml_str.push_str("response = \"00\"\n");
+            }
+        }
+
+        if has_params {
+            toml_str.push_str(
+                r#"
+                [params.test_param]
+                index = 1
+                length = 1
+                format = "int_bu"
+                "#,
+            );
+            toml_str = toml_str.replace("command = \"00\"", "command = \"00.??\"");
+        }
+
+        if has_returns {
+            toml_str.push_str(
+                r#"
+                [returns.test_return]
+                index = 1
+                length = 1
+                format = "int_bu"
+                "#,
+            );
+        }
+
+        toml::from_str(&toml_str).unwrap()
+    }
+
+    #[test]
+    fn test_rig_api_sanity() -> Result<(), RigApiError> {
+        let mut rig_file = RigFile::new();
+
+        rig_file.init.push(create_test_command(false, false, false));
+
+        rig_file.commands.insert(
+            "test_cmd".to_string(),
+            create_test_command(true, false, true),
+        );
+        rig_file.status.push(create_test_command(false, true, true));
+
+        let api = RigApi::try_from(rig_file)?;
+
+        let init_cmds = api.build_init_commands();
+        assert_eq!(init_cmds.len(), 1);
+        assert!(init_cmds[0].is_ok());
+
+        let mut args = HashMap::new();
+        args.insert("test_param".to_string(), Value::Int(42));
+        let cmd_data = api.build_command("test_cmd", &args)?;
+        assert!(!cmd_data.is_empty());
+
+        let status_cmds = api.get_status_commands();
+        assert_eq!(status_cmds.len(), 1);
+        assert!(status_cmds[0].is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_not_found() {
+        let rig_file = RigFile::new();
+        let api = RigApi::try_from(rig_file).unwrap();
+
+        match api.build_command("nonexistent", &HashMap::new()) {
+            Err(RigApiError::CommandNotFound(CommandType::Named(name))) => {
+                assert_eq!(name, "nonexistent");
+            }
+            _ => panic!("Expected CommandNotFound error"),
+        }
+
+        match api.get_init_response_length(0) {
+            Err(RigApiError::CommandNotFound(CommandType::Init(idx))) => {
+                assert_eq!(idx, 0);
+            }
+            _ => panic!("Expected CommandNotFound error"),
+        }
+
+        match api.get_status_response_length(0) {
+            Err(RigApiError::CommandNotFound(CommandType::Status(idx))) => {
+                assert_eq!(idx, 0);
+            }
+            _ => panic!("Expected CommandNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_init_command() {
+        let mut rig_file = RigFile::new();
+
+        rig_file.init.push(create_test_command(true, false, false));
+
+        match RigApi::try_from(rig_file) {
+            Err(RigApiError::InvalidInit {
+                command_index,
+                reason,
+            }) => {
+                assert_eq!(command_index, 0);
+                assert_eq!(reason, "requires arguments");
+            }
+            _ => panic!("Expected InvalidInit error"),
+        }
+
+        let mut rig_file = RigFile::new();
+        rig_file.init.push(create_test_command(false, true, true));
+
+        match RigApi::try_from(rig_file) {
+            Err(RigApiError::InvalidInit {
+                command_index,
+                reason,
+            }) => {
+                assert_eq!(command_index, 0);
+                assert_eq!(reason, "has return values");
+            }
+            _ => panic!("Expected InvalidInit error"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_status_command() {
+        let mut rig_file = RigFile::new();
+
+        rig_file.status.push(create_test_command(true, true, true));
+
+        match RigApi::try_from(rig_file) {
+            Err(RigApiError::InvalidStatus {
+                command_index,
+                reason,
+            }) => {
+                assert_eq!(command_index, 0);
+                assert_eq!(reason, "requires arguments");
+            }
+            _ => panic!("Expected InvalidStatus error"),
+        }
+    }
+
+    #[test]
+    fn test_conflicting_status_returns() {
+        let mut rig_file = RigFile::new();
+
+        rig_file.status.push(create_test_command(false, true, true));
+        rig_file.status.push(create_test_command(false, true, true));
+
+        match RigApi::try_from(rig_file) {
+            Err(RigApiError::ConflictingStatusReturns {
+                index1,
+                index2,
+                return_name,
+            }) => {
+                assert_eq!(index1, 1);
+                assert_eq!(index2, 0);
+                assert_eq!(return_name, "test_return");
+            }
+            _ => panic!("Expected ConflictingStatusReturns error"),
+        }
+    }
+}
