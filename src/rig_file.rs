@@ -1,4 +1,4 @@
-use anyhow::bail;
+use crate::commands::CommandError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -47,7 +47,7 @@ fn default_multiply() -> u32 {
 }
 
 impl TryFrom<RigCommand> for Command {
-    type Error = anyhow::Error;
+    type Error = CommandError;
 
     fn try_from(value: RigCommand) -> Result<Self, Self::Error> {
         let command = BinMask::try_from(value.command.as_str())?;
@@ -56,7 +56,9 @@ impl TryFrom<RigCommand> for Command {
             (Some(length), None) => Some(CommandValidator::ReplyLength(length)),
             (None, Some(end)) => Some(CommandValidator::ReplyEnd(end)),
             (None, None) => None,
-            _ => bail!("Cannot have multiple validators"),
+            _ => {
+                return Err(CommandError::MultipleValidators);
+            }
         };
 
         let response = if let Some(response) = value.response {

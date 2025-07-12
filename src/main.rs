@@ -8,6 +8,7 @@ mod data_format;
 mod gui;
 mod omnirig_parser;
 mod rig;
+mod rig_api;
 mod rig_file;
 mod schema_parser;
 mod serial;

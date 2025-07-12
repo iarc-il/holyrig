@@ -17,6 +17,7 @@ pub enum CommandError {
     MissingArgument(String),
     UnexpectedArgument(String),
     InvalidArgumentValue(String),
+    MultipleValidators,
     ReturnValuesWithoutResponse,
 }
 
@@ -39,6 +40,7 @@ impl Display for CommandError {
             CommandError::ReturnValuesWithoutResponse => {
                 write!(f, "Return values without response")
             }
+            CommandError::MultipleValidators => write!(f, "Multiple validators"),
         }
     }
 }
