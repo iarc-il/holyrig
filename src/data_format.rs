@@ -98,18 +98,18 @@ impl TryFrom<&str> for DataFormat {
 }
 
 impl DataFormat {
-    pub fn encode(&self, value: i32, length: usize) -> Result<Vec<u8>, DataFormatError> {
-        match self {
-            DataFormat::BcdBs => Self::encode_bcd_bs(value, length),
-            DataFormat::BcdBu => Self::encode_bcd_bu(value, length),
-            DataFormat::BcdLs => Self::encode_bcd_ls(value, length),
-            DataFormat::BcdLu => Self::encode_bcd_lu(value, length),
-            DataFormat::IntBs => Self::encode_int_bs(value, length),
-            DataFormat::IntBu => Self::encode_int_bu(value as u32, length),
-            DataFormat::IntLs => Self::encode_int_ls(value, length),
-            DataFormat::IntLu => Self::encode_int_lu(value as u32, length),
-            DataFormat::Text => Self::encode_text(value, length),
-        }
+    // Add these helper functions before the encode method
+    fn get_significant_bytes_signed(value: i32) -> usize {
+        let bits_needed = if value < 0 {
+            32 - value.leading_ones()
+        } else {
+            32 - value.leading_zeros()
+        };
+        bits_needed.div_ceil(8) as usize
+    }
+
+    fn get_significant_bytes_unsigned(value: u32) -> usize {
+        (32 - value.leading_zeros()).div_ceil(8) as usize
     }
 
     fn encode_bcd_bs(value: i32, length: usize) -> Result<Vec<u8>, DataFormatError> {
@@ -172,58 +172,70 @@ impl DataFormat {
     fn encode_int_bs(value: i32, length: usize) -> Result<Vec<u8>, DataFormatError> {
         let mut result = vec![0; length];
         let bytes = value.to_be_bytes();
-        if bytes.len() > length {
+        let significant_bytes = Self::get_significant_bytes_signed(value);
+
+        if significant_bytes > length {
             return Err(DataFormatError::NumberTooLong { value, length });
         }
-        let start = result.len() - bytes.len();
-        result[start..].copy_from_slice(&bytes);
+
+        let start = result.len() - significant_bytes;
+        result[start..].copy_from_slice(&bytes[bytes.len() - significant_bytes..]);
+
         if value < 0 {
-            for byte in result.iter_mut().take(start) {
-                *byte = 0xFF;
-            }
+            result[..start].fill(0xFF);
         }
+
         Ok(result)
     }
 
     fn encode_int_bu(value: u32, length: usize) -> Result<Vec<u8>, DataFormatError> {
         let mut result = vec![0; length];
         let bytes = value.to_be_bytes();
-        if bytes.len() > length {
+        let significant_bytes = Self::get_significant_bytes_unsigned(value);
+
+        if significant_bytes > length {
             return Err(DataFormatError::NumberTooLong {
                 value: value as i32,
                 length,
             });
         }
-        let start = result.len() - bytes.len();
-        result[start..].copy_from_slice(&bytes);
+
+        let start = result.len() - significant_bytes;
+        result[start..].copy_from_slice(&bytes[bytes.len() - significant_bytes..]);
         Ok(result)
     }
 
     fn encode_int_ls(value: i32, length: usize) -> Result<Vec<u8>, DataFormatError> {
         let mut result = vec![0; length];
         let bytes = value.to_le_bytes();
-        if bytes.len() > length {
+        let significant_bytes = Self::get_significant_bytes_signed(value);
+
+        if significant_bytes > length {
             return Err(DataFormatError::NumberTooLong { value, length });
         }
-        result[..bytes.len()].copy_from_slice(&bytes);
+
+        result[..significant_bytes].copy_from_slice(&bytes[..significant_bytes]);
+
         if value < 0 {
-            for byte in result.iter_mut().take(length).skip(bytes.len()) {
-                *byte = 0xFF;
-            }
+            result[significant_bytes..].fill(0xFF);
         }
+
         Ok(result)
     }
 
     fn encode_int_lu(value: u32, length: usize) -> Result<Vec<u8>, DataFormatError> {
         let mut result = vec![0; length];
         let bytes = value.to_le_bytes();
-        if bytes.len() > length {
+        let significant_bytes = Self::get_significant_bytes_unsigned(value);
+
+        if significant_bytes > length {
             return Err(DataFormatError::NumberTooLong {
                 value: value as i32,
                 length,
             });
         }
-        result[..bytes.len()].copy_from_slice(&bytes);
+
+        result[..significant_bytes].copy_from_slice(&bytes[..significant_bytes]);
         Ok(result)
     }
 
@@ -236,6 +248,20 @@ impl DataFormat {
         let start = length.saturating_sub(text.len());
         result[start..].copy_from_slice(text.as_bytes());
         Ok(result)
+    }
+
+    pub fn encode(&self, value: i32, length: usize) -> Result<Vec<u8>, DataFormatError> {
+        match self {
+            DataFormat::BcdBs => Self::encode_bcd_bs(value, length),
+            DataFormat::BcdBu => Self::encode_bcd_bu(value, length),
+            DataFormat::BcdLs => Self::encode_bcd_ls(value, length),
+            DataFormat::BcdLu => Self::encode_bcd_lu(value, length),
+            DataFormat::IntBs => Self::encode_int_bs(value, length),
+            DataFormat::IntBu => Self::encode_int_bu(value as u32, length),
+            DataFormat::IntLs => Self::encode_int_ls(value, length),
+            DataFormat::IntLu => Self::encode_int_lu(value as u32, length),
+            DataFormat::Text => Self::encode_text(value, length),
+        }
     }
 
     pub fn decode(&self, data: &[u8]) -> Result<i32, DataFormatError> {
