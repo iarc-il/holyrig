@@ -13,7 +13,7 @@ mod omnirig_parser;
 mod rig;
 mod rig_api;
 mod rig_file;
-mod schema_parser;
+mod schema;
 mod serial;
 
 use gui::GuiMessage;
@@ -54,18 +54,23 @@ fn load_rig_files<P: AsRef<Path>>(dir_path: P) -> Result<Arc<HashMap<String, Rig
     Ok(Arc::new(rigs))
 }
 
-fn load_schema_file() -> Result<Config> {
+fn load_schema_file() -> Result<schema::Schema> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
     let config_path = xdg_dirs.place_config_file("schema.toml")?;
-    Ok(schema_parser::parse_schema_file(config_path)?)
+    schema::Schema::load(config_path).map_err(|e| anyhow::anyhow!("Failed to load schema: {}", e))
 }
 
 async fn serial_thread(gui_sender: mpsc::Sender<GuiMessage>, device_manager: DeviceManager) {
-    let config = load_schema_file().unwrap();
-    println!("Config: {config:#?}");
-
-    if let Err(err) = device_manager.run(gui_sender).await {
-        eprintln!("Device manager error: {err}");
+    match load_schema_file() {
+        Ok(config) => {
+            println!("Loaded schema: {config:#?}");
+            if let Err(err) = device_manager.run(gui_sender).await {
+                eprintln!("Device manager error: {err}");
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to load schema: {err}");
+        }
     }
 }
 
