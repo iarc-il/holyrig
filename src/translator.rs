@@ -7,22 +7,17 @@ use std::collections::HashMap;
 
 pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
     let mut rig_file = RigFile::new();
-
-    // Convert init commands
     for cmd in omnirig.init_commands.iter() {
         let command_format = convert_command(cmd);
         rig_file.init.push(command_format);
     }
 
-    // Convert parameter commands
     for cmd in omnirig.param_commands.iter() {
-        // Try to determine a meaningful name from the command content
         let name = determine_command_name(cmd);
         let command_format = convert_command(cmd);
         rig_file.commands.insert(name, command_format);
     }
 
-    // Convert status commands
     for cmd in omnirig.status_commands.iter() {
         let command_format = convert_command(cmd);
         rig_file.status.push(command_format);

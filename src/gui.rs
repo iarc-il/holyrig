@@ -44,13 +44,13 @@ impl TabViewer for AppTabViewer {
             Grid::new("rig_settings").num_columns(2).show(ui, |ui| {
                 ui.label("RigSettings type:");
                 ComboBox::from_id_salt("rig_type")
-                    .selected_text(format!("{}", rig.rig_type))
+                    .selected_text(rig.rig_type.to_string())
                     .show_ui(ui, |ui| {
                         for rig_type in &self.rig_types {
                             ui.selectable_value(
                                 &mut rig.rig_type,
                                 rig_type.clone(),
-                                format!("{rig_type}"),
+                                rig_type.to_string(),
                             );
                         }
                     });
@@ -154,7 +154,11 @@ struct AppTabs {
 impl AppTabs {
     fn new(sender: Sender<ManagerCommand>, rig_types: Vec<String>) -> Self {
         let dock_state = DockState::new(vec![RigSettings::default()]);
-        Self { dock_state, rig_types, sender }
+        Self {
+            dock_state,
+            rig_types,
+            sender,
+        }
     }
     fn ui(&mut self, ui: &mut Ui) {
         let mut tab_viewer = AppTabViewer::new(self.sender.clone(), self.rig_types.clone());

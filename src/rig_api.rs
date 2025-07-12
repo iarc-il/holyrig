@@ -319,9 +319,8 @@ mod tests {
 
         let api = RigApi::try_from(rig_file)?;
 
-        let init_cmds = api.build_init_commands();
+        let init_cmds = api.build_init_commands()?;
         assert_eq!(init_cmds.len(), 1);
-        assert!(init_cmds[0].is_ok());
 
         let mut args = HashMap::new();
         args.insert("test_param".to_string(), Value::Int(42));

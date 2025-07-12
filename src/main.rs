@@ -1,6 +1,5 @@
 use anyhow::Result;
 use eframe::egui;
-use schema_parser::Config;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -16,7 +15,6 @@ mod rig_api;
 mod rig_file;
 mod schema_parser;
 mod serial;
-mod translator;
 
 use gui::GuiMessage;
 use rig_api::RigApi;
