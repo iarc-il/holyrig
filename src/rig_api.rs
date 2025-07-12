@@ -83,7 +83,7 @@ impl From<CommandError> for RigApiError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RigApi {
     init_commands: Vec<Command>,
     commands: HashMap<String, Command>,
@@ -163,7 +163,7 @@ impl RigApi {
         Ok(())
     }
 
-    pub fn build_init_commands(&self) -> Vec<Result<Vec<u8>, RigApiError>> {
+    pub fn build_init_commands(&self) -> Result<Vec<Vec<u8>>, RigApiError> {
         let empty_args = HashMap::new();
         self.init_commands
             .iter()

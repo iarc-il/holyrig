@@ -56,14 +56,14 @@ impl From<DataFormatError> for CommandError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CommandValidator {
     ReplyLength(usize),
     ReplyEnd(String),
 }
 
 // This is the "11.22.??.44" syntax that defines masks
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinMask {
     pub data: Vec<u8>,
     // (index, length)
@@ -226,7 +226,7 @@ impl BinMask {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Command {
     pub command: BinMask,
     pub response: Option<BinMask>,
@@ -237,7 +237,7 @@ pub struct Command {
 
 // The binary param struct is used to build commands from given argument and parse data from
 // responses.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryParam {
     pub index: u32,
     pub length: u32,

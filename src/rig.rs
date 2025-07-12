@@ -1,24 +1,5 @@
 use std::fmt::Display;
 
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
-pub enum RigType {
-    #[default]
-    Unspecified,
-    IC7300,
-    FT891,
-}
-
-impl Display for RigType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted = match self {
-            RigType::Unspecified => "Insert rig type...",
-            RigType::IC7300 => "IC7300",
-            RigType::FT891 => "FT891",
-        };
-        write!(f, "{formatted}")
-    }
-}
-
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum BaudRate {
     #[default]
@@ -131,7 +112,7 @@ impl Display for StopBits {
 
 #[derive(Debug, Clone, Default)]
 pub struct RigSettings {
-    pub rig_type: RigType,
+    pub rig_type: String,
     pub port: String,
     pub baud_rate: BaudRate,
     pub data_bits: DataBits,
@@ -146,7 +127,7 @@ pub struct RigSettings {
 
 impl RigSettings {
     pub fn validate(&self) -> Result<(), String> {
-        if self.rig_type == RigType::Unspecified {
+        if self.rig_type == "unspecified" {
             return Err("Rig type must be specified".to_string());
         }
 

@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::commands::{Command, Value};
+use crate::commands::Value;
 use crate::gui::GuiMessage;
 use crate::rig::RigSettings;
-use crate::rig_file::RigFile;
+use crate::rig_api::RigApi;
 use crate::serial::device::{DeviceCommand, DeviceMessage, SerialDevice};
 
 #[derive(Debug, Clone)]
@@ -32,6 +32,7 @@ pub enum ManagerMessage {
 }
 
 pub struct DeviceManager {
+    rigs: Arc<HashMap<String, RigApi>>,
     devices: HashMap<String, DeviceState>,
 
     // Manager data output channel
@@ -50,23 +51,18 @@ pub struct DeviceManager {
 struct DeviceState {
     // Manager to devices channel
     command_tx: mpsc::Sender<DeviceCommand>,
-    rig_file: Arc<RigFile>,
-}
-
-impl Default for DeviceManager {
-    fn default() -> Self {
-        Self::new()
-    }
+    rig_api: RigApi,
 }
 
 impl DeviceManager {
-    pub fn new() -> Self {
+    pub fn new(rigs: Arc<HashMap<String, RigApi>>) -> Self {
         let (manager_command_tx, manager_command_rx) = mpsc::channel(10);
         let (device_tx, device_rx) = mpsc::channel(10);
 
         let (manager_message_tx, manager_message_rx) = broadcast::channel(10);
 
         Self {
+            rigs,
             devices: HashMap::new(),
             manager_message_tx,
             manager_message_rx,
@@ -114,7 +110,7 @@ impl DeviceManager {
                             if let Some(device) = self.devices.get(&device_id) {
                                 todo!()
                             } else {
-                                self.add_device(device_id, settings, todo!());
+                                self.add_device(device_id, settings);
                             }
                         },
                     }
@@ -123,19 +119,13 @@ impl DeviceManager {
         }
     }
 
-    pub async fn add_device(
-        &mut self,
-        device_id: String,
-        settings: RigSettings,
-        rig_file: RigFile,
-    ) -> Result<()> {
-        let rig_file = Arc::new(rig_file);
-
+    pub async fn add_device(&mut self, device_id: String, settings: RigSettings) -> Result<()> {
+        let rig_api = self.rigs.get(&settings.rig_type).unwrap().clone();
         let (device, command_rx) = SerialDevice::new(device_id.clone(), settings).await?;
 
         let device_state = DeviceState {
             command_tx: device.command_sender(),
-            rig_file: rig_file.clone(),
+            rig_api,
         };
 
         self.devices.insert(device_id.clone(), device_state);
@@ -184,19 +174,11 @@ impl DeviceManager {
             .get(device_id)
             .ok_or_else(|| anyhow::anyhow!("Device not found: {}", device_id))?;
 
-        let command = state
-            .rig_file
-            .commands
-            .get(command_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown command: {}", command_name))?
-            .clone();
-
-        let cmd = Command::try_from(command)?;
-        let bytes = cmd.build_command(&params)?;
+        let bytes = state.rig_api.build_command(command_name, &params)?;
+        let expected_length = state.rig_api.get_command_response_length(command_name)?;
 
         let (response_tx, mut response_rx) = mpsc::channel(1);
 
-        let expected_length = cmd.response_length();
         state
             .command_tx
             .send(DeviceCommand::Write {
@@ -228,17 +210,14 @@ impl DeviceManager {
             .get(device_id)
             .ok_or_else(|| anyhow::anyhow!("Device not found: {}", device_id))?;
 
-        for command in &state.rig_file.init {
-            let command = Command::try_from(command.clone())?;
-            let bytes = command.build_command(&HashMap::new())?;
+        for (index, data) in state.rig_api.build_init_commands()?.into_iter().enumerate() {
+            let expected_length = state.rig_api.get_init_response_length(index)?;
 
             let (response_tx, mut response_rx) = mpsc::channel(1);
-
-            let expected_length = command.response_length();
             state
                 .command_tx
                 .send(DeviceCommand::Write {
-                    data: bytes,
+                    data,
                     expected_length,
                     response_tx,
                 })

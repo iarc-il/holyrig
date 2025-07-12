@@ -7,21 +7,23 @@ use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::rig::{RigSettings, RigType};
+use crate::rig::RigSettings;
 
 pub enum GuiMessage {}
 
 struct AppTabViewer {
     current_index: u8,
     add_tab_request: bool,
+    rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
 }
 
 impl AppTabViewer {
-    fn new(sender: Sender<ManagerCommand>) -> Self {
+    fn new(sender: Sender<ManagerCommand>, rig_types: Vec<String>) -> Self {
         AppTabViewer {
             current_index: 0,
             add_tab_request: false,
+            rig_types,
             sender,
         }
     }
@@ -44,10 +46,10 @@ impl TabViewer for AppTabViewer {
                 ComboBox::from_id_salt("rig_type")
                     .selected_text(format!("{}", rig.rig_type))
                     .show_ui(ui, |ui| {
-                        for rig_type in &[RigType::Unspecified, RigType::IC7300, RigType::FT891] {
+                        for rig_type in &self.rig_types {
                             ui.selectable_value(
                                 &mut rig.rig_type,
-                                *rig_type,
+                                rig_type.clone(),
                                 format!("{rig_type}"),
                             );
                         }
@@ -145,16 +147,17 @@ impl TabViewer for AppTabViewer {
 
 struct AppTabs {
     dock_state: DockState<RigSettings>,
+    rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
 }
 
 impl AppTabs {
-    fn new(sender: Sender<ManagerCommand>) -> Self {
+    fn new(sender: Sender<ManagerCommand>, rig_types: Vec<String>) -> Self {
         let dock_state = DockState::new(vec![RigSettings::default()]);
-        Self { dock_state, sender }
+        Self { dock_state, rig_types, sender }
     }
     fn ui(&mut self, ui: &mut Ui) {
-        let mut tab_viewer = AppTabViewer::new(self.sender.clone());
+        let mut tab_viewer = AppTabViewer::new(self.sender.clone(), self.rig_types.clone());
 
         DockArea::new(&mut self.dock_state)
             .show_add_buttons(true)
@@ -182,10 +185,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(gui_receiver: Receiver<GuiMessage>, serial_sender: Sender<ManagerCommand>) -> Self {
+    pub fn new(
+        gui_receiver: Receiver<GuiMessage>,
+        serial_sender: Sender<ManagerCommand>,
+        rig_types: Vec<String>,
+    ) -> Self {
         App {
             gui_receiver,
-            tabs: AppTabs::new(serial_sender.clone()),
+            tabs: AppTabs::new(serial_sender.clone(), rig_types),
         }
     }
 }
