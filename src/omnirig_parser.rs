@@ -10,12 +10,27 @@ pub enum EndOfData {
 
 #[derive(Debug, Clone)]
 pub struct Command {
+    pub name: String,
     pub command: String,
     pub end_of_data: EndOfData,
     pub validate: Option<String>,
     pub value: Option<String>,
     pub values: Vec<String>,
     pub flags: Vec<String>,
+}
+
+impl Command {
+    pub fn new(name: String, command: String, end_of_data: EndOfData) -> Self {
+        Self {
+            name,
+            command,
+            end_of_data,
+            validate: None,
+            value: None,
+            values: vec![],
+            flags: vec![],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +84,7 @@ pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
         let value = prop.remove("value").flatten();
 
         let mut command = Command {
+            name: section.clone(),
             command,
             end_of_data,
             validate,

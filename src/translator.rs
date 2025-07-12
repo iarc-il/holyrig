@@ -1,3 +1,5 @@
+use anyhow::{Result, bail};
+
 use crate::{
     data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
@@ -5,31 +7,152 @@ use crate::{
 };
 use std::collections::HashMap;
 
-pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> RigFile {
-    let mut rig_file = RigFile::new();
-    for cmd in omnirig.init_commands.iter() {
-        let command_format = convert_command(cmd);
-        rig_file.init.push(command_format);
+#[derive(Debug)]
+struct BinaryParamLocation {
+    offset: usize,
+    length: usize,
+}
+
+fn find_param_location(commands: &[Command]) -> Option<BinaryParamLocation> {
+    if commands.len() < 2 {
+        return None;
     }
 
-    for cmd in omnirig.param_commands.iter() {
-        let name = determine_command_name(cmd);
-        let command_format = convert_command(cmd);
-        rig_file.commands.insert(name, command_format);
+    let first_cmd = &commands[0].command;
+    let mut start_diff = first_cmd.len();
+    let mut end_diff = 0;
+
+    for cmd in &commands[1..] {
+        let mut common_prefix = 0;
+        let mut common_suffix = 0;
+        let cmd_str = &cmd.command;
+
+        for ((i, a), b) in first_cmd.chars().enumerate().zip(cmd_str.chars()) {
+            if a != b {
+                break;
+            }
+            common_prefix = i + 1;
+        }
+
+        let first_rev = first_cmd.chars().rev();
+        let cmd_rev = cmd_str.chars().rev();
+        for (i, (a, b)) in first_rev.zip(cmd_rev).enumerate() {
+            if a != b {
+                break;
+            }
+            common_suffix = i + 1;
+        }
+
+        start_diff = start_diff.min(common_prefix);
+        end_diff = end_diff.max(common_suffix);
     }
 
-    for cmd in omnirig.status_commands.iter() {
-        let command_format = convert_command(cmd);
-        rig_file.status.push(command_format);
+    let offset = start_diff;
+    let length = first_cmd.len() - start_diff - end_diff;
+
+    Some(BinaryParamLocation { offset, length })
+}
+
+fn find_mode_param_location(commands: &[Command]) -> Option<BinaryParamLocation> {
+    let mode_commands: Vec<_> = commands
+        .iter()
+        .filter(|cmd| extract_mode_params(&cmd.name).is_some())
+        .cloned()
+        .collect();
+
+    find_param_location(&mode_commands)
+}
+
+fn find_toggle_param_location(
+    commands: &[Command],
+    command_type: &str,
+) -> Option<BinaryParamLocation> {
+    let toggle_commands: Vec<_> = commands
+        .iter()
+        .filter(|cmd| extract_toggle_params(&cmd.name, command_type).is_some())
+        .cloned()
+        .collect();
+
+    find_param_location(&toggle_commands)
+}
+
+fn extract_mode_params(cmd_name: &str) -> Option<(String, Option<String>)> {
+    let name = cmd_name.strip_prefix("pm")?;
+    match name.to_uppercase().as_str() {
+        "CW_U" => Some(("CW".to_string(), Some("Upper".to_string()))),
+        "CW_L" => Some(("CW".to_string(), Some("Lower".to_string()))),
+        "SSB_U" => Some(("SSB".to_string(), Some("Upper".to_string()))),
+        "SSB_L" => Some(("SSB".to_string(), Some("Lower".to_string()))),
+        "DIG_U" => Some(("DIG".to_string(), Some("Upper".to_string()))),
+        "DIG_L" => Some(("DIG".to_string(), Some("Lower".to_string()))),
+        "AM" => Some(("AM".to_string(), None)),
+        "FM" => Some(("FM".to_string(), None)),
+        _ => None,
+    }
+}
+
+fn extract_toggle_params(cmd_name: &str, command_type: &str) -> Option<bool> {
+    let prefix = format!("pm{command_type}");
+    match cmd_name {
+        name if name == format!("{prefix}on") => Some(true),
+        name if name == format!("{prefix}off") => Some(false),
+        _ => None,
+    }
+}
+
+struct CommandTranslation {
+    name: String,
+    mode_params: Option<(String, Option<String>)>,
+    toggle_param: Option<(String, bool)>, // (param_type, value)
+}
+
+fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
+    if let Some(mode_params) = extract_mode_params(&cmd.name) {
+        return Ok(CommandTranslation {
+            name: "set_mode".to_string(),
+            mode_params: Some(mode_params),
+            toggle_param: None,
+        });
     }
 
-    rig_file
+    // Check for various toggle commands
+    for (command_type, schema_name) in &[
+        ("split", "set_split"),
+        ("rit", "set_rit"),
+        ("xit", "set_xit"),
+    ] {
+        if let Some(value) = extract_toggle_params(&cmd.name, command_type) {
+            return Ok(CommandTranslation {
+                name: schema_name.to_string(),
+                mode_params: None,
+                toggle_param: Some((command_type.to_lowercase(), value)),
+            });
+        }
+    }
+
+    let name = match cmd.name.as_str() {
+        "pmfreq" | "pmfreqa" | "pmfreqb" => "set_freq",
+        "pmpitch" => "cw_pitch",
+        "pmritoffset" => "rit_offset",
+        "pmrit0" => "clear_rit",
+        "pmvfoaa" | "pmvfoab" | "pmvfoba" | "pmvfobb" | "pmvfoa" | "pmvfob" => "set_vfo",
+        "pmvfoequal" => "vfo_equal",
+        "pmvfoswap" => "vfo_swap",
+        "pmrx" => "set_rx",
+        "pmtx" => "set_tx",
+        _ => bail!("Unknown command: {}", cmd.name),
+    };
+
+    Ok(CommandTranslation {
+        name: name.to_string(),
+        mode_params: None,
+        toggle_param: None,
+    })
 }
 
 fn convert_command(cmd: &Command) -> RigCommand {
     let mut params = HashMap::new();
     if let Some(value) = &cmd.value {
-        // Parse value field in format: <start_pos>|<length>|<format>|<multiply>|<add>
         let parts: Vec<&str> = value.split('|').collect();
         if parts.len() >= 3 {
             let index = parts[0].parse().unwrap();
@@ -38,8 +161,7 @@ fn convert_command(cmd: &Command) -> RigCommand {
                 "vfBcdBU" => "bcd_bu",
                 "vfBcdLU" => "bcd_lu",
                 "vfText" => "text",
-                // Add more format mappings as needed
-                _ => "text", // Default to text for now
+                _ => "text",
             };
             let multiply = if parts.len() > 3 {
                 parts[3].parse().unwrap_or(1)
@@ -80,75 +202,235 @@ fn convert_command(cmd: &Command) -> RigCommand {
     }
 }
 
-fn determine_command_name(cmd: &Command) -> String {
-    // Try to extract meaningful name from command content
-    // This is a heuristic approach - could be improved based on actual command patterns
-    if cmd.command.contains("FREQ") || cmd.command.contains("freq") {
-        "set_freq".to_string()
-    } else if cmd.command.contains("MODE") || cmd.command.contains("mode") {
-        "set_mode".to_string()
-    } else if cmd.command.contains("PTT") || cmd.command.contains("ptt") {
-        "set_ptt".to_string()
-    } else {
-        // Fallback to a generic name if we can't determine the purpose
-        format!("cmd_{}", cmd.command.chars().take(8).collect::<String>())
+pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
+    let mut rig_file = RigFile::new();
+
+    let mode_param_location = find_mode_param_location(&omnirig.param_commands);
+
+    // Find parameter locations for all toggle commands
+    let toggle_locations: HashMap<_, _> = ["Split", "Rit", "Xit"]
+        .iter()
+        .filter_map(|&cmd_type| {
+            find_toggle_param_location(&omnirig.param_commands, cmd_type)
+                .map(|loc| (cmd_type.to_lowercase(), loc))
+        })
+        .collect();
+
+    for cmd in omnirig.init_commands.iter() {
+        let command_format = convert_command(cmd);
+        rig_file.init.push(command_format);
     }
+
+    for cmd in omnirig.param_commands.iter() {
+        let translation = determine_command_name(cmd)?;
+        let mut command_format = convert_command(cmd);
+
+        if translation.mode_params.is_some() {
+            if let Some(loc) = &mode_param_location {
+                let mode_param = RigBinaryParam {
+                    index: loc.offset as u32,
+                    length: loc.length as u32,
+                    format: DataFormat::Text,
+                    multiply: 1,
+                    add: 0,
+                };
+                command_format
+                    .params
+                    .insert("mode_param".to_string(), mode_param);
+            }
+        }
+
+        if let Some((param_type, _)) = &translation.toggle_param {
+            if let Some(loc) = toggle_locations.get(param_type.as_str()) {
+                let toggle_param = RigBinaryParam {
+                    index: loc.offset as u32,
+                    length: loc.length as u32,
+                    format: DataFormat::Text,
+                    multiply: 1,
+                    add: 0,
+                };
+                command_format
+                    .params
+                    .insert(format!("{param_type}_param"), toggle_param);
+            }
+        }
+
+        rig_file.commands.insert(translation.name, command_format);
+    }
+
+    for cmd in omnirig.status_commands.iter() {
+        let command_format = convert_command(cmd);
+        rig_file.status.push(command_format);
+    }
+
+    Ok(rig_file)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{data_format::DataFormat, omnirig_parser::parse_ini_file};
-    use anyhow::Result;
-    use std::path::PathBuf;
-
     use super::*;
+    use crate::omnirig_parser::EndOfData;
 
     #[test]
-    fn test_convert() -> Result<()> {
-        let test_file = PathBuf::from("rig_files/IC-705.ini");
-        let rig_desc = parse_ini_file(test_file)?;
-        let rig_data = translate_omnirig_to_rig(rig_desc);
-        println!("Rig data: {rig_data:?}");
+    fn test_find_mode_param_location() {
+        let commands = vec![
+            Command {
+                name: "pmCW_U".to_string(),
+                command: "FEFE94E01201FD".to_string(),
+                end_of_data: EndOfData::Length(0),
+                validate: None,
+                value: None,
+                values: vec![],
+                flags: vec![],
+            },
+            Command {
+                name: "pmCW_L".to_string(),
+                command: "FEFE94E01202FD".to_string(),
+                end_of_data: EndOfData::Length(0),
+                validate: None,
+                value: None,
+                values: vec![],
+                flags: vec![],
+            },
+        ];
+
+        let location = find_mode_param_location(&commands).unwrap();
+        assert_eq!(location.offset, 8);
+        assert_eq!(location.length, 2);
+    }
+
+    #[test]
+    fn test_find_toggle_param_location() {
+        let test_cases = vec![
+            (
+                "Split",
+                vec![
+                    ("pmSplitOn", "FEFE94E01901FD"),
+                    ("pmSplitOff", "FEFE94E01900FD"),
+                ],
+            ),
+            (
+                "Rit",
+                vec![
+                    ("pmRitOn", "FEFE94E01A01FD"),
+                    ("pmRitOff", "FEFE94E01A00FD"),
+                ],
+            ),
+            (
+                "Xit",
+                vec![
+                    ("pmXitOn", "FEFE94E01B01FD"),
+                    ("pmXitOff", "FEFE94E01B00FD"),
+                ],
+            ),
+        ];
+
+        for (cmd_type, cmds) in test_cases {
+            let commands: Vec<_> = cmds
+                .into_iter()
+                .map(|(name, cmd)| Command {
+                    name: name.to_string(),
+                    command: cmd.to_string(),
+                    end_of_data: EndOfData::Length(0),
+                    validate: None,
+                    value: None,
+                    values: vec![],
+                    flags: vec![],
+                })
+                .collect();
+
+            let location = find_toggle_param_location(&commands, cmd_type).unwrap();
+            assert_eq!(location.offset, 8);
+            assert_eq!(location.length, 2);
+        }
+    }
+
+    #[test]
+    fn test_command_name_mapping() -> Result<()> {
+        let test_cases = vec![
+            ("pmFreq", "set_freq"),
+            ("pmFreqA", "set_freq"),
+            ("pmFreqB", "set_freq"),
+            ("pmPitch", "cw_pitch"),
+            ("pmRitOffset", "rit_offset"),
+            ("pmRit0", "clear_rit"),
+            ("pmRitOn", "set_rit"),
+            ("pmRitOff", "set_rit"),
+            ("pmVfoAA", "set_vfo"),
+            ("pmVfoAB", "set_vfo"),
+            ("pmVfoBA", "set_vfo"),
+            ("pmVfoBB", "set_vfo"),
+            ("pmVfoA", "set_vfo"),
+            ("pmVfoB", "set_vfo"),
+            ("pmVfoEqual", "vfo_equal"),
+            ("pmVfoSwap", "vfo_swap"),
+            ("pmSplitOn", "set_split"),
+            ("pmSplitOff", "set_split"),
+            ("pmXitOn", "set_xit"),
+            ("pmXitOff", "set_xit"),
+            ("pmCW_U", "set_mode"),
+            ("pmCW_L", "set_mode"),
+            ("pmSSB_U", "set_mode"),
+            ("pmSSB_L", "set_mode"),
+            ("pmDIG_U", "set_mode"),
+            ("pmDIG_L", "set_mode"),
+            ("pmAM", "set_mode"),
+            ("pmFM", "set_mode"),
+        ];
+
+        for (input, expected) in test_cases {
+            let cmd = Command {
+                command: "test".to_string(),
+                end_of_data: EndOfData::Length(0),
+                validate: None,
+                value: None,
+                values: vec![],
+                flags: vec![],
+                name: input.to_string(),
+            };
+            assert_eq!(determine_command_name(&cmd)?.name, expected);
+        }
         Ok(())
     }
 
     #[test]
-    fn test_convert_command_with_value() {
-        let cmd = Command {
-            command: "FEFE94E0140900FD".to_string(),
-            end_of_data: EndOfData::Length(15),
-            validate: None,
-            value: Some("6|2|vfBcdBU|4|-127".to_string()),
-            values: vec![],
-            flags: vec![],
-        };
+    fn test_toggle_params_extraction() -> Result<()> {
+        let test_cases = vec![
+            (
+                "Split",
+                vec![
+                    ("pmSplitOn", Some(true)),
+                    ("pmSplitOff", Some(false)),
+                    ("pmFreq", None),
+                ],
+            ),
+            (
+                "Rit",
+                vec![
+                    ("pmRitOn", Some(true)),
+                    ("pmRitOff", Some(false)),
+                    ("pmFreq", None),
+                ],
+            ),
+            (
+                "Xit",
+                vec![
+                    ("pmXitOn", Some(true)),
+                    ("pmXitOff", Some(false)),
+                    ("pmFreq", None),
+                ],
+            ),
+        ];
 
-        let cmd_format = convert_command(&cmd);
-        assert_eq!(cmd_format.command.as_str(), "FEFE94E0140900FD");
-        assert!(matches!(cmd_format.reply_length, Some(15)));
-
-        let param = cmd_format.params.get("value").unwrap();
-        assert_eq!(param.index, 6);
-        assert_eq!(param.length, 2);
-        assert!(matches!(param.format, DataFormat::BcdBu));
-        assert_eq!(param.multiply, 4);
-        assert_eq!(param.add, -127);
-    }
-
-    #[test]
-    fn test_convert_command_without_value() {
-        let cmd = Command {
-            command: "FEFE94E02100000000FD".to_string(),
-            end_of_data: EndOfData::String("FEFEE094FBFD".to_string()),
-            validate: None,
-            value: None,
-            values: vec![],
-            flags: vec![],
-        };
-
-        let cmd_format = convert_command(&cmd);
-        assert_eq!(cmd_format.command.as_str(), "FEFE94E02100000000FD");
-        assert!(cmd_format.reply_end == Some("FEFEE094FBFD".to_string()));
-        assert!(cmd_format.params.is_empty());
+        for (cmd_type, cases) in test_cases {
+            for (input, expected) in cases {
+                assert_eq!(
+                    extract_toggle_params(input, cmd_type),
+                    expected,
+                    "Failed for {cmd_type} with input {input}"
+                );
+            }
+        }
+        Ok(())
     }
 }

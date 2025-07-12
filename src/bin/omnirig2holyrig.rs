@@ -20,7 +20,7 @@ fn main() -> Result<()> {
 
     let rig_desc = parse_ini_file(&args.input)
         .with_context(|| format!("Failed to parse input file: {}", args.input.display()))?;
-    let rig_data = translate_omnirig_to_rig(rig_desc);
+    let rig_data = translate_omnirig_to_rig(rig_desc)?;
     let toml_string =
         toml::to_string_pretty(&rig_data).with_context(|| "Failed to serialize to TOML")?;
     fs::write(&args.output, toml_string)
