@@ -152,16 +152,19 @@ fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
 
 fn convert_command(cmd: &Command) -> RigCommand {
     let mut params = HashMap::new();
+
     if let Some(value) = &cmd.value {
         let parts: Vec<&str> = value.split('|').collect();
         if parts.len() >= 3 {
-            let index = parts[0].parse().unwrap();
-            let length = parts[1].parse().unwrap();
+            let start: u32 = parts[0].parse().unwrap_or(0);
+            let length: u32 = parts[1].parse().unwrap_or(0);
             let format = match parts[2] {
-                "vfBcdBU" => "bcd_bu",
-                "vfBcdLU" => "bcd_lu",
-                "vfText" => "text",
-                _ => "text",
+                "vfBcdLU" => DataFormat::BcdLu,
+                "vfBcdLS" => DataFormat::BcdLs,
+                "vfBinL" => DataFormat::IntLu,
+                "vfBinB" => DataFormat::IntBu,
+                "vfText" => DataFormat::Text,
+                _ => DataFormat::Text,
             };
             let multiply = if parts.len() > 3 {
                 parts[3].parse().unwrap_or(1)
@@ -174,30 +177,30 @@ fn convert_command(cmd: &Command) -> RigCommand {
                 0
             };
 
-            params.insert(
-                "value".to_string(),
-                RigBinaryParam {
-                    index,
-                    length,
-                    format: DataFormat::try_from(format).unwrap(),
-                    multiply,
-                    add,
-                },
-            );
+            let param = RigBinaryParam {
+                index: start,
+                length,
+                format,
+                multiply,
+                add,
+            };
+            params.insert("value".to_string(), param);
         }
     }
 
     let (reply_length, reply_end) = match &cmd.end_of_data {
         EndOfData::Length(length) => (Some(*length), None),
-        EndOfData::String(delimiter) => (None, Some(delimiter.clone())),
+        EndOfData::String(reply_end) => (None, Some(reply_end.clone())),
     };
 
     RigCommand {
         command: cmd.command.clone(),
+        // TODO: Create the question marks from the extracted values
+        response: cmd.validate.clone(),
         reply_length,
         reply_end,
-        response: cmd.validate.clone(),
         params,
+        // TODO: Fill the real return values
         returns: HashMap::new(),
     }
 }
@@ -208,11 +211,10 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
     let mode_param_location = find_mode_param_location(&omnirig.param_commands);
 
     // Find parameter locations for all toggle commands
-    let toggle_locations: HashMap<_, _> = ["Split", "Rit", "Xit"]
+    let toggle_locations: HashMap<_, _> = ["split", "rit", "xit"]
         .iter()
         .filter_map(|&cmd_type| {
-            find_toggle_param_location(&omnirig.param_commands, cmd_type)
-                .map(|loc| (cmd_type.to_lowercase(), loc))
+            find_toggle_param_location(&omnirig.param_commands, cmd_type).map(|loc| (cmd_type, loc))
         })
         .collect();
 
@@ -234,24 +236,23 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
                     multiply: 1,
                     add: 0,
                 };
-                command_format
-                    .params
-                    .insert("mode_param".to_string(), mode_param);
+                command_format.params.insert("mode".to_string(), mode_param);
             }
         }
 
-        if let Some((param_type, _)) = &translation.toggle_param {
+        if let Some((param_type, value)) = &translation.toggle_param {
             if let Some(loc) = toggle_locations.get(param_type.as_str()) {
                 let toggle_param = RigBinaryParam {
                     index: loc.offset as u32,
                     length: loc.length as u32,
-                    format: DataFormat::Text,
+                    // TODO: Use the real format
+                    format: DataFormat::IntLu,
                     multiply: 1,
                     add: 0,
                 };
                 command_format
                     .params
-                    .insert(format!("{param_type}_param"), toggle_param);
+                    .insert(param_type.clone(), toggle_param);
             }
         }
 
