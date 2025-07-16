@@ -245,6 +245,26 @@ fn convert_command(cmd: &Command) -> RigCommand {
         }
     }
 
+    // Convert flags to return parameters
+    for flag in &cmd.flags {
+        // Find the position and length of the first different bit between mask and bits
+        let mask_bytes = hex_string_to_bytes(&flag.mask);
+        let bits_bytes = hex_string_to_bytes(&flag.bits);
+
+        if let (Some(mask_bytes), Some(bits_bytes)) = (mask_bytes, bits_bytes) {
+            if let Some((index, length)) = find_different_bits(&mask_bytes, &bits_bytes) {
+                let param = RigBinaryParam {
+                    index: index as u32,
+                    length: length as u32,
+                    format: DataFormat::IntLu,
+                    multiply: 1.0,
+                    add: 0.0,
+                };
+                returns.insert(flag.param.clone(), param);
+            }
+        }
+    }
+
     let (reply_length, reply_end) = match &cmd.end_of_data {
         EndOfData::Length(length) => (Some(*length), None),
         EndOfData::String(reply_end) => (None, Some(reply_end.clone())),
@@ -261,7 +281,49 @@ fn convert_command(cmd: &Command) -> RigCommand {
         reply_length,
         reply_end,
         params,
-        returns: HashMap::new(),
+        returns,
+    }
+}
+
+fn hex_string_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    // Remove dots and whitespace
+    let hex = hex.replace(['.', ' '], "");
+
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+
+    let mut bytes = Vec::new();
+    for i in (0..hex.len()).step_by(2) {
+        if let Ok(byte) = u8::from_str_radix(&hex[i..i + 2], 16) {
+            bytes.push(byte);
+        } else {
+            return None;
+        }
+    }
+    Some(bytes)
+}
+
+fn find_different_bits(mask: &[u8], bits: &[u8]) -> Option<(usize, usize)> {
+    if mask.len() != bits.len() {
+        return None;
+    }
+
+    let mut start_index = None;
+    let mut end_index = None;
+
+    for (i, (mask_byte, bits_byte)) in mask.iter().zip(bits.iter()).enumerate() {
+        if mask_byte != bits_byte {
+            if start_index.is_none() {
+                start_index = Some(i);
+            }
+            end_index = Some(i);
+        }
+    }
+
+    match (start_index, end_index) {
+        (Some(start), Some(end)) => Some((start, end - start + 1)),
+        _ => None,
     }
 }
 
