@@ -242,8 +242,8 @@ pub struct BinaryParam {
     pub index: u32,
     pub length: u32,
     pub format: DataFormat,
-    pub add: i32,
-    pub multiply: u32,
+    pub add: f64,
+    pub multiply: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -289,7 +289,7 @@ impl Command {
             })?;
 
             let transformed_value =
-                ((raw_value as f64 - param.add as f64) / param.multiply as f64) as i64;
+                ((raw_value as f64 - param.add) / param.multiply).round() as i64;
 
             // TODO: support parsing return type
             result.insert(key.clone(), Value::Int(transformed_value));
@@ -325,18 +325,18 @@ impl Command {
 
     fn convert_arg_to_value(&self, arg: &Value, param: &BinaryParam) -> Result<i64, CommandError> {
         let raw_value = match arg {
-            Value::Int(v) => *v,
+            Value::Int(v) => *v as f64,
             Value::Bool(v) => {
                 if *v {
-                    1
+                    1.0
                 } else {
-                    0
+                    0.0
                 }
             }
             Value::Enum(_) => todo!("Enum handling not implemented yet"),
         };
 
-        let value = (raw_value + param.add as i64) * param.multiply as i64;
+        let value = ((raw_value + param.add) * param.multiply).round() as i64;
 
         Ok(value)
     }
@@ -357,7 +357,7 @@ impl Command {
         }
 
         let bytes = param.format.encode(value as i32, len)?;
-        data[len..len + bytes.len()].copy_from_slice(&bytes);
+        data[start..start + bytes.len()].copy_from_slice(&bytes);
 
         Ok(())
     }
@@ -391,8 +391,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         params.insert(
@@ -401,8 +401,8 @@ mod tests {
                 index: 4,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         assert!(mask.validate_params(&params).is_ok());
@@ -418,8 +418,8 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         params.insert(
@@ -428,8 +428,8 @@ mod tests {
                 index: 3,
                 length: 2,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         assert!(mask.validate_params(&params).is_ok());
@@ -445,8 +445,8 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         params.insert(
@@ -455,8 +455,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         assert!(matches!(
@@ -475,8 +475,8 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         assert!(matches!(
@@ -495,8 +495,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         params.insert(
@@ -505,8 +505,8 @@ mod tests {
                 index: 4,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
         assert!(matches!(
@@ -525,8 +525,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
 
@@ -555,8 +555,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
 
@@ -585,8 +585,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
 
@@ -618,8 +618,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 10,
-                multiply: 2,
+                add: 10.0,
+                multiply: 2.0,
             },
         );
 
@@ -648,8 +648,8 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
-                add: 0,
-                multiply: 1,
+                add: 0.0,
+                multiply: 1.0,
             },
         );
 
@@ -694,8 +694,8 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -729,8 +729,8 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
-                        add: 10,
-                        multiply: 2,
+                        add: 10.0,
+                        multiply: 2.0,
                     },
                 );
                 returns
@@ -767,8 +767,8 @@ mod tests {
                         index: 0,
                         length: 2,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns.insert(
@@ -777,8 +777,8 @@ mod tests {
                         index: 2,
                         length: 2,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -815,8 +815,8 @@ mod tests {
                         index: 0,
                         length: 2,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -850,8 +850,8 @@ mod tests {
                         index: 0,
                         length: 3,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -886,8 +886,8 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::BcdBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -922,8 +922,8 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
-                        add: 0,
-                        multiply: 1,
+                        add: 0.0,
+                        multiply: 1.0,
                     },
                 );
                 returns
@@ -935,5 +935,73 @@ mod tests {
             command.parse_response(&response),
             Err(CommandError::InvalidMask)
         ));
+    }
+
+    #[test]
+    fn test_build_command_with_float_transforms() {
+        let mask = BinMask::try_from("1122??44").unwrap();
+        let mut params = HashMap::new();
+        params.insert(
+            "freq".to_string(),
+            BinaryParam {
+                index: 2,
+                length: 1,
+                format: DataFormat::BcdBu,
+                add: 10.5,
+                multiply: 2.5,
+            },
+        );
+
+        let cmd = Command {
+            command: mask,
+            response: None,
+            validator: None,
+            params,
+            returns: HashMap::new(),
+        };
+
+        let mut args = HashMap::new();
+        args.insert("freq".to_string(), Value::Int(11));
+
+        let result = cmd.build_command(&args).unwrap();
+        assert_eq!(result, vec![0x11, 0x22, 0x54, 0x44]);
+    }
+
+    #[test]
+    fn test_parse_response_with_float_transforms() -> Result<(), CommandError> {
+        let command = Command {
+            command: BinMask {
+                data: vec![0x00],
+                masks: vec![],
+            },
+            response: Some(BinMask {
+                data: vec![50],
+                masks: vec![(0, 1)],
+            }),
+            validator: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "value".to_string(),
+                    BinaryParam {
+                        index: 0,
+                        length: 1,
+                        format: DataFormat::IntBu,
+                        add: 10.5,
+                        multiply: 2.5,
+                    },
+                );
+                returns
+            },
+        };
+        command.validate()?;
+
+        let response = vec![50];
+        let result = command.parse_response(&response)?;
+
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result.get("value"), Some(Value::Int(16))));
+        Ok(())
     }
 }

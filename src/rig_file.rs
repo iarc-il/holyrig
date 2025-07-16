@@ -40,13 +40,13 @@ pub struct RigBinaryParam {
     #[serde(deserialize_with = "deserialize_data_format")]
     pub format: DataFormat,
     #[serde(default)]
-    pub add: i32,
+    pub add: f64,
     #[serde(default = "default_multiply")]
-    pub multiply: u32,
+    pub multiply: f64,
 }
 
-fn default_multiply() -> u32 {
-    1
+fn default_multiply() -> f64 {
+    1.0
 }
 
 impl TryFrom<RigCommand> for Command {
@@ -177,15 +177,15 @@ mod tests {
         assert_eq!(freq_param.index, 6);
         assert_eq!(freq_param.length, 5);
         assert!(matches!(freq_param.format, DataFormat::BcdLu));
-        assert_eq!(freq_param.add, 0);
-        assert_eq!(freq_param.multiply, 1);
+        assert_eq!(freq_param.add, 0.0);
+        assert_eq!(freq_param.multiply, 1.0);
 
         let vfo_param = cmd.params.get("vfo").unwrap();
         assert_eq!(vfo_param.index, 5);
         assert_eq!(vfo_param.length, 1);
         assert!(matches!(vfo_param.format, DataFormat::IntLu));
-        assert_eq!(vfo_param.add, 0);
-        assert_eq!(vfo_param.multiply, 1);
+        assert_eq!(vfo_param.add, 0.0);
+        assert_eq!(vfo_param.multiply, 1.0);
     }
 
     #[test]
@@ -207,8 +207,8 @@ mod tests {
         assert_eq!(pitch_param.index, 6);
         assert_eq!(pitch_param.length, 2);
         assert!(matches!(pitch_param.format, DataFormat::BcdBu));
-        assert_eq!(pitch_param.add, -127);
-        assert_eq!(pitch_param.multiply, 4);
+        assert_eq!(pitch_param.add, -127.0);
+        assert_eq!(pitch_param.multiply, 4.0);
     }
 
     #[test]
@@ -231,8 +231,8 @@ mod tests {
         assert_eq!(freq_return.index, 5);
         assert_eq!(freq_return.length, 2);
         assert!(matches!(freq_return.format, DataFormat::BcdLu));
-        assert_eq!(freq_return.add, 0);
-        assert_eq!(freq_return.multiply, 1);
+        assert_eq!(freq_return.add, 0.0);
+        assert_eq!(freq_return.multiply, 1.0);
     }
 
     #[test]
@@ -255,8 +255,8 @@ mod tests {
         assert_eq!(pitch_return.index, 5);
         assert_eq!(pitch_return.length, 2);
         assert!(matches!(pitch_return.format, DataFormat::BcdBu));
-        assert_eq!(pitch_return.add, -127);
-        assert_eq!(pitch_return.multiply, 4);
+        assert_eq!(pitch_return.add, -127.0);
+        assert_eq!(pitch_return.multiply, 4.0);
     }
 
     #[test]
@@ -280,8 +280,8 @@ mod tests {
         assert_eq!(freq_return.index, 5);
         assert_eq!(freq_return.length, 2);
         assert!(matches!(freq_return.format, DataFormat::BcdLu));
-        assert_eq!(freq_return.add, 0);
-        assert_eq!(freq_return.multiply, 1);
+        assert_eq!(freq_return.add, 0.0);
+        assert_eq!(freq_return.multiply, 1.0);
 
         Ok(())
     }

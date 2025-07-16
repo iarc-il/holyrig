@@ -224,14 +224,14 @@ fn convert_command(cmd: &Command) -> RigCommand {
                 _ => DataFormat::Text,
             };
             let multiply = if parts.len() > 3 {
-                parts[3].parse().unwrap_or(1)
+                parts[3].parse().unwrap_or(1.0)
             } else {
-                1
+                1.0
             };
             let add = if parts.len() > 4 {
-                parts[4].parse().unwrap_or(0)
+                parts[4].parse().unwrap_or(0.0)
             } else {
-                0
+                0.0
             };
 
             let param = RigBinaryParam {
@@ -293,8 +293,8 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
                     index: loc.offset as u32,
                     length: loc.length as u32,
                     format: DataFormat::Text,
-                    multiply: 1,
-                    add: 0,
+                    multiply: 1.0,
+                    add: 0.0,
                 };
                 command_format.params.insert("mode".to_string(), mode_param);
                 command_format.command =
@@ -308,8 +308,8 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
                     index: loc.offset as u32,
                     length: loc.length as u32,
                     format: DataFormat::IntLu,
-                    multiply: 1,
-                    add: 0,
+                    multiply: 1.0,
+                    add: 0.0,
                 };
                 command_format
                     .params
