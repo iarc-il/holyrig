@@ -121,6 +121,11 @@ impl TryFrom<RigCommand> for Command {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EnumMapping {
+    pub values: Vec<(String, i32)>, // (enum_member, value) pairs
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigFile {
     pub general: General,
     #[serde(default)]
@@ -128,6 +133,8 @@ pub struct RigFile {
     pub commands: HashMap<String, RigCommand>,
     #[serde(default)]
     pub status: Vec<RigCommand>,
+    #[serde(default)]
+    pub enums: HashMap<String, EnumMapping>,
 }
 
 impl RigFile {
@@ -140,6 +147,7 @@ impl RigFile {
             init: Vec::new(),
             commands: HashMap::new(),
             status: Vec::new(),
+            enums: HashMap::new(),
         }
     }
 }

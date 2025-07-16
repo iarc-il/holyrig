@@ -209,6 +209,7 @@ fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
 
 fn convert_command(cmd: &Command) -> RigCommand {
     let mut params = HashMap::new();
+    let mut returns = HashMap::new();
 
     if let Some(value) = &cmd.value {
         let parts: Vec<&str> = value.split('|').collect();

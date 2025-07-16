@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     commands::{Command, CommandError, Value},
     rig_file::RigFile,
+    schema,
 };
 
 #[derive(Debug)]
@@ -88,11 +89,15 @@ pub struct RigApi {
     init_commands: Vec<Command>,
     commands: HashMap<String, Command>,
     status_commands: Vec<Command>,
+    enum_mappings: HashMap<String, HashMap<String, i32>>,
+    reverse_enum_mappings: HashMap<String, HashMap<i32, String>>,
+    command_param_types: HashMap<String, HashMap<String, String>>,
+    command_return_types: HashMap<String, HashMap<String, String>>,
 }
 
-impl TryFrom<RigFile> for RigApi {
+impl TryFrom<(RigFile, schema::Schema)> for RigApi {
     type Error = RigApiError;
-    fn try_from(rig_file: RigFile) -> Result<Self, RigApiError> {
+    fn try_from((rig_file, schema): (RigFile, schema::Schema)) -> Result<Self, RigApiError> {
         let init_commands = rig_file
             .init
             .into_iter()
@@ -111,10 +116,42 @@ impl TryFrom<RigFile> for RigApi {
             .map(Command::try_from)
             .collect::<Result<_, _>>()?;
 
+        let mut enum_mappings = HashMap::new();
+        let mut reverse_enum_mappings = HashMap::new();
+
+        for (enum_name, mapping) in rig_file.enums {
+            let mut forward_map = HashMap::new();
+            let mut reverse_map = HashMap::new();
+
+            for (member, value) in mapping.values {
+                forward_map.insert(member.clone(), value);
+                reverse_map.insert(value, member);
+            }
+
+            enum_mappings.insert(enum_name.clone(), forward_map);
+            reverse_enum_mappings.insert(enum_name, reverse_map);
+        }
+
+        let mut command_param_types = HashMap::new();
+
+        for (cmd_name, cmd) in &schema.commands {
+            let mut param_types = HashMap::new();
+            for (param_name, param_type) in &cmd.params {
+                param_types.insert(param_name.clone(), param_type.clone());
+            }
+            command_param_types.insert(cmd_name.clone(), param_types);
+        }
+
         let api = Self {
             init_commands,
             commands,
             status_commands,
+            enum_mappings,
+            reverse_enum_mappings,
+            command_param_types,
+            // For now, return types are not defined in the schema
+            // This would need to be updated when schema supports return types
+            command_return_types: HashMap::new(),
         };
 
         api.validate()?;
@@ -123,6 +160,20 @@ impl TryFrom<RigFile> for RigApi {
 }
 
 impl RigApi {
+    pub fn get_enum_value(&self, enum_name: &str, member: &str) -> Option<i32> {
+        self.enum_mappings
+            .get(enum_name)
+            .and_then(|map| map.get(member))
+            .copied()
+    }
+
+    pub fn get_enum_member(&self, enum_name: &str, value: i32) -> Option<String> {
+        self.reverse_enum_mappings
+            .get(enum_name)
+            .and_then(|map| map.get(&value))
+            .cloned()
+    }
+
     fn validate(&self) -> Result<(), RigApiError> {
         for (i, cmd) in self.init_commands.iter().enumerate() {
             if !cmd.params.is_empty() {
@@ -184,7 +235,33 @@ impl RigApi {
             RigApiError::CommandNotFound(CommandType::Named(command_name.to_string()))
         })?;
 
-        command.build_command(args).map_err(RigApiError::from)
+        let mut converted_args = HashMap::new();
+        for (name, value) in args {
+            match value {
+                Value::Enum(member) => {
+                    if let Some(enum_name) = self.get_enum_type_for_param(command_name, name) {
+                        let int_value =
+                            self.get_enum_value(&enum_name, member).ok_or_else(|| {
+                                RigApiError::Command(CommandError::InvalidArgumentValue(format!(
+                                    "Invalid enum value '{member}' for enum '{enum_name}'",
+                                )))
+                            })?;
+                        converted_args.insert(name.clone(), Value::Int(int_value as i64));
+                    } else {
+                        return Err(RigApiError::Command(CommandError::InvalidArgumentValue(
+                            format!("Parameter '{name}' is not an enum type"),
+                        )));
+                    }
+                }
+                _ => {
+                    converted_args.insert(name.clone(), value.clone());
+                }
+            }
+        }
+
+        command
+            .build_command(&converted_args)
+            .map_err(RigApiError::from)
     }
 
     pub fn parse_command_response(
@@ -196,7 +273,31 @@ impl RigApi {
             RigApiError::CommandNotFound(CommandType::Named(command_name.to_string()))
         })?;
 
-        command.parse_response(response).map_err(RigApiError::from)
+        let raw_values = command
+            .parse_response(response)
+            .map_err(RigApiError::from)?;
+
+        let mut converted_values = HashMap::new();
+        for (name, value) in raw_values {
+            match value {
+                Value::Int(int_value) => {
+                    if let Some(enum_name) = self.get_enum_type_for_return(command_name, &name) {
+                        if let Some(member) = self.get_enum_member(&enum_name, int_value as i32) {
+                            converted_values.insert(name, Value::Enum(member));
+                        } else {
+                            converted_values.insert(name, Value::Int(int_value));
+                        }
+                    } else {
+                        converted_values.insert(name, Value::Int(int_value));
+                    }
+                }
+                _ => {
+                    converted_values.insert(name, value);
+                }
+            }
+        }
+
+        Ok(converted_values)
     }
 
     pub fn get_status_commands(&self) -> Vec<Result<Vec<u8>, RigApiError>> {
@@ -260,6 +361,32 @@ impl RigApi {
                 )))?;
         Ok(command.response_length())
     }
+
+    fn get_enum_type_for_param(&self, command_name: &str, param_name: &str) -> Option<String> {
+        self.command_param_types
+            .get(command_name)
+            .and_then(|params| params.get(param_name))
+            .and_then(|type_name| {
+                if self.enum_mappings.contains_key(type_name) {
+                    Some(type_name.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn get_enum_type_for_return(&self, command_name: &str, return_name: &str) -> Option<String> {
+        self.command_return_types
+            .get(command_name)
+            .and_then(|returns| returns.get(return_name))
+            .and_then(|type_name| {
+                if self.enum_mappings.contains_key(type_name) {
+                    Some(type_name.clone())
+                } else {
+                    None
+                }
+            })
+    }
 }
 
 #[cfg(test)]
@@ -317,7 +444,7 @@ mod tests {
         );
         rig_file.status.push(create_test_command(false, true, true));
 
-        let api = RigApi::try_from(rig_file)?;
+        let api = RigApi::try_from((rig_file, schema::Schema::new()))?;
 
         let init_cmds = api.build_init_commands()?;
         assert_eq!(init_cmds.len(), 1);
@@ -337,7 +464,7 @@ mod tests {
     #[test]
     fn test_command_not_found() {
         let rig_file = RigFile::new();
-        let api = RigApi::try_from(rig_file).unwrap();
+        let api = RigApi::try_from((rig_file, schema::Schema::new())).unwrap();
 
         match api.build_command("nonexistent", &HashMap::new()) {
             Err(RigApiError::CommandNotFound(CommandType::Named(name))) => {
@@ -367,7 +494,7 @@ mod tests {
 
         rig_file.init.push(create_test_command(true, false, false));
 
-        match RigApi::try_from(rig_file) {
+        match RigApi::try_from((rig_file, schema::Schema::new())) {
             Err(RigApiError::InvalidInit {
                 command_index,
                 reason,
@@ -381,7 +508,7 @@ mod tests {
         let mut rig_file = RigFile::new();
         rig_file.init.push(create_test_command(false, true, true));
 
-        match RigApi::try_from(rig_file) {
+        match RigApi::try_from((rig_file, schema::Schema::new())) {
             Err(RigApiError::InvalidInit {
                 command_index,
                 reason,
@@ -399,7 +526,7 @@ mod tests {
 
         rig_file.status.push(create_test_command(true, true, true));
 
-        match RigApi::try_from(rig_file) {
+        match RigApi::try_from((rig_file, schema::Schema::new())) {
             Err(RigApiError::InvalidStatus {
                 command_index,
                 reason,
@@ -418,7 +545,7 @@ mod tests {
         rig_file.status.push(create_test_command(false, true, true));
         rig_file.status.push(create_test_command(false, true, true));
 
-        match RigApi::try_from(rig_file) {
+        match RigApi::try_from((rig_file, schema::Schema::new())) {
             Err(RigApiError::ConflictingStatusReturns {
                 index1,
                 index2,

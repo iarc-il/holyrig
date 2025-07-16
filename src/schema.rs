@@ -75,24 +75,24 @@ impl From<toml::de::Error> for SchemaError {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct General {
     pub rig_type: String,
     pub version: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Enum {
     pub members: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Command {
     #[serde(default)]
     pub params: Vec<(String, String)>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Schema {
     pub general: General,
     #[serde(default)]
@@ -100,7 +100,27 @@ pub struct Schema {
     pub commands: HashMap<String, Command>,
 }
 
+#[cfg(test)]
+impl Default for Schema {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Schema {
+    // Add new() method for tests
+    #[cfg(test)]
+    pub fn new() -> Self {
+        Self {
+            general: General {
+                rig_type: "transceiver".to_string(),
+                version: 1,
+            },
+            enums: HashMap::new(),
+            commands: HashMap::new(),
+        }
+    }
+
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let content = std::fs::read_to_string(path)?;
         let schema: Schema = toml::from_str(&content)?;

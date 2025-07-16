@@ -291,7 +291,7 @@ impl Command {
             let transformed_value =
                 ((raw_value as f64 - param.add) / param.multiply).round() as i64;
 
-            // TODO: support parsing return type
+            // For now, we return all values as Int - RigApi will convert to Enum if needed
             result.insert(key.clone(), Value::Int(transformed_value));
         }
 
@@ -333,7 +333,11 @@ impl Command {
                     0.0
                 }
             }
-            Value::Enum(_) => todo!("Enum handling not implemented yet"),
+            Value::Enum(v) => {
+                return Err(CommandError::InvalidArgumentValue(format!(
+                    "Enum value '{v}' must be converted to integer by RigApi"
+                )));
+            }
         };
 
         let value = ((raw_value + param.add) * param.multiply).round() as i64;

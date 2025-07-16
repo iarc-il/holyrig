@@ -24,6 +24,8 @@ use serial::manager::DeviceManager;
 fn load_rig_files<P: AsRef<Path>>(dir_path: P) -> Result<Arc<HashMap<String, RigApi>>> {
     let mut rigs = HashMap::new();
 
+    let schema = load_schema_file()?;
+
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
         let path = entry.path();
@@ -41,7 +43,7 @@ fn load_rig_files<P: AsRef<Path>>(dir_path: P) -> Result<Arc<HashMap<String, Rig
         let content = fs::read_to_string(&path)?;
         let rig_file: RigFile = toml::from_str(&content)?;
 
-        match RigApi::try_from(rig_file) {
+        match RigApi::try_from((rig_file, schema.clone())) {
             Ok(rig_api) => {
                 rigs.insert(file_name, rig_api);
             }
@@ -55,9 +57,13 @@ fn load_rig_files<P: AsRef<Path>>(dir_path: P) -> Result<Arc<HashMap<String, Rig
 }
 
 fn load_schema_file() -> Result<schema::Schema> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
-    let config_path = xdg_dirs.place_config_file("schema.toml")?;
-    schema::Schema::load(config_path).map_err(|e| anyhow::anyhow!("Failed to load schema: {}", e))
+    let schema_path = if cfg!(debug_assertions) {
+        std::path::PathBuf::from("./schema/transceiver.toml")
+    } else {
+        let xdg_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
+        xdg_dirs.place_config_file("schema.toml")?
+    };
+    schema::Schema::load(schema_path).map_err(|err| anyhow::anyhow!("Failed to load schema: {err}"))
 }
 
 async fn serial_thread(gui_sender: mpsc::Sender<GuiMessage>, device_manager: DeviceManager) {
