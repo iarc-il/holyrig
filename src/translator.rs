@@ -336,7 +336,7 @@ mod tests {
     use crate::omnirig_parser::EndOfData;
 
     #[test]
-    fn test_find_mode_param_location() {
+    fn test_find_param_location() {
         let commands = vec![
             Command {
                 name: "pmCW_U".to_string(),
@@ -358,9 +358,9 @@ mod tests {
             },
         ];
 
-        let location = find_mode_param_location(&commands).unwrap();
-        assert_eq!(location.offset, 8);
-        assert_eq!(location.length, 2);
+        let location = find_param_location(&commands).unwrap();
+        assert_eq!(location.offset, 5);
+        assert_eq!(location.length, 1);
     }
 
     #[test]
@@ -404,8 +404,8 @@ mod tests {
                 .collect();
 
             let location = find_toggle_param_location(&commands, cmd_type).unwrap();
-            assert_eq!(location.offset, 8);
-            assert_eq!(location.length, 2);
+            assert_eq!(location.offset, 5);
+            assert_eq!(location.length, 1);
         }
     }
 
@@ -496,5 +496,19 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_insert_question_marks() {
+        let test_cases = vec![
+            ("FEFE94E0.25.00.FD", 2, 2, "FEFE????.25.00.FD"),
+            ("FEFE94E0.25.00.FD", 6, 1, "FEFE94E0.25.00.??"),
+            ("FEFE94E0.25.00.000000.FD", 8, 2, "FEFE94E0.25.00.0000??.??"),
+        ];
+
+        for (input, offset, length, expected) in test_cases {
+            let command = insert_question_marks(input, offset, length);
+            assert_eq!(command, expected, "Failed for input: {input}");
+        }
     }
 }
