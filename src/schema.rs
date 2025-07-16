@@ -339,4 +339,48 @@ mod tests {
             other => panic!("Expected DuplicateParameter error, got {other:?}"),
         }
     }
+
+    #[test]
+    fn test_schema_with_valid_enums() {
+        let mut schema = Schema::new();
+
+        let mode_enum = Enum {
+            members: vec!["LSB".to_string(), "USB".to_string(), "CW".to_string()],
+        };
+        schema.enums.insert("Mode".to_string(), mode_enum);
+
+        let cmd = Command {
+            params: vec![("mode".to_string(), "Mode".to_string())],
+        };
+        schema.commands.insert("set_mode".to_string(), cmd);
+
+        assert!(schema.validate().is_ok());
+    }
+
+    #[test]
+    fn test_schema_with_invalid_enum_reference() {
+        let mut schema = Schema::new();
+
+        let cmd = Command {
+            params: vec![("mode".to_string(), "NonExistentEnum".to_string())],
+        };
+        schema.commands.insert("set_mode".to_string(), cmd);
+
+        assert!(schema.validate().is_err());
+    }
+
+    #[test]
+    fn test_schema_with_empty_enum() {
+        let mut schema = Schema::new();
+
+        let empty_enum = Enum { members: vec![] };
+        schema.enums.insert("EmptyEnum".to_string(), empty_enum);
+
+        let cmd = Command {
+            params: vec![("param".to_string(), "EmptyEnum".to_string())],
+        };
+        schema.commands.insert("test_cmd".to_string(), cmd);
+
+        assert!(schema.validate().is_err());
+    }
 }

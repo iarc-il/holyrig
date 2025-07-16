@@ -316,7 +316,6 @@ mod tests {
         "#;
 
         let rig_cmd: RigCommand = toml::from_str(toml_str).unwrap();
-        println!("Rig cmd: {rig_cmd:?}");
         let result = Command::try_from(rig_cmd);
 
         assert!(matches!(

@@ -109,7 +109,9 @@ impl TryFrom<&str> for BinMask {
                         current_byte = Some(digit);
                     }
                 }
-                _ => continue,
+                _ => {
+                    return Err(CommandError::InvalidMask);
+                }
             }
         }
 

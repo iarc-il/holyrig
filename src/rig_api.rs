@@ -392,7 +392,10 @@ impl RigApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rig_file::RigCommand;
+    use crate::{
+        rig_file::RigCommand,
+        schema::{Enum, Schema},
+    };
 
     fn create_test_command(has_params: bool, has_returns: bool, has_response: bool) -> RigCommand {
         let mut toml_str = String::from("command = \"00\"\n");
@@ -557,5 +560,123 @@ mod tests {
             }
             _ => panic!("Expected ConflictingStatusReturns error"),
         }
+    }
+
+    fn create_test_schema() -> Schema {
+        let mut schema = Schema::new();
+
+        // Add Mode enum
+        let mode_enum = Enum {
+            members: vec!["LSB".to_string(), "USB".to_string(), "CW".to_string()],
+        };
+        schema.enums.insert("Mode".to_string(), mode_enum);
+
+        // Add command that uses Mode enum
+        let cmd = schema::Command {
+            params: vec![("mode".to_string(), "Mode".to_string())],
+        };
+        schema.commands.insert("set_mode".to_string(), cmd);
+
+        schema
+    }
+
+    fn create_test_rig_file() -> RigFile {
+        let mut rig_file = RigFile::new();
+
+        let mode_mapping = crate::rig_file::EnumMapping {
+            values: vec![
+                ("LSB".to_string(), 0),
+                ("USB".to_string(), 1),
+                ("CW".to_string(), 2),
+            ],
+        };
+        rig_file.enums.insert("Mode".to_string(), mode_mapping);
+
+        let cmd = crate::rig_file::RigCommand {
+            command: "AA??".to_string(),
+            response: None,
+            reply_length: None,
+            reply_end: None,
+            params: {
+                let mut params = HashMap::new();
+                params.insert(
+                    "mode".to_string(),
+                    crate::rig_file::RigBinaryParam {
+                        index: 1,
+                        length: 1,
+                        format: crate::data_format::DataFormat::IntLu,
+                        multiply: 1.0,
+                        add: 0.0,
+                    },
+                );
+                params
+            },
+            returns: HashMap::new(),
+        };
+        rig_file.commands.insert("set_mode".to_string(), cmd);
+
+        rig_file
+    }
+
+    #[test]
+    fn test_enum_value_conversion() {
+        let schema = create_test_schema();
+        let rig_file = create_test_rig_file();
+
+        let rig_api = RigApi::try_from((rig_file, schema)).unwrap();
+
+        assert_eq!(rig_api.get_enum_value("Mode", "LSB"), Some(0));
+        assert_eq!(rig_api.get_enum_value("Mode", "USB"), Some(1));
+        assert_eq!(rig_api.get_enum_value("Mode", "CW"), Some(2));
+        assert_eq!(rig_api.get_enum_value("Mode", "AM"), None);
+        assert_eq!(rig_api.get_enum_value("NonExistentEnum", "LSB"), None);
+
+        assert_eq!(rig_api.get_enum_member("Mode", 0), Some("LSB".to_string()));
+        assert_eq!(rig_api.get_enum_member("Mode", 1), Some("USB".to_string()));
+        assert_eq!(rig_api.get_enum_member("Mode", 2), Some("CW".to_string()));
+        assert_eq!(rig_api.get_enum_member("Mode", 3), None);
+        assert_eq!(rig_api.get_enum_member("NonExistentEnum", 0), None);
+    }
+
+    #[test]
+    fn test_build_command_with_enum() {
+        let schema = create_test_schema();
+        let rig_file = create_test_rig_file();
+
+        let rig_api = RigApi::try_from((rig_file, schema)).unwrap();
+
+        let mut args = HashMap::new();
+        args.insert("mode".to_string(), Value::Enum("USB".to_string()));
+        let cmd = rig_api.build_command("set_mode", &args).unwrap();
+        assert_eq!(cmd, b"\xAA\x01");
+
+        let mut args = HashMap::new();
+        args.insert("mode".to_string(), Value::Enum("AM".to_string()));
+        assert!(rig_api.build_command("set_mode", &args).is_err());
+    }
+
+    #[test]
+    fn test_parse_response_with_enum() {
+        let schema = create_test_schema();
+        let rig_file = create_test_rig_file();
+
+        let rig_api = RigApi::try_from((rig_file, schema)).unwrap();
+
+        let response = b"\xaa\x02";
+        let values = rig_api
+            .parse_command_response("set_mode", response)
+            .unwrap();
+
+        match values.get("mode") {
+            Some(Value::Enum(mode)) => assert_eq!(mode, "CW"),
+            _ => panic!("Expected Enum value for mode"),
+        }
+
+        let response = b"\xaa\x03";
+        assert!(
+            rig_api
+                .parse_command_response("set_mode", response)
+                .is_err()
+        );
     }
 }
