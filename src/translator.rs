@@ -13,30 +13,65 @@ struct BinaryParamLocation {
     length: usize,
 }
 
+fn tokenize_command(command: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current_token = String::new();
+
+    for c in command.chars() {
+        match c {
+            c if c.is_ascii_hexdigit() => {
+                current_token.push(c);
+                if current_token.len() == 2 {
+                    tokens.push(current_token);
+                    current_token = String::new();
+                }
+            }
+            '.' => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token);
+                    current_token = String::new();
+                }
+                tokens.push(".".to_string());
+            }
+            _ => {
+                panic!("Unknown char {c}");
+            }
+        }
+    }
+
+    if !current_token.is_empty() {
+        tokens.push(current_token);
+    }
+
+    tokens
+}
+
 fn find_param_location(commands: &[Command]) -> Option<BinaryParamLocation> {
     if commands.len() < 2 {
         return None;
     }
 
-    let first_cmd = &commands[0].command;
-    let mut start_diff = first_cmd.len();
+    let mut first_tokens = tokenize_command(&commands[0].command);
+    first_tokens.retain(|token| token != ".");
+    let mut start_diff = first_tokens.len();
     let mut end_diff = 0;
 
     for cmd in &commands[1..] {
+        let mut tokens = tokenize_command(&cmd.command);
+        tokens.retain(|token| token != ".");
         let mut common_prefix = 0;
         let mut common_suffix = 0;
-        let cmd_str = &cmd.command;
 
-        for ((i, a), b) in first_cmd.chars().enumerate().zip(cmd_str.chars()) {
+        for (i, (a, b)) in first_tokens.iter().zip(tokens.iter()).enumerate() {
             if a != b {
                 break;
             }
             common_prefix = i + 1;
         }
 
-        let first_rev = first_cmd.chars().rev();
-        let cmd_rev = cmd_str.chars().rev();
-        for (i, (a, b)) in first_rev.zip(cmd_rev).enumerate() {
+        let first_rev: Vec<_> = first_tokens.iter().rev().collect();
+        let tokens_rev: Vec<_> = tokens.iter().rev().collect();
+        for (i, (a, b)) in first_rev.iter().zip(tokens_rev.iter()).enumerate() {
             if a != b {
                 break;
             }
@@ -48,7 +83,7 @@ fn find_param_location(commands: &[Command]) -> Option<BinaryParamLocation> {
     }
 
     let offset = start_diff;
-    let length = first_cmd.len() - start_diff - end_diff;
+    let length = first_tokens.len() - start_diff - end_diff;
 
     Some(BinaryParamLocation { offset, length })
 }
@@ -100,10 +135,29 @@ fn extract_toggle_params(cmd_name: &str, command_type: &str) -> Option<bool> {
     }
 }
 
+fn insert_question_marks(command: &str, offset: usize, length: usize) -> String {
+    let mut byte_offset = 0;
+    let mut result = vec![];
+    for token in tokenize_command(command) {
+        if token == "." {
+            result.push(token);
+            continue;
+        }
+        if byte_offset >= offset && byte_offset < offset + length {
+            result.push("??".to_string());
+        } else {
+            result.push(token);
+        }
+        byte_offset += 1;
+    }
+
+    result.join("")
+}
+
 struct CommandTranslation {
     name: String,
     mode_params: Option<(String, Option<String>)>,
-    toggle_param: Option<(String, bool)>, // (param_type, value)
+    toggle_param: Option<(String, bool)>,
 }
 
 fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
@@ -121,11 +175,11 @@ fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
         ("rit", "set_rit"),
         ("xit", "set_xit"),
     ] {
-        if let Some(value) = extract_toggle_params(&cmd.name, command_type) {
+        if let Some(toggle_value) = extract_toggle_params(&cmd.name, command_type) {
             return Ok(CommandTranslation {
                 name: schema_name.to_string(),
                 mode_params: None,
-                toggle_param: Some((command_type.to_lowercase(), value)),
+                toggle_param: Some((command_type.to_lowercase(), toggle_value)),
             });
         }
     }
@@ -193,14 +247,17 @@ fn convert_command(cmd: &Command) -> RigCommand {
         EndOfData::String(reply_end) => (None, Some(reply_end.clone())),
     };
 
+    let mut command = cmd.command.clone();
+    for param in params.values() {
+        command = insert_question_marks(&command, param.index as usize, param.length as usize);
+    }
+
     RigCommand {
-        command: cmd.command.clone(),
-        // TODO: Create the question marks from the extracted values
+        command,
         response: cmd.validate.clone(),
         reply_length,
         reply_end,
         params,
-        // TODO: Fill the real return values
         returns: HashMap::new(),
     }
 }
@@ -237,15 +294,16 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
                     add: 0,
                 };
                 command_format.params.insert("mode".to_string(), mode_param);
+                command_format.command =
+                    insert_question_marks(&command_format.command, loc.offset, loc.length);
             }
         }
 
-        if let Some((param_type, value)) = &translation.toggle_param {
+        if let Some((param_type, _toggle_value)) = &translation.toggle_param {
             if let Some(loc) = toggle_locations.get(param_type.as_str()) {
                 let toggle_param = RigBinaryParam {
                     index: loc.offset as u32,
                     length: loc.length as u32,
-                    // TODO: Use the real format
                     format: DataFormat::IntLu,
                     multiply: 1,
                     add: 0,
@@ -253,6 +311,8 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
                 command_format
                     .params
                     .insert(param_type.clone(), toggle_param);
+                command_format.command =
+                    insert_question_marks(&command_format.command, loc.offset, loc.length);
             }
         }
 
