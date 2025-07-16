@@ -40,13 +40,23 @@ pub struct RigBinaryParam {
     #[serde(deserialize_with = "deserialize_data_format")]
     pub format: DataFormat,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_default_add")]
     pub add: f64,
     #[serde(default = "default_multiply")]
+    #[serde(skip_serializing_if = "is_default_multiply")]
     pub multiply: f64,
 }
 
 fn default_multiply() -> f64 {
     1.0
+}
+
+fn is_default_multiply(value: &f64) -> bool {
+    (*value - 1.0).abs() < f64::EPSILON
+}
+
+fn is_default_add(value: &f64) -> bool {
+    value.abs() < f64::EPSILON
 }
 
 impl TryFrom<RigCommand> for Command {
