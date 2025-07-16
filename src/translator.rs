@@ -126,12 +126,15 @@ fn extract_mode_params(cmd_name: &str) -> Option<(String, Option<String>)> {
     }
 }
 
-fn extract_toggle_params(cmd_name: &str, command_type: &str) -> Option<bool> {
-    let prefix = format!("pm{command_type}");
-    match cmd_name {
-        name if name == format!("{prefix}on") => Some(true),
-        name if name == format!("{prefix}off") => Some(false),
-        _ => None,
+fn extract_toggle_params(name: &str, command_type: &str) -> Option<bool> {
+    let prefix = format!("pm{}", command_type.to_lowercase());
+    let name = name.to_lowercase();
+    if name.to_lowercase() == format!("{prefix}on") {
+        Some(true)
+    } else if name.to_lowercase() == format!("{prefix}off") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -184,7 +187,7 @@ fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
         }
     }
 
-    let name = match cmd.name.as_str() {
+    let name = match cmd.name.to_lowercase().as_str() {
         "pmfreq" | "pmfreqa" | "pmfreqb" => "set_freq",
         "pmpitch" => "cw_pitch",
         "pmritoffset" => "rit_offset",
