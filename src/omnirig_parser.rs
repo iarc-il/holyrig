@@ -9,6 +9,13 @@ pub enum EndOfData {
 }
 
 #[derive(Debug, Clone)]
+pub struct Flag {
+    pub mask: String,
+    pub bits: String,
+    pub param: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Command {
     pub name: String,
     pub command: String,
@@ -16,7 +23,7 @@ pub struct Command {
     pub validate: Option<String>,
     pub value: Option<String>,
     pub values: Vec<String>,
-    pub flags: Vec<String>,
+    pub flags: Vec<Flag>,
 }
 
 impl Command {
@@ -93,7 +100,6 @@ pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
             flags: vec![],
         };
 
-        let mut flags = vec![];
         let mut values = vec![];
 
         for (key, value) in prop.iter() {
@@ -107,25 +113,29 @@ pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
                     values.push((index, value));
                 }
             } else if let Some(index) = key.strip_prefix("flag") {
-                if let Ok(index) = index.parse::<u8>() {
-                    flags.push((index, value));
+                if let Ok(_index) = index.parse::<u8>() {
+                    // Flag format: mask|bits|param or mask|bits|param|param2
+                    let parts: Vec<&str> = value.split('|').collect();
+                    if parts.len() >= 3 {
+                        let mask = parts[0].to_string();
+                        let bits = parts[1].to_string();
+                        let param = parts[2].to_string();
+                        command.flags.push(Flag { mask, bits, param });
+                    }
                 }
             }
         }
 
-        flags.sort();
-        values.sort();
-
-        command.flags = flags.into_iter().map(|(_, value)| value).collect();
+        values.sort_by_key(|(index, _)| *index);
         command.values = values.into_iter().map(|(_, value)| value).collect();
 
-        if section.to_uppercase().starts_with("INIT") {
+        if section.to_lowercase().starts_with("init") {
             rig_description.init_commands.push(command);
-        } else if section.to_uppercase().starts_with("STATUS") {
+        } else if section.to_lowercase().starts_with("status") {
             rig_description.status_commands.push(command);
         } else {
             rig_description.param_commands.push(command);
-        };
+        }
     }
 
     Ok(rig_description)
