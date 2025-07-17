@@ -189,16 +189,22 @@ impl BinMask {
         }
 
         for &(mask_start, mask_len) in &self.masks {
-            let mut is_covered = false;
+            let mut covered_regions = vec![false; mask_len];
 
             for &(param_start, param_len) in &param_regions {
-                if param_start <= mask_start && param_start + param_len >= mask_start + mask_len {
-                    is_covered = true;
-                    break;
+                if param_start + param_len <= mask_start || param_start >= mask_start + mask_len {
+                    continue;
                 }
+
+                let overlap_start = param_start.max(mask_start) - mask_start;
+                let overlap_end = (param_start + param_len).min(mask_start + mask_len) - mask_start;
+
+                (overlap_start..overlap_end).for_each(|i| {
+                    covered_regions[i] = true;
+                });
             }
 
-            if !is_covered {
+            if covered_regions.iter().any(|&covered| !covered) {
                 return Err(CommandError::UncoveredMask);
             }
         }
