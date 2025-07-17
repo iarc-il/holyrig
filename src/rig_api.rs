@@ -40,6 +40,10 @@ pub enum RigApiError {
         index2: usize,
         return_name: String,
     },
+    InvalidEnumValue {
+        enum_name: String,
+        value: i64,
+    },
 }
 
 impl std::fmt::Display for RigApiError {
@@ -71,6 +75,9 @@ impl std::fmt::Display for RigApiError {
                     f,
                     "Status command at index {index1} has return value '{return_name}' that conflicts with command at index {index2}"
                 )
+            }
+            RigApiError::InvalidEnumValue { enum_name, value } => {
+                write!(f, "Invalid enum value {value} of enum '{enum_name}'")
             }
         }
     }
@@ -120,26 +127,31 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
         let mut reverse_enum_mappings = HashMap::new();
 
         for (enum_name, mapping) in rig_file.enums {
-            let mut forward_map = HashMap::new();
+            let mut value_map = HashMap::new();
             let mut reverse_map = HashMap::new();
-
             for (member, value) in mapping.values {
-                forward_map.insert(member.clone(), value);
+                value_map.insert(member.clone(), value);
                 reverse_map.insert(value, member);
             }
-
-            enum_mappings.insert(enum_name.clone(), forward_map);
+            enum_mappings.insert(enum_name.clone(), value_map);
             reverse_enum_mappings.insert(enum_name, reverse_map);
         }
 
         let mut command_param_types = HashMap::new();
+        let mut command_return_types = HashMap::new();
 
         for (cmd_name, cmd) in &schema.commands {
             let mut param_types = HashMap::new();
-            for (param_name, param_type) in &cmd.params {
-                param_types.insert(param_name.clone(), param_type.clone());
+            for (param_name, type_name) in &cmd.params {
+                param_types.insert(param_name.clone(), type_name.clone());
             }
             command_param_types.insert(cmd_name.clone(), param_types);
+
+            let mut return_types = HashMap::new();
+            for (return_name, type_name) in &cmd.returns {
+                return_types.insert(return_name.clone(), type_name.clone());
+            }
+            command_return_types.insert(cmd_name.clone(), return_types);
         }
 
         let api = Self {
@@ -149,12 +161,9 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
             enum_mappings,
             reverse_enum_mappings,
             command_param_types,
-            // For now, return types are not defined in the schema
-            // This would need to be updated when schema supports return types
-            command_return_types: HashMap::new(),
+            command_return_types,
         };
 
-        api.validate()?;
         Ok(api)
     }
 }
@@ -280,16 +289,23 @@ impl RigApi {
         let mut converted_values = HashMap::new();
         for (name, value) in raw_values {
             match value {
-                Value::Int(int_value) => {
-                    if let Some(enum_name) = self.get_enum_type_for_return(command_name, &name) {
-                        if let Some(member) = self.get_enum_member(&enum_name, int_value as i32) {
-                            converted_values.insert(name, Value::Enum(member));
-                        } else {
-                            converted_values.insert(name, Value::Int(int_value));
+                Value::Int(v) => {
+                    if let Some(return_types) = self.command_return_types.get(command_name) {
+                        if let Some(type_name) = return_types.get(&name) {
+                            if let Some(enum_map) = self.reverse_enum_mappings.get(type_name) {
+                                if let Some(enum_value) = enum_map.get(&(v as i32)) {
+                                    converted_values.insert(name, Value::Enum(enum_value.clone()));
+                                    continue;
+                                } else {
+                                    return Err(RigApiError::InvalidEnumValue {
+                                        enum_name: type_name.clone(),
+                                        value: v,
+                                    });
+                                }
+                            }
                         }
-                    } else {
-                        converted_values.insert(name, Value::Int(int_value));
                     }
+                    converted_values.insert(name, value);
                 }
                 _ => {
                     converted_values.insert(name, value);
@@ -565,17 +581,21 @@ mod tests {
     fn create_test_schema() -> Schema {
         let mut schema = Schema::new();
 
-        // Add Mode enum
         let mode_enum = Enum {
             members: vec!["LSB".to_string(), "USB".to_string(), "CW".to_string()],
         };
         schema.enums.insert("Mode".to_string(), mode_enum);
 
-        // Add command that uses Mode enum
-        let cmd = schema::Command {
+        let set_mode_cmd = schema::Command {
             params: vec![("mode".to_string(), "Mode".to_string())],
+            returns: vec![],
         };
-        schema.commands.insert("set_mode".to_string(), cmd);
+        let get_mode_cmd = schema::Command {
+            params: vec![],
+            returns: vec![("mode".to_string(), "Mode".to_string())],
+        };
+        schema.commands.insert("set_mode".to_string(), set_mode_cmd);
+        schema.commands.insert("get_mode".to_string(), get_mode_cmd);
 
         schema
     }
@@ -592,7 +612,7 @@ mod tests {
         };
         rig_file.enums.insert("Mode".to_string(), mode_mapping);
 
-        let cmd = crate::rig_file::RigCommand {
+        let set_mode_cmd = crate::rig_file::RigCommand {
             command: "AA??".to_string(),
             response: None,
             reply_length: None,
@@ -613,7 +633,33 @@ mod tests {
             },
             returns: HashMap::new(),
         };
-        rig_file.commands.insert("set_mode".to_string(), cmd);
+        let get_mode_cmd = crate::rig_file::RigCommand {
+            command: "AABB".to_string(),
+            response: Some("AA??".to_string()),
+            reply_length: Some(2),
+            reply_end: None,
+            params: HashMap::new(),
+            returns: {
+                let mut returns = HashMap::new();
+                returns.insert(
+                    "mode".to_string(),
+                    crate::rig_file::RigBinaryParam {
+                        index: 1,
+                        length: 1,
+                        format: crate::data_format::DataFormat::IntLu,
+                        multiply: 1.0,
+                        add: 0.0,
+                    },
+                );
+                returns
+            },
+        };
+        rig_file
+            .commands
+            .insert("set_mode".to_string(), set_mode_cmd);
+        rig_file
+            .commands
+            .insert("get_mode".to_string(), get_mode_cmd);
 
         rig_file
     }
@@ -664,19 +710,16 @@ mod tests {
 
         let response = b"\xaa\x02";
         let values = rig_api
-            .parse_command_response("set_mode", response)
+            .parse_command_response("get_mode", response)
             .unwrap();
 
         match values.get("mode") {
             Some(Value::Enum(mode)) => assert_eq!(mode, "CW"),
-            _ => panic!("Expected Enum value for mode"),
+            other => panic!("Expected Enum value for mode, got {other:?}"),
         }
 
         let response = b"\xaa\x03";
-        assert!(
-            rig_api
-                .parse_command_response("set_mode", response)
-                .is_err()
-        );
+        let parsed_response = rig_api.parse_command_response("get_mode", response);
+        assert!(parsed_response.is_err());
     }
 }

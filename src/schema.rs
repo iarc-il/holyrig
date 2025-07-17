@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 
@@ -22,6 +23,10 @@ pub enum SchemaError {
     DuplicateParameter {
         command: String,
         param: String,
+    },
+    DuplicateReturn {
+        command: String,
+        return_name: String,
     },
 }
 
@@ -59,6 +64,15 @@ impl fmt::Display for SchemaError {
             SchemaError::DuplicateParameter { command, param } => {
                 write!(f, "Duplicate parameter name {param} in command {command}")
             }
+            SchemaError::DuplicateReturn {
+                command,
+                return_name,
+            } => {
+                write!(
+                    f,
+                    "Duplicate return value {return_name} in command {command}"
+                )
+            }
         }
     }
 }
@@ -90,6 +104,8 @@ pub struct Enum {
 pub struct Command {
     #[serde(default)]
     pub params: Vec<(String, String)>,
+    #[serde(default)]
+    pub returns: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -152,27 +168,38 @@ impl Schema {
         }
 
         for (cmd_name, cmd) in &self.commands {
-            for (param_name, param_type) in &cmd.params {
-                match param_type.as_str() {
-                    "int" | "bool" => {}
-                    type_name => {
-                        if !self.enums.contains_key(type_name) {
-                            return Err(SchemaError::UndefinedType {
-                                command: cmd_name.clone(),
-                                param: param_name.clone(),
-                                type_name: type_name.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-
-            let mut seen = std::collections::HashSet::new();
-            for (param_name, _) in &cmd.params {
-                if !seen.insert(param_name) {
+            let mut seen_params = HashSet::new();
+            for (param_name, type_name) in &cmd.params {
+                if !seen_params.insert(param_name) {
                     return Err(SchemaError::DuplicateParameter {
                         command: cmd_name.clone(),
                         param: param_name.clone(),
+                    });
+                }
+                if type_name != "int" && type_name != "bool" && !self.enums.contains_key(type_name)
+                {
+                    return Err(SchemaError::UndefinedType {
+                        command: cmd_name.clone(),
+                        param: param_name.clone(),
+                        type_name: type_name.clone(),
+                    });
+                }
+            }
+
+            let mut seen_returns = HashSet::new();
+            for (return_name, type_name) in &cmd.returns {
+                if !seen_returns.insert(return_name) {
+                    return Err(SchemaError::DuplicateReturn {
+                        command: cmd_name.clone(),
+                        return_name: return_name.clone(),
+                    });
+                }
+                if type_name != "int" && type_name != "bool" && !self.enums.contains_key(type_name)
+                {
+                    return Err(SchemaError::UndefinedType {
+                        command: cmd_name.clone(),
+                        param: return_name.clone(),
+                        type_name: type_name.clone(),
                     });
                 }
             }
@@ -351,6 +378,7 @@ mod tests {
 
         let cmd = Command {
             params: vec![("mode".to_string(), "Mode".to_string())],
+            returns: vec![],
         };
         schema.commands.insert("set_mode".to_string(), cmd);
 
@@ -363,6 +391,7 @@ mod tests {
 
         let cmd = Command {
             params: vec![("mode".to_string(), "NonExistentEnum".to_string())],
+            returns: vec![],
         };
         schema.commands.insert("set_mode".to_string(), cmd);
 
@@ -378,6 +407,23 @@ mod tests {
 
         let cmd = Command {
             params: vec![("param".to_string(), "EmptyEnum".to_string())],
+            returns: vec![],
+        };
+        schema.commands.insert("test_cmd".to_string(), cmd);
+
+        assert!(schema.validate().is_err());
+    }
+
+    #[test]
+    fn test_duplicate_return_value() {
+        let mut schema = Schema::new();
+
+        let cmd = Command {
+            params: vec![("param".to_string(), "int".to_string())],
+            returns: vec![
+                ("result".to_string(), "int".to_string()),
+                ("result".to_string(), "int".to_string()),
+            ],
         };
         schema.commands.insert("test_cmd".to_string(), cmd);
 
