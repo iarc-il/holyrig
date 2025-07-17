@@ -219,10 +219,12 @@ fn convert_command(cmd: &Command) -> RigCommand {
             let format = match parts[2] {
                 "vfBcdLU" => DataFormat::BcdLu,
                 "vfBcdLS" => DataFormat::BcdLs,
+                "vfBcdBU" => DataFormat::BcdBu,
+                "vfBcdBS" => DataFormat::BcdBs,
                 "vfBinL" => DataFormat::IntLu,
                 "vfBinB" => DataFormat::IntBu,
                 "vfText" => DataFormat::Text,
-                _ => DataFormat::Text,
+                data_format => panic!("Unknown data format: {data_format}"),
             };
             let multiply = if parts.len() > 3 {
                 parts[3].parse().unwrap_or(1.0)
