@@ -12,14 +12,14 @@ members = [
 
 [enums.mode]
 members = [
-    "CWU",
-    "CWL",
-    "USB",
-    "LSB",
-    "DIGIU",
-    "DIGIL",
-    "AM",
-    "FM",
+    "CWU",    # pmCW_U
+    "CWL",    # pmCW_L
+    "USB",    # pmSSB_U
+    "LSB",    # pmSSB_L
+    "DIGIU",  # pmDIG_U
+    "DIGIL",  # pmDIG_L
+    "AM",     # pmAM
+    "FM",     # pmFM
 ]
 
 # pmFreq, pmFreqA, pmFreqB
