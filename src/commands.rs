@@ -79,48 +79,46 @@ impl TryFrom<&str> for BinMask {
             masks: vec![],
         };
 
-        let mut current_byte: Option<u8> = None;
-        let mut placeholder_count = 0;
-        let mut index = 0;
+        let chunks = value
+            .chars()
+            .filter_map(|c| {
+                if c == '.' {
+                    None
+                } else if c.is_ascii_hexdigit() || c == '?' {
+                    Some(Ok(c))
+                } else {
+                    Some(Err(CommandError::InvalidMask))
+                }
+            })
+            .collect::<Result<Vec<_>, CommandError>>()?
+            .chunk_by(|c1, c2| c1.is_ascii_hexdigit() == c2.is_ascii_hexdigit())
+            .map(Vec::from)
+            .collect::<Vec<_>>();
 
-        for c in value.chars().filter(|c| !c.is_whitespace() && *c != '.') {
-            match c {
-                '?' => {
-                    if current_byte.is_some() {
-                        return Err(CommandError::OddMaskLength);
-                    }
-                    placeholder_count += 1;
-                    if placeholder_count == 2 {
-                        result.data.push(0);
-                        result.masks.push((index, 1));
-                        index += 1;
-                        placeholder_count = 0;
-                    }
+        let mut current_index = 0;
+        for chunk in chunks {
+            let length = chunk.len() / 2;
+            if chunk[0].is_ascii_hexdigit() {
+                if !chunk.len().is_multiple_of(2) {
+                    return Err(CommandError::OddMaskLength);
                 }
-                '0'..='9' | 'a'..='f' | 'A'..='F' => {
-                    if placeholder_count > 0 {
-                        return Err(CommandError::OddPlaceholdersLength);
-                    }
-                    let digit = c.to_digit(16).unwrap() as u8;
-                    if let Some(high) = current_byte.take() {
-                        result.data.push((high << 4) | digit);
-                        index += 1;
-                    } else {
-                        current_byte = Some(digit);
-                    }
+                let data = chunk.chunks_exact(2).map(|pair| {
+                    let &[c1, c2] = pair else {
+                        panic!();
+                    };
+                    let high_digit = c1.to_digit(16).unwrap() as u8;
+                    let low_digit = c2.to_digit(16).unwrap() as u8;
+                    (high_digit << 4) | low_digit
+                });
+                result.data.extend(data);
+            } else {
+                if !chunk.len().is_multiple_of(2) {
+                    return Err(CommandError::OddPlaceholdersLength);
                 }
-                _ => {
-                    return Err(CommandError::InvalidMask);
-                }
+                result.data.extend([0].repeat(length));
+                result.masks.push((current_index, length));
             }
-        }
-
-        if placeholder_count > 0 {
-            return Err(CommandError::OddPlaceholdersLength);
-        }
-
-        if current_byte.is_some() {
-            return Err(CommandError::OddMaskLength);
+            current_index += length;
         }
 
         Ok(result)
