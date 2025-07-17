@@ -670,13 +670,17 @@ mod tests {
 
         assert!(matches!(
             cmd.build_command(&args),
-            Err(CommandError::InvalidArgumentValue(_))
+            Err(CommandError::DataFormat(
+                DataFormatError::NegativeNotSupported { .. }
+            ))
         ));
 
         args.insert("freq".to_string(), Value::Int(100));
         assert!(matches!(
             cmd.build_command(&args),
-            Err(CommandError::InvalidArgumentValue(_))
+            Err(CommandError::DataFormat(
+                DataFormatError::NumberTooLong { .. }
+            ))
         ));
     }
 
