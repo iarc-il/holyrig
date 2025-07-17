@@ -164,6 +164,8 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
             command_return_types,
         };
 
+        api.validate()?;
+
         Ok(api)
     }
 }
