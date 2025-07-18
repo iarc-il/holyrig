@@ -122,7 +122,7 @@ impl TryFrom<RigCommand> for Command {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EnumMapping {
-    pub values: Vec<(String, i32)>, // (enum_member, value) pairs
+    pub values: Vec<(String, i32)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

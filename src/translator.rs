@@ -3,7 +3,7 @@ use anyhow::{Result, bail};
 use crate::{
     data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
-    rig_file::{RigBinaryParam, RigCommand, RigFile},
+    rig_file::{EnumMapping, RigBinaryParam, RigCommand, RigFile},
 };
 use std::collections::HashMap;
 
@@ -111,19 +111,51 @@ fn find_toggle_param_location(
     find_param_location(&toggle_commands)
 }
 
-fn extract_mode_params(cmd_name: &str) -> Option<(String, Option<String>)> {
+fn extract_mode_params(cmd_name: &str) -> Option<String> {
     let name = cmd_name.strip_prefix("pm")?;
-    match name.to_uppercase().as_str() {
-        "CW_U" => Some(("CW".to_string(), Some("Upper".to_string()))),
-        "CW_L" => Some(("CW".to_string(), Some("Lower".to_string()))),
-        "SSB_U" => Some(("SSB".to_string(), Some("Upper".to_string()))),
-        "SSB_L" => Some(("SSB".to_string(), Some("Lower".to_string()))),
-        "DIG_U" => Some(("DIG".to_string(), Some("Upper".to_string()))),
-        "DIG_L" => Some(("DIG".to_string(), Some("Lower".to_string()))),
-        "AM" => Some(("AM".to_string(), None)),
-        "FM" => Some(("FM".to_string(), None)),
-        _ => None,
+    let result = match name.to_uppercase().as_str() {
+        "CW_U" => "CWU",
+        "CW_L" => "CWL",
+        "SSB_U" => "USB",
+        "SSB_L" => "LSB",
+        "DIG_U" => "DIGIU",
+        "DIG_L" => "DIGIL",
+        "AM" => "AM",
+        "FM" => "FM",
+        _ => {
+            return None;
+        }
+    };
+    Some(result.to_string())
+}
+
+fn find_mode_values(
+    commands: &[Command],
+    location: &BinaryParamLocation,
+) -> Result<HashMap<String, i32>> {
+    let mut mode_values = HashMap::new();
+
+    for cmd in commands {
+        if let Some(mode_name) = extract_mode_params(&cmd.name) {
+            let tokens = tokenize_command(&cmd.command);
+            let mut byte_offset = 0;
+
+            for token in tokens {
+                if token == "." {
+                    continue;
+                }
+                if byte_offset == location.offset {
+                    if let Ok(value) = u8::from_str_radix(&token, 16) {
+                        mode_values.insert(mode_name, value as i32);
+                    }
+                    break;
+                }
+                byte_offset += 1;
+            }
+        }
     }
+
+    Ok(mode_values)
 }
 
 fn extract_toggle_params(name: &str, command_type: &str) -> Option<bool> {
@@ -159,7 +191,7 @@ fn insert_question_marks(command: &str, offset: usize, length: usize) -> String 
 
 struct CommandTranslation {
     name: String,
-    mode_params: Option<(String, Option<String>)>,
+    mode_params: Option<String>,
     toggle_param: Option<(String, bool)>,
 }
 
@@ -335,7 +367,17 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
 
     let mode_param_location = find_mode_param_location(&omnirig.param_commands);
 
-    // Find parameter locations for all toggle commands
+    if let Some(location) = &mode_param_location {
+        let mode_values = find_mode_values(&omnirig.param_commands, location)?;
+
+        if !mode_values.is_empty() {
+            let mode_mapping = EnumMapping {
+                values: mode_values.into_iter().collect(),
+            };
+            rig_file.enums.insert("mode".to_string(), mode_mapping);
+        }
+    }
+
     let toggle_locations: HashMap<_, _> = ["split", "rit", "xit"]
         .iter()
         .filter_map(|&cmd_type| {
