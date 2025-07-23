@@ -1,5 +1,5 @@
 [general]
-rig_type = "tranceiver"
+rig_type = "transceiver"
 version = 1
 
 [enums.vfo]

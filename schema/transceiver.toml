@@ -1,5 +1,5 @@
 [general]
-rig_type = "tranceiver"
+rig_type = "transceiver"
 version = 1
 
 [enums.vfo]
@@ -72,7 +72,7 @@ params = [
 # pmXitOn, pmXitOff
 [commands.set_xit]
 params = [
-    ["rit", "bool"]
+    ["xit", "bool"]
 ]
 
 # What are enable RX/TX?
