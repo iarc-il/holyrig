@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 
+use crate::commands::Value;
+
 #[derive(Debug)]
 pub enum SchemaError {
     Io(std::io::Error),
@@ -100,12 +102,43 @@ pub struct Enum {
     pub members: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum ValueType {
+    Int,
+    Bool,
+    Enum(String),
+}
+
+impl ValueType {
+    pub fn build_value(&self, value: &str) -> Value {
+        match self {
+            ValueType::Int => Value::Int(value.parse().unwrap()),
+            ValueType::Bool => Value::Bool(value.parse().unwrap()),
+            ValueType::Enum(_) => Value::Enum(value.to_string()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ValueType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw_value = String::deserialize(deserializer)?;
+        match raw_value.as_str() {
+            "int" => Ok(ValueType::Int),
+            "bool" => Ok(ValueType::Bool),
+            other => Ok(ValueType::Enum(other.to_string())),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Command {
     #[serde(default)]
-    pub params: Vec<(String, String)>,
+    pub params: Vec<(String, ValueType)>,
     #[serde(default)]
-    pub returns: Vec<(String, String)>,
+    pub returns: Vec<(String, ValueType)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,7 +209,8 @@ impl Schema {
                         param: param_name.clone(),
                     });
                 }
-                if type_name != "int" && type_name != "bool" && !self.enums.contains_key(type_name)
+                if let ValueType::Enum(type_name) = &type_name
+                    && !self.enums.contains_key(type_name)
                 {
                     return Err(SchemaError::UndefinedType {
                         command: cmd_name.clone(),
@@ -194,7 +228,8 @@ impl Schema {
                         return_name: return_name.clone(),
                     });
                 }
-                if type_name != "int" && type_name != "bool" && !self.enums.contains_key(type_name)
+                if let ValueType::Enum(type_name) = &type_name
+                    && !self.enums.contains_key(type_name)
                 {
                     return Err(SchemaError::UndefinedType {
                         command: cmd_name.clone(),
@@ -377,7 +412,7 @@ mod tests {
         schema.enums.insert("Mode".to_string(), mode_enum);
 
         let cmd = Command {
-            params: vec![("mode".to_string(), "Mode".to_string())],
+            params: vec![("mode".to_string(), ValueType::Enum("Mode".to_string()))],
             returns: vec![],
         };
         schema.commands.insert("set_mode".to_string(), cmd);
@@ -390,7 +425,10 @@ mod tests {
         let mut schema = Schema::new();
 
         let cmd = Command {
-            params: vec![("mode".to_string(), "NonExistentEnum".to_string())],
+            params: vec![(
+                "mode".to_string(),
+                ValueType::Enum("NonExistentEnum".to_string()),
+            )],
             returns: vec![],
         };
         schema.commands.insert("set_mode".to_string(), cmd);
@@ -406,7 +444,10 @@ mod tests {
         schema.enums.insert("EmptyEnum".to_string(), empty_enum);
 
         let cmd = Command {
-            params: vec![("param".to_string(), "EmptyEnum".to_string())],
+            params: vec![(
+                "param".to_string(),
+                ValueType::Enum("EmptyEnum".to_string()),
+            )],
             returns: vec![],
         };
         schema.commands.insert("test_cmd".to_string(), cmd);
@@ -419,10 +460,10 @@ mod tests {
         let mut schema = Schema::new();
 
         let cmd = Command {
-            params: vec![("param".to_string(), "int".to_string())],
+            params: vec![("param".to_string(), ValueType::Int)],
             returns: vec![
-                ("result".to_string(), "int".to_string()),
-                ("result".to_string(), "int".to_string()),
+                ("result".to_string(), ValueType::Int),
+                ("result".to_string(), ValueType::Int),
             ],
         };
         schema.commands.insert("test_cmd".to_string(), cmd);

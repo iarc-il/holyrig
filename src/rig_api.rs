@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     commands::{Command, CommandError, Value},
     rig_file::RigFile,
-    schema,
+    schema::{self, ValueType},
 };
 
 #[derive(Debug)]
@@ -98,8 +98,8 @@ pub struct RigApi {
     status_commands: Vec<Command>,
     enum_mappings: HashMap<String, HashMap<String, i32>>,
     reverse_enum_mappings: HashMap<String, HashMap<i32, String>>,
-    command_param_types: HashMap<String, HashMap<String, String>>,
-    command_return_types: HashMap<String, HashMap<String, String>>,
+    command_param_types: HashMap<String, HashMap<String, ValueType>>,
+    command_return_types: HashMap<String, HashMap<String, ValueType>>,
 }
 
 impl TryFrom<(RigFile, schema::Schema)> for RigApi {
@@ -141,17 +141,8 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
         let mut command_return_types = HashMap::new();
 
         for (cmd_name, cmd) in &schema.commands {
-            let mut param_types = HashMap::new();
-            for (param_name, type_name) in &cmd.params {
-                param_types.insert(param_name.clone(), type_name.clone());
-            }
-            command_param_types.insert(cmd_name.clone(), param_types);
-
-            let mut return_types = HashMap::new();
-            for (return_name, type_name) in &cmd.returns {
-                return_types.insert(return_name.clone(), type_name.clone());
-            }
-            command_return_types.insert(cmd_name.clone(), return_types);
+            command_param_types.insert(cmd_name.clone(), cmd.params.iter().cloned().collect());
+            command_return_types.insert(cmd_name.clone(), cmd.returns.iter().cloned().collect());
         }
 
         let api = Self {
@@ -290,28 +281,34 @@ impl RigApi {
 
         let mut converted_values = HashMap::new();
         for (name, value) in raw_values {
-            match value {
-                Value::Int(v) => {
-                    if let Some(return_types) = self.command_return_types.get(command_name) {
-                        if let Some(type_name) = return_types.get(&name) {
-                            if let Some(enum_map) = self.reverse_enum_mappings.get(type_name) {
-                                if let Some(enum_value) = enum_map.get(&(v as i32)) {
+            if let Some(return_types) = self.command_return_types.get(command_name) {
+                if let Some(type_name) = return_types.get(&name) {
+                    match type_name {
+                        ValueType::Int => {
+                            converted_values.insert(name, Value::Int(value));
+                        }
+                        ValueType::Bool => {
+                            let value = value != 0;
+                            converted_values.insert(name, Value::Bool(value));
+                        }
+                        ValueType::Enum(enum_name) => {
+                            if let Some(enum_map) = self.reverse_enum_mappings.get(enum_name) {
+                                if let Some(enum_value) = enum_map.get(&(value as i32)) {
                                     converted_values.insert(name, Value::Enum(enum_value.clone()));
                                     continue;
                                 } else {
                                     return Err(RigApiError::InvalidEnumValue {
-                                        enum_name: type_name.clone(),
-                                        value: v,
+                                        enum_name: enum_name.clone(),
+                                        value,
                                     });
                                 }
                             }
                         }
                     }
-                    converted_values.insert(name, value);
                 }
-                _ => {
-                    converted_values.insert(name, value);
-                }
+            } else {
+                // Already checked at the begining of the function
+                panic!();
             }
         }
 
@@ -385,8 +382,10 @@ impl RigApi {
             .get(command_name)
             .and_then(|params| params.get(param_name))
             .and_then(|type_name| {
-                if self.enum_mappings.contains_key(type_name) {
-                    Some(type_name.clone())
+                if let ValueType::Enum(enum_name) = type_name
+                    && self.enum_mappings.contains_key(enum_name)
+                {
+                    Some(enum_name.clone())
                 } else {
                     None
                 }
@@ -398,8 +397,10 @@ impl RigApi {
             .get(command_name)
             .and_then(|returns| returns.get(return_name))
             .and_then(|type_name| {
-                if self.enum_mappings.contains_key(type_name) {
-                    Some(type_name.clone())
+                if let ValueType::Enum(enum_name) = type_name
+                    && self.enum_mappings.contains_key(enum_name)
+                {
+                    Some(enum_name.clone())
                 } else {
                     None
                 }
@@ -588,13 +589,14 @@ mod tests {
         };
         schema.enums.insert("Mode".to_string(), mode_enum);
 
+        let mode_value_type = ValueType::Enum("Mode".to_string());
         let set_mode_cmd = schema::Command {
-            params: vec![("mode".to_string(), "Mode".to_string())],
+            params: vec![("mode".to_string(), mode_value_type.clone())],
             returns: vec![],
         };
         let get_mode_cmd = schema::Command {
             params: vec![],
-            returns: vec![("mode".to_string(), "Mode".to_string())],
+            returns: vec![("mode".to_string(), mode_value_type)],
         };
         schema.commands.insert("set_mode".to_string(), set_mode_cmd);
         schema.commands.insert("get_mode".to_string(), get_mode_cmd);

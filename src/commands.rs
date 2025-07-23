@@ -274,7 +274,7 @@ impl Command {
         Ok(())
     }
 
-    pub fn parse_response(&self, response: &[u8]) -> Result<HashMap<String, Value>, CommandError> {
+    pub fn parse_response(&self, response: &[u8]) -> Result<HashMap<String, i64>, CommandError> {
         let mut result = HashMap::new();
 
         let response_mask = match &self.response {
@@ -297,8 +297,7 @@ impl Command {
             let transformed_value =
                 ((raw_value as f64 - param.add) / param.multiply).round() as i64;
 
-            // For now, we return all values as Int - RigApi will convert to Enum if needed
-            result.insert(key.clone(), Value::Int(transformed_value));
+            result.insert(key.clone(), transformed_value);
         }
 
         Ok(result)
@@ -756,7 +755,7 @@ mod tests {
         let result = command.parse_response(&response)?;
 
         assert_eq!(result.len(), 1);
-        assert!(matches!(result.get("value"), Some(Value::Int(20))));
+        assert!(matches!(result.get("value"), Some(20)));
         Ok(())
     }
 
@@ -803,8 +802,8 @@ mod tests {
         let result = command.parse_response(&response)?;
 
         assert_eq!(result.len(), 2);
-        assert!(matches!(result.get("first"), Some(Value::Int(258))));
-        assert!(matches!(result.get("second"), Some(Value::Int(772))));
+        assert!(matches!(result.get("first"), Some(258)));
+        assert!(matches!(result.get("second"), Some(772)));
         Ok(())
     }
 
@@ -1015,7 +1014,7 @@ mod tests {
         let result = command.parse_response(&response)?;
 
         assert_eq!(result.len(), 1);
-        assert!(matches!(result.get("value"), Some(Value::Int(16))));
+        assert!(matches!(result.get("value"), Some(16)));
         Ok(())
     }
 }
