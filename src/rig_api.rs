@@ -327,20 +327,6 @@ impl RigApi {
             .collect()
     }
 
-    pub fn parse_status_response(
-        &self,
-        command_index: usize,
-        response: &[u8],
-    ) -> Result<HashMap<String, Value>, RigApiError> {
-        let command =
-            self.status_commands
-                .get(command_index)
-                .ok_or(RigApiError::CommandNotFound(CommandType::Status(
-                    command_index,
-                )))?;
-        command.parse_response(response).map_err(RigApiError::from)
-    }
-
     pub fn get_init_response_length(
         &self,
         command_index: usize,
