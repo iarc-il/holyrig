@@ -1,13 +1,11 @@
 use crate::{
-    rig::{BaudRate, DataBits, StopBits},
+    rig::{BaudRate, DataBits, RigSettings, StopBits},
     serial::ManagerCommand,
 };
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use tokio::sync::mpsc::{Receiver, Sender};
-
-use crate::rig::RigSettings;
 
 pub enum GuiMessage {}
 
@@ -16,6 +14,7 @@ struct AppTabViewer {
     add_tab_request: bool,
     rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
+    error_message: Option<String>,
 }
 
 impl AppTabViewer {
@@ -25,6 +24,7 @@ impl AppTabViewer {
             add_tab_request: false,
             rig_types,
             sender,
+            error_message: None,
         }
     }
 }
@@ -39,10 +39,15 @@ impl TabViewer for AppTabViewer {
 
     fn ui(&mut self, ui: &mut egui::Ui, rig: &mut Self::Tab) {
         ui.group(|ui| {
+            if let Some(error) = &self.error_message {
+                ui.colored_label(egui::Color32::RED, error);
+                ui.separator();
+            }
+
             ui.style_mut().spacing.combo_width *= 0.75;
 
             Grid::new("rig_settings").num_columns(2).show(ui, |ui| {
-                ui.label("RigSettings type:");
+                ui.label("Rig type:");
                 ComboBox::from_id_salt("rig_type")
                     .selected_text(rig.rig_type.to_string())
                     .show_ui(ui, |ui| {
@@ -131,11 +136,13 @@ impl TabViewer for AppTabViewer {
                             });
                         }
                         Err(err) => {
-                            println!("{err}");
+                            self.error_message = Some(err);
                         }
                     }
                 }
-                if ui.button("Cancel").clicked() {}
+                if ui.button("Cancel").clicked() {
+                    self.error_message = None;
+                }
             });
         });
     }
