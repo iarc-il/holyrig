@@ -1,5 +1,6 @@
 use anyhow::Result;
 use eframe::egui;
+use schema::Schema;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -21,10 +22,11 @@ use rig_api::RigApi;
 use rig_file::RigFile;
 use serial::manager::DeviceManager;
 
-fn load_rig_files<P: AsRef<Path>>(dir_path: P) -> Result<Arc<HashMap<String, RigApi>>> {
+fn load_rig_files<P: AsRef<Path>>(
+    dir_path: P,
+    schema: &Schema,
+) -> Result<Arc<HashMap<String, RigApi>>> {
     let mut rigs = HashMap::new();
-
-    let schema = load_schema_file()?;
 
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
@@ -66,30 +68,24 @@ fn load_schema_file() -> Result<schema::Schema> {
     schema::Schema::load(schema_path).map_err(|err| anyhow::anyhow!("Failed to load schema: {err}"))
 }
 
-async fn serial_thread(gui_sender: mpsc::Sender<GuiMessage>, device_manager: DeviceManager) {
-    match load_schema_file() {
-        Ok(config) => {
-            println!("Loaded schema: {config:#?}");
-            if let Err(err) = device_manager.run(gui_sender).await {
-                eprintln!("Device manager error: {err}");
-            }
-        }
-        Err(err) => {
-            eprintln!("Failed to load schema: {err}");
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let rigs = load_rig_files("./rigs")?;
+    let schema = load_schema_file()?;
+    let rigs = load_rig_files("./rigs", &schema)?;
 
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
-    let device_manager = DeviceManager::new(rigs.clone());
+    let mut device_manager = DeviceManager::new(rigs.clone());
 
-    let manager_command_sender = device_manager.command_sender();
+    let gui_command_sender = device_manager.command_sender();
+    let udp_command_sender = device_manager.command_sender();
 
-    tokio::spawn(async move { serial_thread(gui_sender, device_manager).await });
+    tokio::spawn(async move { device_manager.run(gui_sender).await });
+
+    tokio::spawn(async move {
+        if let Err(err) = udp_server::run_server(udp_command_sender, &schema).await {
+            eprintln!("UDP server error: {err}");
+        }
+    });
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -103,7 +99,7 @@ async fn main() -> Result<()> {
         Box::new(|_| {
             Ok(Box::new(gui::App::new(
                 gui_receiver,
-                manager_command_sender,
+                gui_command_sender,
                 rigs.keys().cloned().collect(),
             )))
         }),

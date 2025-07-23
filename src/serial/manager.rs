@@ -20,6 +20,11 @@ pub enum ManagerCommand {
         device_id: String,
         settings: RigSettings,
     },
+    ExecuteCommand {
+        device_id: String,
+        command_name: String,
+        params: HashMap<String, Value>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +86,7 @@ impl DeviceManager {
         self.manager_command_tx.clone()
     }
 
-    pub async fn run(mut self, gui_sender: mpsc::Sender<GuiMessage>) -> Result<()> {
+    pub async fn run(&mut self, gui_sender: mpsc::Sender<GuiMessage>) -> Result<()> {
         loop {
             tokio::select! {
                 Some(device_msg) = self.device_rx.recv() => {
@@ -107,11 +112,14 @@ impl DeviceManager {
                     match cmd {
                         ManagerCommand::CreateOrUpdateDevice { device_id, settings } => {
                             println!("Got create or update device: {device_id}, {settings:?}");
-                            if let Some(device) = self.devices.get(&device_id) {
+                            if let Some(_device) = self.devices.get(&device_id) {
                                 todo!()
                             } else {
-                                self.add_device(device_id, settings);
+                                self.add_device(device_id,settings).await?;
                             }
+                        },
+                        ManagerCommand::ExecuteCommand { device_id, command_name, params } => {
+                            self.execute_command(&device_id, &command_name, params).await?;
                         },
                     }
                 }
@@ -120,7 +128,11 @@ impl DeviceManager {
     }
 
     pub async fn add_device(&mut self, device_id: String, settings: RigSettings) -> Result<()> {
-        let rig_api = self.rigs.get(&settings.rig_type).unwrap().clone();
+        let rig_api = self
+            .rigs
+            .get(&settings.rig_type)
+            .context("Unknown rig type")?
+            .clone();
         let (device, command_rx) = SerialDevice::new(device_id.clone(), settings).await?;
 
         let device_state = DeviceState {
@@ -156,14 +168,14 @@ impl DeviceManager {
         Ok(())
     }
 
-    pub async fn remove_device(&mut self, device_id: &str) -> Result<()> {
+    async fn remove_device(&mut self, device_id: &str) -> Result<()> {
         if let Some(state) = self.devices.remove(device_id) {
             state.command_tx.send(DeviceCommand::Shutdown).await?;
         }
         Ok(())
     }
 
-    pub async fn execute_command(
+    async fn execute_command(
         &self,
         device_id: &str,
         command_name: &str,

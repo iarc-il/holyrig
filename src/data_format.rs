@@ -46,6 +46,7 @@ impl Display for DataFormatError {
 impl std::error::Error for DataFormatError {}
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum DataFormat {
     BcdBs,
     BcdBu,
