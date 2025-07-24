@@ -65,14 +65,24 @@ pub async fn run_server(
                 result?
             },
             response = message_receiver.recv() => {
-                let ManagerMessage::CommandResponse { device_id, command_name, response } = response?;
-                let udp_response = match response {
-                    CommandResponse::Success => {
-                        format!("Executed command {command_name} on device {device_id}\n")
-                    },
-                    CommandResponse::Error(err) => {
-                        format!("Failed executing command {command_name} on device {device_id}: {err}\n")
+                let (udp_response, device_id) = match response? {
+                    ManagerMessage::CommandResponse { device_id, command_name, response } => {
+                         let response = match response {
+                             CommandResponse::Success => {
+                                 format!("Executed command {command_name} on device {device_id}\n")
+                             },
+                             CommandResponse::Error(err) => {
+                                 format!("Failed executing command {command_name} on device {device_id}: {err}\n")
 
+                             },
+                         };
+                         (response, device_id)
+                    },
+                    ManagerMessage::DeviceConnected { device_id } => {
+                        (format!("Device {device_id} connected"), device_id)
+                    },
+                    ManagerMessage::DeviceDisconnected { device_id } => {
+                        (format!("Device {device_id} disconnected"), device_id)
                     },
                 };
                 if let Some(addr) = device_id_to_addr.get(&device_id) {

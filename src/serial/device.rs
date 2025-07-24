@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
+use tokio::time::{Duration, sleep};
 use tokio_serial::{SerialPortBuilderExt, SerialStream};
 
 use crate::rig::{DataBits, RigSettings, StopBits};
@@ -27,13 +28,31 @@ pub struct SerialDevice {
     port: SerialStream,
     settings: RigSettings,
     command_tx: mpsc::Sender<DeviceCommand>,
+    device_tx: mpsc::Sender<DeviceMessage>,
 }
 
 impl SerialDevice {
     pub async fn new(
         id: usize,
         settings: RigSettings,
+        device_tx: mpsc::Sender<DeviceMessage>,
     ) -> Result<(Self, mpsc::Receiver<DeviceCommand>)> {
+        let port = Self::open_port(&settings)?;
+        let (command_tx, command_rx) = mpsc::channel(32);
+
+        Ok((
+            Self {
+                id,
+                port,
+                settings,
+                command_tx,
+                device_tx,
+            },
+            command_rx,
+        ))
+    }
+
+    fn open_port(settings: &RigSettings) -> Result<SerialStream> {
         let data_bits = match settings.data_bits {
             DataBits::Bits8 => tokio_serial::DataBits::Eight,
             DataBits::Bits7 => tokio_serial::DataBits::Seven,
@@ -49,25 +68,14 @@ impl SerialDevice {
         } else {
             tokio_serial::Parity::None
         };
-        let port = tokio_serial::new(&settings.port, settings.baud_rate.into())
+
+        tokio_serial::new(&settings.port, settings.baud_rate.into())
             .data_bits(data_bits)
             .stop_bits(stop_bits)
             .parity(parity)
             .flow_control(tokio_serial::FlowControl::None)
             .open_native_async()
-            .with_context(|| format!("Failed to open serial port {}", settings.port))?;
-
-        let (command_tx, command_rx) = mpsc::channel(32);
-
-        Ok((
-            Self {
-                id,
-                port,
-                settings,
-                command_tx,
-            },
-            command_rx,
-        ))
+            .with_context(|| format!("Failed to open serial port {}", settings.port))
     }
 
     pub fn id(&self) -> usize {
@@ -76,6 +84,20 @@ impl SerialDevice {
 
     pub fn command_sender(&self) -> mpsc::Sender<DeviceCommand> {
         self.command_tx.clone()
+    }
+
+    async fn attempt_reconnect(&mut self) -> Result<()> {
+        loop {
+            sleep(Duration::from_millis(self.settings.poll_interval as u64)).await;
+            if let Ok(new_port) = Self::open_port(&self.settings) {
+                self.port = new_port;
+                self.device_tx
+                    .send(DeviceMessage::DeviceConnected { device_id: self.id })
+                    .await
+                    .ok();
+                return Ok(());
+            }
+        }
     }
 
     pub async fn run(mut self, mut command_rx: mpsc::Receiver<DeviceCommand>) -> Result<()> {
@@ -87,6 +109,22 @@ impl SerialDevice {
                     response_tx,
                 } => {
                     let result = self.write_and_read(&data, expected_length).await;
+                    if result.is_err() {
+                        self.device_tx
+                            .send(DeviceMessage::DeviceDisconnected { device_id: self.id })
+                            .await
+                            .ok();
+
+                        if let Err(reconnect_err) = self.attempt_reconnect().await {
+                            self.device_tx
+                                .send(DeviceMessage::DeviceError {
+                                    device_id: self.id,
+                                    error: reconnect_err.to_string(),
+                                })
+                                .await
+                                .ok();
+                        }
+                    }
                     response_tx.send(result).await.ok();
                 }
                 DeviceCommand::Shutdown => break,

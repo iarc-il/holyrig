@@ -37,6 +37,12 @@ pub enum ManagerMessage {
         command_name: String,
         response: CommandResponse,
     },
+    DeviceConnected {
+        device_id: usize,
+    },
+    DeviceDisconnected {
+        device_id: usize,
+    },
 }
 
 pub struct DeviceManager {
@@ -119,13 +125,19 @@ impl DeviceManager {
 
     async fn handle_device_message(&mut self, device_message: DeviceMessage) {
         let result = match device_message {
-            DeviceMessage::DeviceConnected { device_id } => self.initialize_device(device_id).await,
+            DeviceMessage::DeviceConnected { device_id } => {
+                let _ = self
+                    .manager_message_tx
+                    .send(ManagerMessage::DeviceConnected { device_id });
+                self.initialize_device(device_id).await
+            }
             DeviceMessage::DeviceDisconnected { device_id } => {
-                self.remove_device(device_id).await;
+                let _ = self
+                    .manager_message_tx
+                    .send(ManagerMessage::DeviceDisconnected { device_id });
                 Ok(())
             }
             DeviceMessage::DeviceError { device_id, error } => {
-                self.remove_device(device_id).await;
                 Err(anyhow!("Device (id: {device_id}) failed: {error}"))
             }
         };
@@ -203,7 +215,8 @@ impl DeviceManager {
             .get(&settings.rig_type)
             .context("Unknown rig type")?
             .clone();
-        let (device, command_rx) = SerialDevice::new(device_id, settings).await?;
+        let (device, command_rx) =
+            SerialDevice::new(device_id, settings, self.device_tx.clone()).await?;
 
         let device_state = Device {
             command_tx: device.command_sender(),
@@ -238,7 +251,7 @@ impl DeviceManager {
         Ok(())
     }
 
-    async fn remove_device(&mut self, device_id: usize) {
+    async fn _remove_device(&mut self, device_id: usize) {
         if let Some(state) = self.devices.remove(&device_id) {
             let _ = state.command_tx.send(DeviceCommand::Shutdown).await;
         }
