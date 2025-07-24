@@ -158,7 +158,10 @@ impl DeviceManager {
                             }
                         },
                         ManagerCommand::ExecuteCommand { device_id, command_name, params } => {
-                            self.execute_command(device_id, &command_name, params).await?;
+                            let result = self.execute_command(device_id, &command_name, params).await;
+                            if let Err(err) = result {
+                                eprintln!("Error executing command: {err}");
+                            }
                         },
                     }
                 }
