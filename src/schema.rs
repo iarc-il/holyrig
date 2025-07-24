@@ -110,12 +110,13 @@ pub enum ValueType {
 }
 
 impl ValueType {
-    pub fn build_value(&self, value: &str) -> Value {
-        match self {
-            ValueType::Int => Value::Int(value.parse().unwrap()),
-            ValueType::Bool => Value::Bool(value.parse().unwrap()),
+    pub fn build_value(&self, value: &str) -> anyhow::Result<Value> {
+        let result = match self {
+            ValueType::Int => Value::Int(value.parse()?),
+            ValueType::Bool => Value::Bool(value.parse()?),
             ValueType::Enum(_) => Value::Enum(value.to_string()),
-        }
+        };
+        Ok(result)
     }
 }
 

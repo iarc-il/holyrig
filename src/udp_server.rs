@@ -39,7 +39,7 @@ fn parse_command(cmd: &str, schema: &Schema) -> Result<(usize, String, HashMap<S
             .iter()
             .find(|(name, _)| name == key)
             .context("Unknown param")?;
-        params.insert(key.to_string(), value_type.build_value(value));
+        params.insert(key.to_string(), value_type.build_value(value)?);
     }
 
     Ok((device_id, command_name, params))
