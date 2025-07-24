@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
@@ -15,6 +15,7 @@ const RIGS_FILE: &str = "rigs.toml";
 #[derive(Debug, Clone)]
 pub enum CommandResponse {
     Success,
+    Error(String),
 }
 
 #[derive(Debug)]
@@ -116,55 +117,82 @@ impl DeviceManager {
         Ok(())
     }
 
+    async fn handle_device_message(&mut self, device_message: DeviceMessage) {
+        let result = match device_message {
+            DeviceMessage::DeviceConnected { device_id } => self.initialize_device(device_id).await,
+            DeviceMessage::DeviceDisconnected { device_id } => {
+                self.remove_device(device_id).await;
+                Ok(())
+            }
+            DeviceMessage::DeviceError { device_id, error } => {
+                self.remove_device(device_id).await;
+                Err(anyhow!("Device (id: {device_id}) failed: {error}"))
+            }
+        };
+        if let Err(err) = result {
+            eprintln!("{err}");
+        }
+    }
+
+    async fn handle_manager_command(&mut self, manager_command: ManagerCommand) -> Result<()> {
+        match manager_command {
+            ManagerCommand::CreateOrUpdateDevice { settings } => {
+                if let Some(_device) = self.devices.get(&settings.id) {
+                    todo!()
+                } else {
+                    let changed_settings = self
+                        .settings
+                        .rigs
+                        .iter_mut()
+                        .find(|rig| rig.id == settings.id);
+                    if let Some(changed_settings) = changed_settings {
+                        *changed_settings = settings.clone();
+                    } else {
+                        self.settings.rigs.push(settings.clone());
+                    };
+                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let content = toml::to_string(&self.settings)?;
+                    std::fs::write(path, content)?;
+
+                    self.add_device(settings.id, settings).await?;
+                }
+            }
+            ManagerCommand::ExecuteCommand {
+                device_id,
+                command_name,
+                params,
+            } => {
+                let result = self.execute_command(device_id, &command_name, params).await;
+
+                let response = match result {
+                    Ok(_) => CommandResponse::Success,
+                    Err(err) => {
+                        eprintln!("Command {command_name} of device {device_id} failed: {err}");
+                        CommandResponse::Error(err.to_string())
+                    }
+                };
+                self.manager_message_tx
+                    .send(ManagerMessage::CommandResponse {
+                        device_id: device_id.to_string(),
+                        command_name: command_name.to_string(),
+                        response,
+                    })?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn run(&mut self, gui_sender: mpsc::Sender<GuiMessage>) -> Result<()> {
         self.load_rigs(&gui_sender).await?;
 
         loop {
             tokio::select! {
-                Some(device_msg) = self.device_rx.recv() => {
-                    match device_msg {
-                        DeviceMessage::DeviceConnected { device_id } => {
-                            if let Err(err) = self.initialize_device(device_id).await {
-                                eprintln!("Failed to initialize device {device_id}: {err}");
-                                let _ = self.remove_device(device_id).await;
-                            }
-                        }
-                        DeviceMessage::DeviceDisconnected { device_id } => {
-                            let _ = self.remove_device(device_id).await;
-                        }
-                        DeviceMessage::DeviceError { device_id, error } => {
-                            eprintln!("Device error for {device_id}: {error}");
-                            let _ = self.remove_device(device_id).await;
-                        }
-                    }
-                }
-                Some(cmd) = self.manager_command_rx.recv() => {
-                    match cmd {
-                        ManagerCommand::CreateOrUpdateDevice { settings } => {
-                            if let Some(_device) = self.devices.get(&settings.id) {
-                                todo!()
-                            } else {
-                                let changed_settings = self.settings.rigs.iter_mut().find(|rig| rig.id == settings.id);
-                                if let Some(changed_settings) = changed_settings {
-                                    *changed_settings = settings.clone();
-                                } else {
-                                    self.settings.rigs.push(settings.clone());
-                                };
-                                let path = self.base_dirs.place_data_file(RIGS_FILE)?;
-                                let content = toml::to_string(&self.settings)?;
-                                std::fs::write(path, content)?;
-
-                                self.add_device(settings.id, settings).await?;
-                            }
-                        },
-                        ManagerCommand::ExecuteCommand { device_id, command_name, params } => {
-                            let result = self.execute_command(device_id, &command_name, params).await;
-                            if let Err(err) = result {
-                                eprintln!("Error executing command: {err}");
-                            }
-                        },
-                    }
-                }
+                Some(device_message) = self.device_rx.recv() => {
+                    self.handle_device_message(device_message).await;
+                },
+                Some(manager_command) = self.manager_command_rx.recv() => {
+                    self.handle_manager_command(manager_command).await?
+                },
             }
         }
     }
@@ -210,11 +238,10 @@ impl DeviceManager {
         Ok(())
     }
 
-    async fn remove_device(&mut self, device_id: usize) -> Result<()> {
+    async fn remove_device(&mut self, device_id: usize) {
         if let Some(state) = self.devices.remove(&device_id) {
-            state.command_tx.send(DeviceCommand::Shutdown).await?;
+            let _ = state.command_tx.send(DeviceCommand::Shutdown).await;
         }
-        Ok(())
     }
 
     async fn execute_command(
@@ -243,19 +270,10 @@ impl DeviceManager {
             .await
             .context("Failed to send command to device")?;
 
-        let response = response_rx
+        response_rx
             .recv()
             .await
-            .ok_or_else(|| anyhow::anyhow!("Device disconnected"))??;
-
-        self.manager_message_tx
-            .send(ManagerMessage::CommandResponse {
-                device_id: device_id.to_string(),
-                command_name: command_name.to_string(),
-                response: CommandResponse::Success,
-            })?;
-
-        Ok(response)
+            .ok_or_else(|| anyhow::anyhow!("Device disconnected"))?
     }
 
     pub async fn initialize_device(&self, device_id: usize) -> Result<()> {
