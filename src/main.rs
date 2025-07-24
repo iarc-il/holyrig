@@ -77,13 +77,16 @@ async fn main() -> Result<()> {
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
     let mut device_manager = DeviceManager::new(rigs.clone(), base_dirs.clone());
 
-    let gui_command_sender = device_manager.command_sender();
-    let udp_command_sender = device_manager.command_sender();
+    let gui_command_sender = device_manager.sender();
+    let udp_command_sender = device_manager.sender();
+    let udp_message_receiver = device_manager.receiver();
 
     tokio::spawn(async move { device_manager.run(gui_sender).await });
 
     tokio::spawn(async move {
-        if let Err(err) = udp_server::run_server(udp_command_sender, &schema).await {
+        if let Err(err) =
+            udp_server::run_server(udp_command_sender, udp_message_receiver, &schema).await
+        {
             eprintln!("UDP server error: {err}");
         }
     });

@@ -33,7 +33,7 @@ pub enum ManagerCommand {
 #[derive(Debug, Clone)]
 pub enum ManagerMessage {
     CommandResponse {
-        device_id: String,
+        device_id: usize,
         command_name: String,
         response: CommandResponse,
     },
@@ -41,7 +41,7 @@ pub enum ManagerMessage {
 
 pub struct DeviceManager {
     rigs: Arc<HashMap<String, RigApi>>,
-    devices: HashMap<usize, DeviceState>,
+    devices: HashMap<usize, Device>,
     settings: Settings,
     base_dirs: BaseDirectories,
 
@@ -58,7 +58,7 @@ pub struct DeviceManager {
     device_rx: mpsc::Receiver<DeviceMessage>,
 }
 
-struct DeviceState {
+struct Device {
     // Manager to devices channel
     command_tx: mpsc::Sender<DeviceCommand>,
     rig_api: RigApi,
@@ -85,11 +85,11 @@ impl DeviceManager {
         }
     }
 
-    pub fn sender(&self) -> broadcast::Sender<ManagerMessage> {
-        self.manager_message_tx.clone()
+    pub fn receiver(&self) -> broadcast::Receiver<ManagerMessage> {
+        self.manager_message_tx.subscribe()
     }
 
-    pub fn command_sender(&self) -> mpsc::Sender<ManagerCommand> {
+    pub fn sender(&self) -> mpsc::Sender<ManagerCommand> {
         self.manager_command_tx.clone()
     }
 
@@ -173,8 +173,8 @@ impl DeviceManager {
                 };
                 self.manager_message_tx
                     .send(ManagerMessage::CommandResponse {
-                        device_id: device_id.to_string(),
-                        command_name: command_name.to_string(),
+                        device_id,
+                        command_name,
                         response,
                     })?;
             }
@@ -205,7 +205,7 @@ impl DeviceManager {
             .clone();
         let (device, command_rx) = SerialDevice::new(device_id, settings).await?;
 
-        let device_state = DeviceState {
+        let device_state = Device {
             command_tx: device.command_sender(),
             rig_api,
         };
