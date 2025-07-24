@@ -8,13 +8,13 @@ use crate::schema::Schema;
 use crate::serial::ManagerCommand;
 
 // Parse a command string in format: "DEVICE_ID COMMAND_NAME PARAM1=VALUE1 PARAM2=VALUE2"
-fn parse_command(cmd: &str, schema: &Schema) -> Result<(String, String, HashMap<String, Value>)> {
+fn parse_command(cmd: &str, schema: &Schema) -> Result<(usize, String, HashMap<String, Value>)> {
     let mut parts = cmd.split_whitespace();
 
     let device_id = parts
         .next()
         .ok_or_else(|| anyhow::anyhow!("Missing device ID"))?
-        .to_string();
+        .parse()?;
 
     let command_name = parts
         .next()

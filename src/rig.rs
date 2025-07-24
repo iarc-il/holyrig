@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BaudRate {
     #[default]
     Baud1200,
@@ -60,7 +61,7 @@ impl From<BaudRate> for u32 {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataBits {
     Bits5,
     Bits6,
@@ -93,7 +94,7 @@ impl DataBits {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StopBits {
     #[default]
     Bits1,
@@ -110,8 +111,10 @@ impl Display for StopBits {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RigSettings {
+    pub id: usize,
+    #[serde(default = "default_rig_type")]
     pub rig_type: String,
     pub port: String,
     pub baud_rate: BaudRate,
@@ -121,8 +124,22 @@ pub struct RigSettings {
     // true is high, false is low
     pub rts: bool,
     pub dtr: bool,
+    #[serde(default = "default_poll_interval")]
     pub poll_interval: u16,
+    #[serde(default = "default_timeout")]
     pub timeout: u16,
+}
+
+fn default_rig_type() -> String {
+    "unspecified".to_string()
+}
+
+fn default_poll_interval() -> u16 {
+    500
+}
+
+fn default_timeout() -> u16 {
+    1000
 }
 
 impl RigSettings {
@@ -144,5 +161,29 @@ impl RigSettings {
         }
 
         Ok(())
+    }
+
+    pub fn with_id(mut self, id: usize) -> Self {
+        self.id = id;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    pub rigs: Vec<RigSettings>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            rigs: vec![Default::default()],
+        }
+    }
+}
+
+impl From<Vec<RigSettings>> for Settings {
+    fn from(rigs: Vec<RigSettings>) -> Self {
+        Self { rigs }
     }
 }

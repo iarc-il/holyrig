@@ -7,10 +7,12 @@ use egui::{ComboBox, Grid, Ui};
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use tokio::sync::mpsc::{Receiver, Sender};
 
-pub enum GuiMessage {}
+pub enum GuiMessage {
+    InitialState(Vec<RigSettings>),
+}
 
 struct AppTabViewer {
-    current_index: u8,
+    current_index: usize,
     add_tab_request: bool,
     rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
@@ -34,7 +36,7 @@ impl TabViewer for AppTabViewer {
 
     fn title(&mut self, _tab: &mut Self::Tab) -> egui::WidgetText {
         self.current_index += 1;
-        format!("RIG {:?}", self.current_index).as_str().into()
+        format!("RIG {}", self.current_index).as_str().into()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, rig: &mut Self::Tab) {
@@ -121,14 +123,12 @@ impl TabViewer for AppTabViewer {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("OK").clicked() {
                     let sender = self.sender.clone();
-                    let current_index = self.current_index;
                     match rig.validate() {
                         Ok(_) => {
                             let tab = rig.clone();
                             tokio::task::spawn(async move {
                                 sender
                                     .send(ManagerCommand::CreateOrUpdateDevice {
-                                        device_id: current_index.to_string(),
                                         settings: tab.clone(),
                                     })
                                     .await
@@ -156,6 +156,7 @@ struct AppTabs {
     dock_state: DockState<RigSettings>,
     rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
+    current_device_id: usize,
 }
 
 impl AppTabs {
@@ -165,8 +166,21 @@ impl AppTabs {
             dock_state,
             rig_types,
             sender,
+            current_device_id: 0,
         }
     }
+
+    fn set_tabs(&mut self, settings: Vec<RigSettings>) {
+        if settings.is_empty() {
+            self.current_device_id = 0;
+            self.dock_state =
+                DockState::new(vec![RigSettings::default().with_id(self.current_device_id)]);
+        } else {
+            self.current_device_id = settings.iter().map(|rig| rig.id).max().unwrap();
+            self.dock_state = DockState::new(settings);
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui) {
         let mut tab_viewer = AppTabViewer::new(self.sender.clone(), self.rig_types.clone());
 
@@ -182,9 +196,10 @@ impl AppTabs {
             .show_inside(ui, &mut tab_viewer);
 
         if tab_viewer.add_tab_request {
+            self.current_device_id += 1;
             self.dock_state
                 .main_surface_mut()
-                .push_to_first_leaf(RigSettings::default());
+                .push_to_first_leaf(RigSettings::default().with_id(self.current_device_id));
             tab_viewer.add_tab_request = false;
         }
     }
@@ -210,6 +225,14 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        while let Ok(message) = self.gui_receiver.try_recv() {
+            match message {
+                GuiMessage::InitialState(settings) => {
+                    self.tabs.set_tabs(settings);
+                }
+            }
+        }
+
         ctx.set_pixels_per_point(1.3);
         egui::CentralPanel::default().show(ctx, |ui| self.tabs.ui(ui));
     }

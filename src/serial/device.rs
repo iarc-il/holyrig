@@ -17,13 +17,13 @@ pub enum DeviceCommand {
 
 #[derive(Debug)]
 pub enum DeviceMessage {
-    DeviceError { device_id: String, error: String },
-    DeviceDisconnected { device_id: String },
-    DeviceConnected { device_id: String },
+    DeviceError { device_id: usize, error: String },
+    DeviceDisconnected { device_id: usize },
+    DeviceConnected { device_id: usize },
 }
 
 pub struct SerialDevice {
-    id: String,
+    id: usize,
     port: SerialStream,
     settings: RigSettings,
     command_tx: mpsc::Sender<DeviceCommand>,
@@ -31,7 +31,7 @@ pub struct SerialDevice {
 
 impl SerialDevice {
     pub async fn new(
-        id: String,
+        id: usize,
         settings: RigSettings,
     ) -> Result<(Self, mpsc::Receiver<DeviceCommand>)> {
         let data_bits = match settings.data_bits {
@@ -70,8 +70,8 @@ impl SerialDevice {
         ))
     }
 
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn command_sender(&self) -> mpsc::Sender<DeviceCommand> {
