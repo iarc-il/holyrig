@@ -371,7 +371,9 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
         let mode_values = find_mode_values(&omnirig.param_commands, location)?;
 
         if !mode_values.is_empty() {
-            rig_file.enums.insert("mode".to_string(), mode_values.into_iter().collect());
+            rig_file
+                .enums
+                .insert("mode".to_string(), mode_values.into_iter().collect());
         }
     }
 

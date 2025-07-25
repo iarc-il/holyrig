@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use xdg::BaseDirectories;
 
+use crate::commands::Value;
 use crate::gui::GuiMessage;
 use crate::rig::{RigSettings, Settings};
 use crate::rig_api::RigApi;
@@ -13,7 +14,7 @@ const RIGS_FILE: &str = "rigs.toml";
 
 #[derive(Debug, Clone)]
 pub enum CommandResponse {
-    Success,
+    Success(HashMap<String, Value>),
     Error(String),
 }
 
@@ -179,7 +180,7 @@ impl DeviceManager {
                 let result = self.execute_command(device_id, &command_name, params).await;
 
                 let response = match result {
-                    Ok(_) => CommandResponse::Success,
+                    Ok(response) => CommandResponse::Success(response),
                     Err(err) => {
                         eprintln!("Command {command_name} of device {device_id} failed: {err}");
                         CommandResponse::Error(err.to_string())
@@ -281,11 +282,11 @@ impl DeviceManager {
         device_id: usize,
         command_name: &str,
         params: HashMap<String, String>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<HashMap<String, Value>> {
         let state = self
             .devices
             .get(&device_id)
-            .ok_or_else(|| anyhow::anyhow!("Device not found: {}", device_id))?;
+            .ok_or_else(|| anyhow!("Device not found: {}", device_id))?;
 
         let params = state.rig_api.parse_param_values(command_name, params)?;
         let bytes = state.rig_api.build_command(command_name, &params)?;
@@ -303,17 +304,22 @@ impl DeviceManager {
             .await
             .context("Failed to send command to device")?;
 
-        response_rx
+        let response = response_rx
             .recv()
             .await
-            .ok_or_else(|| anyhow::anyhow!("Device disconnected"))?
+            .ok_or_else(|| anyhow!("Device disconnected"))??;
+
+        state
+            .rig_api
+            .parse_command_response(command_name, &response)
+            .map_err(|err| anyhow!(err))
     }
 
     pub async fn initialize_device(&self, device_id: usize) -> Result<()> {
         let state = self
             .devices
             .get(&device_id)
-            .ok_or_else(|| anyhow::anyhow!("Device not found: {device_id}"))?;
+            .ok_or_else(|| anyhow!("Device not found: {device_id}"))?;
 
         for (index, data) in state.rig_api.build_init_commands()?.into_iter().enumerate() {
             let expected_length = state.rig_api.get_init_response_length(index)?;
@@ -332,7 +338,7 @@ impl DeviceManager {
             response_rx
                 .recv()
                 .await
-                .ok_or_else(|| anyhow::anyhow!("Device disconnected"))??;
+                .ok_or_else(|| anyhow!("Device disconnected"))??;
         }
 
         Ok(())

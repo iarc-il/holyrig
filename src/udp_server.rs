@@ -56,8 +56,13 @@ pub async fn run_server(
                 let (udp_response, device_id) = match response? {
                     ManagerMessage::CommandResponse { device_id, command_name, response } => {
                          let response = match response {
-                             CommandResponse::Success => {
-                                 format!("Executed command {command_name} on device {device_id}\n")
+                             CommandResponse::Success(response) => {
+                                 let mut message = format!("Executed command {command_name} on device {device_id}");
+                                 if !response.is_empty() {
+                                     message.push_str(&format!(" {response:?}"));
+                                 }
+                                 message.push('\n');
+                                 message
                              },
                              CommandResponse::Error(err) => {
                                  format!("Failed executing command {command_name} on device {device_id}: {err}\n")
