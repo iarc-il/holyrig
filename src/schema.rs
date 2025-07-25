@@ -243,20 +243,6 @@ impl Schema {
 
         Ok(())
     }
-
-    pub fn get_command(&self, name: &str) -> Option<&Command> {
-        self.commands.get(name)
-    }
-
-    pub fn get_enum(&self, name: &str) -> Option<&Enum> {
-        self.enums.get(name)
-    }
-
-    pub fn is_valid_enum_value(&self, enum_name: &str, value: &str) -> bool {
-        self.get_enum(enum_name)
-            .map(|e| e.members.iter().any(|m| m == value))
-            .unwrap_or(false)
-    }
 }
 
 #[cfg(test)]

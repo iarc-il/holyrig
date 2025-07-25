@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use xdg::BaseDirectories;
 
-use crate::commands::Value;
 use crate::gui::GuiMessage;
 use crate::rig::{RigSettings, Settings};
 use crate::rig_api::RigApi;
@@ -26,7 +25,7 @@ pub enum ManagerCommand {
     ExecuteCommand {
         device_id: usize,
         command_name: String,
-        params: HashMap<String, Value>,
+        params: HashMap<String, String>,
     },
     RemoveDevice {
         device_id: usize,
@@ -281,13 +280,14 @@ impl DeviceManager {
         &self,
         device_id: usize,
         command_name: &str,
-        params: HashMap<String, Value>,
+        params: HashMap<String, String>,
     ) -> Result<Vec<u8>> {
         let state = self
             .devices
             .get(&device_id)
             .ok_or_else(|| anyhow::anyhow!("Device not found: {}", device_id))?;
 
+        let params = state.rig_api.parse_param_values(command_name, params)?;
         let bytes = state.rig_api.build_command(command_name, &params)?;
         let expected_length = state.rig_api.get_command_response_length(command_name)?;
 

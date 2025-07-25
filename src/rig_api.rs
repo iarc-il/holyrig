@@ -44,6 +44,13 @@ pub enum RigApiError {
         enum_name: String,
         value: i64,
     },
+    UnknownParam {
+        command_name: String,
+        param_name: String,
+    },
+    BuildValueFailed {
+        error: String,
+    },
 }
 
 impl std::fmt::Display for RigApiError {
@@ -79,6 +86,11 @@ impl std::fmt::Display for RigApiError {
             RigApiError::InvalidEnumValue { enum_name, value } => {
                 write!(f, "Invalid enum value {value} of enum '{enum_name}'")
             }
+            RigApiError::UnknownParam {
+                command_name,
+                param_name,
+            } => todo!(),
+            RigApiError::BuildValueFailed { error } => todo!(),
         }
     }
 }
@@ -363,10 +375,38 @@ impl RigApi {
         Ok(command.response_length())
     }
 
-    fn get_enum_type_for_param(&self, command_name: &str, param_name: &str) -> Option<String> {
+    pub fn parse_param_values(
+        &self,
+        command_name: &str,
+        params: HashMap<String, String>,
+    ) -> Result<HashMap<String, Value>, RigApiError> {
+        params
+            .into_iter()
+            .map(|(param_name, value)| {
+                let value_type = self
+                    .get_command_param_type(command_name, &param_name)
+                    .ok_or(RigApiError::UnknownParam {
+                        command_name: command_name.to_string(),
+                        param_name: param_name.clone(),
+                    })?;
+                let parsed_value = value_type.build_value(&value).map_err(|err| {
+                    RigApiError::BuildValueFailed {
+                        error: err.to_string(),
+                    }
+                })?;
+                Ok((param_name, parsed_value))
+            })
+            .collect::<Result<_, _>>()
+    }
+
+    fn get_command_param_type(&self, command_name: &str, param_name: &str) -> Option<&ValueType> {
         self.command_param_types
             .get(command_name)
             .and_then(|params| params.get(param_name))
+    }
+
+    fn get_enum_type_for_param(&self, command_name: &str, param_name: &str) -> Option<String> {
+        self.get_command_param_type(command_name, param_name)
             .and_then(|type_name| {
                 if let ValueType::Enum(enum_name) = type_name
                     && self.enum_mappings.contains_key(enum_name)

@@ -84,9 +84,7 @@ async fn main() -> Result<()> {
     tokio::spawn(async move { device_manager.run(gui_sender).await });
 
     tokio::spawn(async move {
-        if let Err(err) =
-            udp_server::run_server(udp_command_sender, udp_message_receiver, &schema).await
-        {
+        if let Err(err) = udp_server::run_server(udp_command_sender, udp_message_receiver).await {
             eprintln!("UDP server error: {err}");
         }
     });

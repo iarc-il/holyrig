@@ -1,16 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use tokio::net::UdpSocket;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 
-use crate::commands::Value;
-use crate::schema::Schema;
 use crate::serial::ManagerCommand;
 use crate::serial::manager::{CommandResponse, ManagerMessage};
 
 // Parse a command string in format: "DEVICE_ID COMMAND_NAME PARAM1=VALUE1 PARAM2=VALUE2"
-fn parse_command(cmd: &str, schema: &Schema) -> Result<(usize, String, HashMap<String, Value>)> {
+fn parse_command(cmd: &str) -> Result<(usize, String, HashMap<String, String>)> {
     let mut parts = cmd.split_whitespace();
 
     let device_id = parts
@@ -32,16 +30,7 @@ fn parse_command(cmd: &str, schema: &Schema) -> Result<(usize, String, HashMap<S
         let value = kv
             .next()
             .ok_or_else(|| anyhow::anyhow!("Invalid parameter format"))?;
-
-        let (_, value_type) = schema
-            .commands
-            .get(&command_name)
-            .context("Unknown command")?
-            .params
-            .iter()
-            .find(|(name, _)| name == key)
-            .context("Unknown param")?;
-        params.insert(key.to_string(), value_type.build_value(value)?);
+        params.insert(key.to_string(), value.to_string());
     }
 
     Ok((device_id, command_name, params))
@@ -50,7 +39,6 @@ fn parse_command(cmd: &str, schema: &Schema) -> Result<(usize, String, HashMap<S
 pub async fn run_server(
     command_sender: Sender<ManagerCommand>,
     mut message_receiver: Receiver<ManagerMessage>,
-    schema: &Schema,
 ) -> Result<()> {
     let socket = UdpSocket::bind("127.0.0.1:8888").await?;
     println!("UDP debug interface listening on 127.0.0.1:8888");
@@ -94,7 +82,7 @@ pub async fn run_server(
 
         let cmd = String::from_utf8_lossy(&buf[..len]);
 
-        match parse_command(&cmd, schema) {
+        match parse_command(&cmd) {
             Ok((device_id, command_name, params)) => {
                 println!("Received command from {addr}: {device_id} {command_name} {params:?}");
 
