@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([350.0, 430.0])
+            .with_inner_size([350.0, 440.0])
             .with_resizable(false),
         ..Default::default()
     };

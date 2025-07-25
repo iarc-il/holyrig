@@ -28,6 +28,9 @@ pub enum ManagerCommand {
         command_name: String,
         params: HashMap<String, Value>,
     },
+    RemoveDevice {
+        device_id: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +192,23 @@ impl DeviceManager {
                         command_name,
                         response,
                     })?;
+            }
+            ManagerCommand::RemoveDevice { device_id } => {
+                if let Some(device) = self.devices.remove(&device_id) {
+                    let _ = device.command_tx.send(DeviceCommand::Shutdown).await;
+                }
+
+                if let Some(pos) = self
+                    .settings
+                    .rigs
+                    .iter()
+                    .position(|rig| rig.id == device_id)
+                {
+                    self.settings.rigs.remove(pos);
+                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let content = toml::to_string(&self.settings)?;
+                    std::fs::write(path, content)?;
+                }
             }
         }
         Ok(())

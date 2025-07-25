@@ -4,7 +4,10 @@ use crate::{
 };
 use eframe::egui;
 use egui::{ComboBox, Grid, Ui};
-use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
+use egui_dock::{
+    AllowedSplits, DockArea, DockState, NodeIndex, SurfaceIndex, TabViewer,
+    tab_viewer::OnCloseResponse,
+};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub enum GuiMessage {
@@ -17,16 +20,22 @@ struct AppTabViewer {
     rig_types: Vec<String>,
     sender: Sender<ManagerCommand>,
     error_message: Option<String>,
+    active_tab_id: Option<usize>,
 }
 
 impl AppTabViewer {
-    fn new(sender: Sender<ManagerCommand>, rig_types: Vec<String>) -> Self {
+    fn new(
+        sender: Sender<ManagerCommand>,
+        rig_types: Vec<String>,
+        active_tab_id: Option<usize>,
+    ) -> Self {
         AppTabViewer {
             current_index: 0,
             add_tab_request: false,
             rig_types,
             sender,
             error_message: None,
+            active_tab_id,
         }
     }
 }
@@ -147,6 +156,24 @@ impl TabViewer for AppTabViewer {
         });
     }
 
+    fn is_closeable(&self, tab: &Self::Tab) -> bool {
+        Some(tab.id) == self.active_tab_id
+    }
+
+    fn on_close(&mut self, tab: &mut Self::Tab) -> OnCloseResponse {
+        let sender = self.sender.clone();
+        let device_id = tab.id;
+
+        tokio::task::spawn(async move {
+            sender
+                .send(ManagerCommand::RemoveDevice { device_id })
+                .await
+                .unwrap();
+        });
+
+        OnCloseResponse::Close
+    }
+
     fn on_add(&mut self, _surface: SurfaceIndex, _node: NodeIndex) {
         self.add_tab_request = true;
     }
@@ -182,17 +209,28 @@ impl AppTabs {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
-        let mut tab_viewer = AppTabViewer::new(self.sender.clone(), self.rig_types.clone());
+        let active_tab_id = self
+            .dock_state
+            .find_active_focused()
+            .map(|(_, rig)| rig.id)
+            .or_else(|| {
+                self.dock_state
+                    .iter_leaves()
+                    .next()
+                    .map(|(_, rig)| rig.tabs[0].id)
+            });
+
+        let mut tab_viewer =
+            AppTabViewer::new(self.sender.clone(), self.rig_types.clone(), active_tab_id);
 
         DockArea::new(&mut self.dock_state)
             .show_add_buttons(true)
-            .show_close_buttons(false)
+            .show_close_buttons(true)
             .tab_context_menus(false)
             .draggable_tabs(false)
             .show_leaf_close_all_buttons(false)
             .show_leaf_collapse_buttons(false)
             .allowed_splits(AllowedSplits::None)
-            .style(Style::from_egui(ui.style().as_ref()))
             .show_inside(ui, &mut tab_viewer);
 
         if tab_viewer.add_tab_request {
