@@ -89,8 +89,8 @@ impl std::fmt::Display for RigApiError {
             RigApiError::UnknownParam {
                 command_name,
                 param_name,
-            } => todo!(),
-            RigApiError::BuildValueFailed { error } => todo!(),
+            } => write!(f, "Unknown param {param_name} in command {command_name}"),
+            RigApiError::BuildValueFailed { error } => write!(f, "Failed to build value: {error}"),
         }
     }
 }
@@ -179,13 +179,6 @@ impl RigApi {
             .get(enum_name)
             .and_then(|map| map.get(member))
             .copied()
-    }
-
-    pub fn get_enum_member(&self, enum_name: &str, value: i32) -> Option<String> {
-        self.reverse_enum_mappings
-            .get(enum_name)
-            .and_then(|map| map.get(&value))
-            .cloned()
     }
 
     fn validate(&self) -> Result<(), RigApiError> {
@@ -706,12 +699,6 @@ mod tests {
         assert_eq!(rig_api.get_enum_value("Mode", "CW"), Some(2));
         assert_eq!(rig_api.get_enum_value("Mode", "AM"), None);
         assert_eq!(rig_api.get_enum_value("NonExistentEnum", "LSB"), None);
-
-        assert_eq!(rig_api.get_enum_member("Mode", 0), Some("LSB".to_string()));
-        assert_eq!(rig_api.get_enum_member("Mode", 1), Some("USB".to_string()));
-        assert_eq!(rig_api.get_enum_member("Mode", 2), Some("CW".to_string()));
-        assert_eq!(rig_api.get_enum_member("Mode", 3), None);
-        assert_eq!(rig_api.get_enum_member("NonExistentEnum", 0), None);
     }
 
     #[test]
