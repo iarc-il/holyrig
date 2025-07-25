@@ -320,7 +320,7 @@ impl RigApi {
         Ok(converted_values)
     }
 
-    pub fn get_status_commands(&self) -> Vec<Result<Vec<u8>, RigApiError>> {
+    pub fn get_status_commands(&self) -> Result<Vec<Vec<u8>>, RigApiError> {
         let empty_args = BTreeMap::new();
         self.status_commands
             .iter()
@@ -495,9 +495,8 @@ mod tests {
         let cmd_data = api.build_command("test_cmd", &args)?;
         assert!(!cmd_data.is_empty());
 
-        let status_cmds = api.get_status_commands();
+        let status_cmds = api.get_status_commands()?;
         assert_eq!(status_cmds.len(), 1);
-        assert!(status_cmds[0].is_ok());
 
         Ok(())
     }
