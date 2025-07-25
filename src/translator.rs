@@ -3,9 +3,9 @@ use anyhow::{Result, bail};
 use crate::{
     data_format::DataFormat,
     omnirig_parser::{Command, EndOfData, RigDescription},
-    rig_file::{EnumMapping, RigBinaryParam, RigCommand, RigFile},
+    rig_file::{RigBinaryParam, RigCommand, RigFile},
 };
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 struct BinaryParamLocation {
@@ -132,8 +132,8 @@ fn extract_mode_params(cmd_name: &str) -> Option<String> {
 fn find_mode_values(
     commands: &[Command],
     location: &BinaryParamLocation,
-) -> Result<HashMap<String, i32>> {
-    let mut mode_values = HashMap::new();
+) -> Result<BTreeMap<String, i32>> {
+    let mut mode_values = BTreeMap::new();
 
     for cmd in commands {
         if let Some(mode_name) = extract_mode_params(&cmd.name) {
@@ -240,8 +240,8 @@ fn determine_command_name(cmd: &Command) -> Result<CommandTranslation> {
 }
 
 fn convert_command(cmd: &Command) -> RigCommand {
-    let mut params = HashMap::new();
-    let mut returns = HashMap::new();
+    let mut params = BTreeMap::new();
+    let mut returns = BTreeMap::new();
 
     if let Some(value) = &cmd.value {
         let parts: Vec<&str> = value.split('|').collect();
@@ -371,14 +371,11 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
         let mode_values = find_mode_values(&omnirig.param_commands, location)?;
 
         if !mode_values.is_empty() {
-            let mode_mapping = EnumMapping {
-                values: mode_values.into_iter().collect(),
-            };
-            rig_file.enums.insert("mode".to_string(), mode_mapping);
+            rig_file.enums.insert("mode".to_string(), mode_values.into_iter().collect());
         }
     }
 
-    let toggle_locations: HashMap<_, _> = ["split", "rit", "xit"]
+    let toggle_locations: BTreeMap<_, _> = ["split", "rit", "xit"]
         .iter()
         .filter_map(|&cmd_type| {
             find_toggle_param_location(&omnirig.param_commands, cmd_type).map(|loc| (cmd_type, loc))

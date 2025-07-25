@@ -1,6 +1,6 @@
 use crate::commands::CommandError;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::commands::{BinMask, BinaryParam, Command, CommandValidator};
 use crate::data_format::DataFormat;
@@ -18,11 +18,11 @@ pub struct RigCommand {
     pub reply_length: Option<usize>,
     pub reply_end: Option<String>,
     #[serde(default)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub params: HashMap<String, RigBinaryParam>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, RigBinaryParam>,
     #[serde(default)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub returns: HashMap<String, RigBinaryParam>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub returns: BTreeMap<String, RigBinaryParam>,
 }
 
 fn deserialize_data_format<'de, D>(deserializer: D) -> Result<DataFormat, D::Error>
@@ -80,7 +80,7 @@ impl TryFrom<RigCommand> for Command {
             None
         };
 
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         for (name, param) in value.params {
             params.insert(
                 name,
@@ -94,7 +94,7 @@ impl TryFrom<RigCommand> for Command {
             );
         }
 
-        let mut returns = HashMap::new();
+        let mut returns = BTreeMap::new();
         for (name, param) in value.returns {
             returns.insert(
                 name,
@@ -121,20 +121,15 @@ impl TryFrom<RigCommand> for Command {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EnumMapping {
-    pub values: Vec<(String, i32)>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RigFile {
     pub general: General,
     #[serde(default)]
     pub init: Vec<RigCommand>,
-    pub commands: HashMap<String, RigCommand>,
+    pub commands: BTreeMap<String, RigCommand>,
     #[serde(default)]
     pub status: Vec<RigCommand>,
     #[serde(default)]
-    pub enums: HashMap<String, EnumMapping>,
+    pub enums: BTreeMap<String, BTreeMap<String, i32>>,
 }
 
 impl RigFile {
@@ -145,9 +140,9 @@ impl RigFile {
                 version: 1,
             },
             init: Vec::new(),
-            commands: HashMap::new(),
+            commands: Default::default(),
             status: Vec::new(),
-            enums: HashMap::new(),
+            enums: Default::default(),
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     commands::{Command, CommandError, Value},
@@ -141,7 +141,7 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
         for (enum_name, mapping) in rig_file.enums {
             let mut value_map = HashMap::new();
             let mut reverse_map = HashMap::new();
-            for (member, value) in mapping.values {
+            for (member, value) in mapping {
                 value_map.insert(member.clone(), value);
                 reverse_map.insert(value, member);
             }
@@ -222,7 +222,7 @@ impl RigApi {
     }
 
     pub fn build_init_commands(&self) -> Result<Vec<Vec<u8>>, RigApiError> {
-        let empty_args = HashMap::new();
+        let empty_args = BTreeMap::new();
         self.init_commands
             .iter()
             .map(|command| {
@@ -242,7 +242,7 @@ impl RigApi {
             RigApiError::CommandNotFound(CommandType::Named(command_name.to_string()))
         })?;
 
-        let mut converted_args = HashMap::new();
+        let mut converted_args = BTreeMap::new();
         for (name, value) in args {
             match value {
                 Value::Enum(member) => {
@@ -321,7 +321,7 @@ impl RigApi {
     }
 
     pub fn get_status_commands(&self) -> Vec<Result<Vec<u8>, RigApiError>> {
-        let empty_args = HashMap::new();
+        let empty_args = BTreeMap::new();
         self.status_commands
             .iter()
             .map(|command| {
@@ -626,13 +626,11 @@ mod tests {
     fn create_test_rig_file() -> RigFile {
         let mut rig_file = RigFile::new();
 
-        let mode_mapping = crate::rig_file::EnumMapping {
-            values: vec![
-                ("LSB".to_string(), 0),
-                ("USB".to_string(), 1),
-                ("CW".to_string(), 2),
-            ],
-        };
+        let mode_mapping = BTreeMap::from([
+            ("LSB".to_string(), 0),
+            ("USB".to_string(), 1),
+            ("CW".to_string(), 2),
+        ]);
         rig_file.enums.insert("Mode".to_string(), mode_mapping);
 
         let set_mode_cmd = crate::rig_file::RigCommand {
@@ -641,7 +639,7 @@ mod tests {
             reply_length: None,
             reply_end: None,
             params: {
-                let mut params = HashMap::new();
+                let mut params = BTreeMap::new();
                 params.insert(
                     "mode".to_string(),
                     crate::rig_file::RigBinaryParam {
@@ -654,16 +652,16 @@ mod tests {
                 );
                 params
             },
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
         let get_mode_cmd = crate::rig_file::RigCommand {
             command: "AABB".to_string(),
             response: Some("AA??".to_string()),
             reply_length: Some(2),
             reply_end: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "mode".to_string(),
                     crate::rig_file::RigBinaryParam {

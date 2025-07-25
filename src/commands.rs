@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     error::Error,
     fmt::{Display, Write},
 };
@@ -151,7 +151,7 @@ impl From<&BinMask> for String {
 impl BinMask {
     pub fn validate_params(
         &self,
-        params: &HashMap<String, BinaryParam>,
+        params: &BTreeMap<String, BinaryParam>,
     ) -> Result<(), CommandError> {
         if params.is_empty() {
             return Ok(());
@@ -237,8 +237,8 @@ pub struct Command {
     pub command: BinMask,
     pub response: Option<BinMask>,
     pub validator: Option<CommandValidator>,
-    pub params: HashMap<String, BinaryParam>,
-    pub returns: HashMap<String, BinaryParam>,
+    pub params: BTreeMap<String, BinaryParam>,
+    pub returns: BTreeMap<String, BinaryParam>,
 }
 
 // The binary param struct is used to build commands from given argument and parse data from
@@ -274,8 +274,8 @@ impl Command {
         Ok(())
     }
 
-    pub fn parse_response(&self, response: &[u8]) -> Result<HashMap<String, i64>, CommandError> {
-        let mut result = HashMap::new();
+    pub fn parse_response(&self, response: &[u8]) -> Result<BTreeMap<String, i64>, CommandError> {
+        let mut result = BTreeMap::new();
 
         let response_mask = match &self.response {
             Some(mask) => mask,
@@ -303,7 +303,7 @@ impl Command {
         Ok(result)
     }
 
-    pub fn build_command(&self, args: &HashMap<String, Value>) -> Result<Vec<u8>, CommandError> {
+    pub fn build_command(&self, args: &BTreeMap<String, Value>) -> Result<Vec<u8>, CommandError> {
         self.validate()?;
 
         for param_name in self.params.keys() {
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn test_valid_params() {
         let mask = BinMask::try_from("1122??44??66").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "param1".to_string(),
             BinaryParam {
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_valid_subsequent_params() {
         let mask = BinMask::try_from("11????????66").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "param1".to_string(),
             BinaryParam {
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn test_overlapping_params() {
         let mask = BinMask::try_from("11????44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "param1".to_string(),
             BinaryParam {
@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn test_uncovered_mask() {
         let mask = BinMask::try_from("11????44??").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "param1".to_string(),
             BinaryParam {
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn test_gap_between_params() {
         let mask = BinMask::try_from("11????????66").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "param1".to_string(),
             BinaryParam {
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn test_build_command_valid() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -544,10 +544,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let mut args = HashMap::new();
+        let mut args = BTreeMap::new();
         args.insert("freq".to_string(), Value::Int(42));
 
         let result = cmd.build_command(&args).unwrap();
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn test_build_command_missing_arg() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -574,10 +574,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let args = HashMap::new();
+        let args = BTreeMap::new();
         assert!(matches!(
             cmd.build_command(&args),
             Err(CommandError::MissingArgument(_))
@@ -587,7 +587,7 @@ mod tests {
     #[test]
     fn test_build_command_unexpected_arg() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -604,10 +604,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let mut args = HashMap::new();
+        let mut args = BTreeMap::new();
         args.insert("freq".to_string(), Value::Int(42));
         args.insert("unknown".to_string(), Value::Int(10));
 
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn test_build_command_with_transforms() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -637,10 +637,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let mut args = HashMap::new();
+        let mut args = BTreeMap::new();
         args.insert("freq".to_string(), Value::Int(11));
 
         let result = cmd.build_command(&args).unwrap();
@@ -650,7 +650,7 @@ mod tests {
     #[test]
     fn test_build_command_invalid_bcd() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -667,10 +667,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let mut args = HashMap::new();
+        let mut args = BTreeMap::new();
         args.insert("freq".to_string(), Value::Int(-1));
 
         assert!(matches!(
@@ -698,9 +698,9 @@ mod tests {
             },
             response: None,
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -733,9 +733,9 @@ mod tests {
                 masks: vec![(0, 1)],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -771,9 +771,9 @@ mod tests {
                 masks: vec![(0, 2), (2, 2)],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "first".to_string(),
                     BinaryParam {
@@ -819,9 +819,9 @@ mod tests {
                 masks: vec![(0, 1)],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -854,9 +854,9 @@ mod tests {
                 masks: vec![],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -890,9 +890,9 @@ mod tests {
                 masks: vec![],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -926,9 +926,9 @@ mod tests {
                 masks: vec![],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
@@ -953,7 +953,7 @@ mod tests {
     #[test]
     fn test_build_command_with_float_transforms() {
         let mask = BinMask::try_from("1122??44").unwrap();
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert(
             "freq".to_string(),
             BinaryParam {
@@ -970,10 +970,10 @@ mod tests {
             response: None,
             validator: None,
             params,
-            returns: HashMap::new(),
+            returns: BTreeMap::new(),
         };
 
-        let mut args = HashMap::new();
+        let mut args = BTreeMap::new();
         args.insert("freq".to_string(), Value::Int(11));
 
         let result = cmd.build_command(&args).unwrap();
@@ -992,9 +992,9 @@ mod tests {
                 masks: vec![(0, 1)],
             }),
             validator: None,
-            params: HashMap::new(),
+            params: BTreeMap::new(),
             returns: {
-                let mut returns = HashMap::new();
+                let mut returns = BTreeMap::new();
                 returns.insert(
                     "value".to_string(),
                     BinaryParam {
