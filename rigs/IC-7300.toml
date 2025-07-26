@@ -1,0 +1,222 @@
+[general]
+type = "transceiver"
+version = 1
+
+[enums.mode]
+LSB = 0
+USB = 1
+AM = 2
+CWL = 3
+DIGIL = 4
+FM = 5
+CWU = 7
+DIGIU = 8
+
+[enums.vfo]
+A = 0
+B = 1
+
+[[init]]
+command = "FEFE94E0.1A050053.00.FD"
+response = "FEFE94E01A05005300FD.FEFEE094FBFD"
+reply_length = 16
+
+[[init]]
+command = "FEFE94E0.1A050075.01.FD"
+response = "FEFE94E01A05007501FD.FEFEE094FBFD"
+reply_length = 16
+
+[[init]]
+command = "FEFE94E0.1A050071.00.FD"
+response = "FEFE94E01A05007100FD.FEFEE094FBFD"
+reply_length = 16
+
+[commands.vfo_swap]
+command = "FEFE94E0.07B0.FD"
+response = "FEFE94E007B0FD.FEFEE094FBFD"
+reply_length = 13
+
+[commands.set_xit]
+command = "FEFE94E0.21.02??.FD"
+response = "FEFE94E0210201FD.FEFEE094FBFD"
+reply_length = 14
+
+[commands.set_xit.params.xit]
+index = 6
+length = 1
+format = "int_lu"
+
+[commands.set_rit]
+command = "FEFE94E0.21.01??.FD"
+response = "FEFE94E0210100FD.FEFEE094FBFD"
+reply_length = 14
+
+[commands.set_rit.params.rit]
+index = 6
+length = 1
+format = "int_lu"
+
+[commands.cw_pitch]
+command = "FEFE94E0.14.09.????.FD"
+response = "FEFE94E014090000FD.FEFEE094FBFD"
+reply_length = 15
+
+[commands.cw_pitch.params.value]
+index = 6
+length = 2
+format = "bcd_bu"
+add = -127.5
+multiply = 0.425
+
+[commands.set_vfo]
+command = "FEFE94E0.0701.FD.FEFE94E0.0F00.FD"
+response = "FEFE94E00701FD.FEFE94E00F00FD.FEFEE094FBFD"
+reply_length = 20
+
+[commands.transmit]
+command = "FEFE94E0.1C00.??.FD"
+response = "FEFE94E01C00??FD.FEFEE094FBFD"
+reply_length = 14
+
+[commands.transmit.params.value]
+index = 6
+length = 1
+format = "int_lu"
+
+[commands.set_split]
+command = "FEFE94E0.0F??.FD"
+response = "FEFE94E00F00FD.FEFEE094FBFD"
+reply_length = 13
+
+[commands.set_split.params.split]
+index = 5
+length = 1
+format = "int_lu"
+
+[commands.set_mode]
+command = "FEFE94E0.06.??.FD"
+response = "FEFE94E00607FD.FEFEE094FBFD"
+reply_length = 13
+
+[commands.set_mode.params.mode]
+index = 5
+length = 1
+format = "int_lu"
+
+[commands.set_freq]
+command = "FEFE94E0.25.??.??????????.FD"
+response = "FEFE94E025010000000000FD.FEFEE094FBFD"
+reply_length = 18
+
+[commands.set_freq.params.freq]
+index = 6
+length = 5
+format = "bcd_lu"
+
+[commands.set_freq.params.target]
+index = 5
+length = 1
+format = "int_lu"
+
+[commands.clear_rit]
+command = "FEFE94E0.21.00000000.FD"
+response = "FEFE94E02100000000FD.FEFEE094FBFD"
+reply_length = 16
+
+[commands.vfo_equal]
+command = "FEFE94E0.07A0.FD"
+response = "FEFE94E007A0FD.FEFEE094FBFD"
+reply_length = 13
+
+[[status]]
+command = "FEFE94E0.2500.FD"
+response = "FEFE94E02500FD.FEFEE094.2500.??????????.FD"
+reply_length = 19
+
+[status.returns.freq_a]
+index = 13
+length = 5
+format = "bcd_lu"
+
+[[status]]
+command = "FEFE94E0.2501.FD"
+response = "FEFE94E02501FD.FEFEE094.2501.0000000000.FD"
+reply_length = 19
+
+[status.returns.freq_b]
+index = 13
+length = 5
+format = "bcd_lu"
+
+[[status]]
+command = "FEFE94E0.04.FD"
+response = "FEFE94E004FD.FEFEE094.04.??.00FD"
+reply_length = 14
+
+[status.returns.mode]
+index = 11
+length = 1
+format = "int_lu"
+
+[[status]]
+command = "FEFE94E0.1409.FD"
+response = "FEFE94E01409FD.FEFEE094.1409.????.FD"
+reply_length = 16
+
+[status.returns.pitch]
+index = 13
+length = 2
+format = "bcd_bu"
+add = "300"
+multiply = "2.362205"
+
+[[status]]
+command = "FEFE94E0.1C00.FD"
+response = "FEFE94E01C00FD.FEFEE094.1C00.??.FD"
+reply_length = 15
+
+[status.returns.transmit]
+index = 13
+length = 1
+format = "int_lu"
+
+[[status]]
+command = "FEFE94E0.2101.FD"
+response = "FEFE94E02101FD.FEFEE094.2101.??.FD"
+reply_length = 15
+
+[status.returns.rit]
+index = 13
+length = 1
+format = "int_lu"
+
+[[status]]
+command = "FEFE94E0.2102.FD"
+response = "FEFE94E02102FD.FEFEE094.2102.00.FD"
+reply_length = 15
+
+[status.returns.xit]
+index = 13
+length = 1
+format = "int_lu"
+
+# STATUS6 and STATUS7 is duplicated in the original ini file?
+# [[status]]
+# command = "FEFE94E0.0F.FD"
+# response = "FEFE94E00FFD.FEFEE094.0F.00.FD"
+# reply_length = 13
+
+# [status.returns.pmVfoAA]
+# index = 11
+# length = 1
+# format = "int_lu"
+
+# [[status]]
+# command = "FEFE94E0.0F.FD"
+# response = "FEFE94E00FFD.FEFEE094.0F.00.FD"
+# reply_length = 13
+
+# [status.returns.pmSplitOff]
+# index = 11
+# length = 1
+# format = "int_lu"
