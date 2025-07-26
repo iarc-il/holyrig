@@ -253,15 +253,18 @@ impl RigApi {
                                     "Invalid enum value '{member}' for enum '{enum_name}'",
                                 )))
                             })?;
-                        converted_args.insert(name.clone(), Value::Int(int_value as i64));
+                        converted_args.insert(name.clone(), int_value as i64);
                     } else {
                         return Err(RigApiError::Command(CommandError::InvalidArgumentValue(
                             format!("Parameter '{name}' is not an enum type"),
                         )));
                     }
                 }
-                _ => {
-                    converted_args.insert(name.clone(), value.clone());
+                Value::Int(value) => {
+                    converted_args.insert(name.clone(), *value);
+                }
+                Value::Bool(value) => {
+                    converted_args.insert(name.clone(), *value as i64);
                 }
             }
         }

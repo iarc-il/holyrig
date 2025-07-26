@@ -303,7 +303,7 @@ impl Command {
         Ok(result)
     }
 
-    pub fn build_command(&self, args: &BTreeMap<String, Value>) -> Result<Vec<u8>, CommandError> {
+    pub fn build_command(&self, args: &BTreeMap<String, i64>) -> Result<Vec<u8>, CommandError> {
         self.validate()?;
 
         for param_name in self.params.keys() {
@@ -320,34 +320,12 @@ impl Command {
         let mut result = self.command.data.clone();
 
         for (param_name, param) in &self.params {
-            let arg = args.get(param_name).unwrap();
-            let value = self.convert_arg_to_value(arg, param)?;
+            let arg = *args.get(param_name).unwrap() as f64;
+            let value = ((arg + param.add) * param.multiply).round() as i64;
             self.apply_value_to_command(&mut result, value, param)?;
         }
 
         Ok(result)
-    }
-
-    fn convert_arg_to_value(&self, arg: &Value, param: &BinaryParam) -> Result<i64, CommandError> {
-        let raw_value = match arg {
-            Value::Int(v) => *v as f64,
-            Value::Bool(v) => {
-                if *v {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            Value::Enum(v) => {
-                return Err(CommandError::InvalidArgumentValue(format!(
-                    "Enum value '{v}' must be converted to integer by RigApi"
-                )));
-            }
-        };
-
-        let value = ((raw_value + param.add) * param.multiply).round() as i64;
-
-        Ok(value)
     }
 
     fn apply_value_to_command(
@@ -548,7 +526,7 @@ mod tests {
         };
 
         let mut args = BTreeMap::new();
-        args.insert("freq".to_string(), Value::Int(42));
+        args.insert("freq".to_string(), 42);
 
         let result = cmd.build_command(&args).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
@@ -608,8 +586,8 @@ mod tests {
         };
 
         let mut args = BTreeMap::new();
-        args.insert("freq".to_string(), Value::Int(42));
-        args.insert("unknown".to_string(), Value::Int(10));
+        args.insert("freq".to_string(), 42);
+        args.insert("unknown".to_string(), 10);
 
         assert!(matches!(
             cmd.build_command(&args),
@@ -641,7 +619,7 @@ mod tests {
         };
 
         let mut args = BTreeMap::new();
-        args.insert("freq".to_string(), Value::Int(11));
+        args.insert("freq".to_string(), 11);
 
         let result = cmd.build_command(&args).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x42, 0x44]);
@@ -671,7 +649,7 @@ mod tests {
         };
 
         let mut args = BTreeMap::new();
-        args.insert("freq".to_string(), Value::Int(-1));
+        args.insert("freq".to_string(), -1);
 
         assert!(matches!(
             cmd.build_command(&args),
@@ -680,7 +658,7 @@ mod tests {
             ))
         ));
 
-        args.insert("freq".to_string(), Value::Int(100));
+        args.insert("freq".to_string(), 100);
         assert!(matches!(
             cmd.build_command(&args),
             Err(CommandError::DataFormat(
@@ -974,7 +952,7 @@ mod tests {
         };
 
         let mut args = BTreeMap::new();
-        args.insert("freq".to_string(), Value::Int(11));
+        args.insert("freq".to_string(), 11);
 
         let result = cmd.build_command(&args).unwrap();
         assert_eq!(result, vec![0x11, 0x22, 0x54, 0x44]);
