@@ -292,38 +292,56 @@ impl RigApi {
             RigApiError::CommandNotFound(CommandType::Named(command_name.to_string()))
         })?;
 
+        self.parse_response(command, response)
+    }
+
+    pub fn parse_status_response(
+        &self,
+        command_index: usize,
+        response: &[u8],
+    ) -> Result<HashMap<String, Value>, RigApiError> {
+        let command =
+            self.status_commands
+                .get(command_index)
+                .ok_or(RigApiError::CommandNotFound(CommandType::Status(
+                    command_index,
+                )))?;
+        self.parse_response(command, response)
+    }
+
+    fn parse_response(
+        &self,
+        command: &Command,
+        response: &[u8],
+    ) -> Result<HashMap<String, Value>, RigApiError> {
         let raw_values = command
             .parse_response(response)
             .map_err(RigApiError::from)?;
 
         let mut converted_values = HashMap::new();
         for (name, value) in raw_values {
-            if let Some(type_name) = self.get_command_return_type(command_name, &name) {
-                match type_name {
-                    ValueType::Int => {
-                        converted_values.insert(name, Value::Int(value));
-                    }
-                    ValueType::Bool => {
-                        let value = value != 0;
-                        converted_values.insert(name, Value::Bool(value));
-                    }
-                    ValueType::Enum(enum_name) => {
-                        if let Some(enum_map) = self.reverse_enum_mappings.get(enum_name) {
-                            if let Some(enum_value) = enum_map.get(&(value as i32)) {
-                                converted_values.insert(name, Value::Enum(enum_value.clone()));
-                                continue;
-                            } else {
-                                return Err(RigApiError::InvalidEnumValue {
-                                    enum_name: enum_name.clone(),
-                                    value,
-                                });
-                            }
+            let type_name = &command.returns.get(&name).unwrap().data_type;
+            match type_name {
+                ValueType::Int => {
+                    converted_values.insert(name, Value::Int(value));
+                }
+                ValueType::Bool => {
+                    let value = value != 0;
+                    converted_values.insert(name, Value::Bool(value));
+                }
+                ValueType::Enum(enum_name) => {
+                    if let Some(enum_map) = self.reverse_enum_mappings.get(enum_name) {
+                        if let Some(enum_value) = enum_map.get(&(value as i32)) {
+                            converted_values.insert(name, Value::Enum(enum_value.clone()));
+                            continue;
+                        } else {
+                            return Err(RigApiError::InvalidEnumValue {
+                                enum_name: enum_name.clone(),
+                                value,
+                            });
                         }
                     }
                 }
-            } else {
-                // Already checked at the begining of the function
-                panic!();
             }
         }
 
