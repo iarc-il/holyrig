@@ -77,6 +77,14 @@ pub async fn run_server(
                     ManagerMessage::DeviceDisconnected { device_id } => {
                         (format!("Device {device_id} disconnected"), device_id)
                     },
+                    ManagerMessage::StatusUpdate { device_id, values } => {
+                        let formatted_values: Vec<_> = values
+                            .into_iter()
+                            .map(|(name, value)| format!("{name} = {value:?}"))
+                            .collect();
+
+                        (format!("Device {device_id} status update:\n{}\n", formatted_values.join("\n")), device_id)
+                    }
                 };
                 if let Some(addr) = device_id_to_addr.get(&device_id) {
                     socket.send_to(udp_response.as_bytes(), addr).await?;

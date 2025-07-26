@@ -343,7 +343,7 @@ pub struct BinaryParam {
     multiply: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Int(i64),
     Bool(bool),
