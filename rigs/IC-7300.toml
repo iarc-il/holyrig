@@ -140,7 +140,7 @@ format = "bcd_lu"
 
 [[status]]
 command = "FEFE94E0.2501.FD"
-response = "FEFE94E02501FD.FEFEE094.2501.0000000000.FD"
+response = "FEFE94E02501FD.FEFEE094.2501.??????????.FD"
 reply_length = 19
 
 [status.returns.freq_b]
@@ -167,8 +167,8 @@ reply_length = 16
 index = 13
 length = 2
 format = "bcd_bu"
-add = "300"
-multiply = "2.362205"
+add = 300
+multiply = 2.362205
 
 [[status]]
 command = "FEFE94E0.1C00.FD"
@@ -192,7 +192,7 @@ format = "int_lu"
 
 [[status]]
 command = "FEFE94E0.2102.FD"
-response = "FEFE94E02102FD.FEFEE094.2102.00.FD"
+response = "FEFE94E02102FD.FEFEE094.2102.??.FD"
 reply_length = 15
 
 [status.returns.xit]
