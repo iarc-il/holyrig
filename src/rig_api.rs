@@ -51,6 +51,9 @@ pub enum RigApiError {
     BuildValueFailed {
         error: String,
     },
+    CommandNotInSchema {
+        command_name: String,
+    },
 }
 
 impl std::fmt::Display for RigApiError {
@@ -91,6 +94,9 @@ impl std::fmt::Display for RigApiError {
                 param_name,
             } => write!(f, "Unknown param {param_name} in command {command_name}"),
             RigApiError::BuildValueFailed { error } => write!(f, "Failed to build value: {error}"),
+            RigApiError::CommandNotInSchema { command_name } => {
+                write!(f, "Command not in schema: {command_name}")
+            }
         }
     }
 }
@@ -110,8 +116,6 @@ pub struct RigApi {
     status_commands: Vec<Command>,
     enum_mappings: HashMap<String, HashMap<String, i32>>,
     reverse_enum_mappings: HashMap<String, HashMap<i32, String>>,
-    command_param_types: HashMap<String, HashMap<String, ValueType>>,
-    command_return_types: HashMap<String, HashMap<String, ValueType>>,
 }
 
 impl TryFrom<(RigFile, schema::Schema)> for RigApi {
@@ -126,13 +130,28 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
         let commands = rig_file
             .commands
             .into_iter()
-            .map(|(name, cmd)| Command::try_from(cmd).map(|command| (name, command)))
+            .map(|(name, cmd)| {
+                let schema_command =
+                    schema
+                        .commands
+                        .get(&name)
+                        .ok_or(RigApiError::CommandNotInSchema {
+                            command_name: name.clone(),
+                        })?;
+                let mut param_types: BTreeMap<_, _> =
+                    schema_command.params.iter().cloned().collect();
+                param_types.extend(schema_command.returns.iter().cloned());
+                Command::try_from((cmd, param_types))
+                    .map(|command| (name, command))
+                    .map_err(RigApiError::Command)
+            })
             .collect::<Result<_, _>>()?;
 
+        let schema_status_types: BTreeMap<_, _> = schema.status.clone().into_iter().collect();
         let status_commands = rig_file
             .status
             .into_iter()
-            .map(Command::try_from)
+            .map(|cmd| Command::try_from((cmd, schema_status_types.clone())))
             .collect::<Result<_, _>>()?;
 
         let mut enum_mappings = HashMap::new();
@@ -149,22 +168,12 @@ impl TryFrom<(RigFile, schema::Schema)> for RigApi {
             reverse_enum_mappings.insert(enum_name, reverse_map);
         }
 
-        let mut command_param_types = HashMap::new();
-        let mut command_return_types = HashMap::new();
-
-        for (cmd_name, cmd) in &schema.commands {
-            command_param_types.insert(cmd_name.clone(), cmd.params.iter().cloned().collect());
-            command_return_types.insert(cmd_name.clone(), cmd.returns.iter().cloned().collect());
-        }
-
         let api = Self {
             init_commands,
             commands,
             status_commands,
             enum_mappings,
             reverse_enum_mappings,
-            command_param_types,
-            command_return_types,
         };
 
         api.validate()?;
@@ -289,27 +298,25 @@ impl RigApi {
 
         let mut converted_values = HashMap::new();
         for (name, value) in raw_values {
-            if let Some(return_types) = self.command_return_types.get(command_name) {
-                if let Some(type_name) = return_types.get(&name) {
-                    match type_name {
-                        ValueType::Int => {
-                            converted_values.insert(name, Value::Int(value));
-                        }
-                        ValueType::Bool => {
-                            let value = value != 0;
-                            converted_values.insert(name, Value::Bool(value));
-                        }
-                        ValueType::Enum(enum_name) => {
-                            if let Some(enum_map) = self.reverse_enum_mappings.get(enum_name) {
-                                if let Some(enum_value) = enum_map.get(&(value as i32)) {
-                                    converted_values.insert(name, Value::Enum(enum_value.clone()));
-                                    continue;
-                                } else {
-                                    return Err(RigApiError::InvalidEnumValue {
-                                        enum_name: enum_name.clone(),
-                                        value,
-                                    });
-                                }
+            if let Some(type_name) = self.get_command_return_type(command_name, &name) {
+                match type_name {
+                    ValueType::Int => {
+                        converted_values.insert(name, Value::Int(value));
+                    }
+                    ValueType::Bool => {
+                        let value = value != 0;
+                        converted_values.insert(name, Value::Bool(value));
+                    }
+                    ValueType::Enum(enum_name) => {
+                        if let Some(enum_map) = self.reverse_enum_mappings.get(enum_name) {
+                            if let Some(enum_value) = enum_map.get(&(value as i32)) {
+                                converted_values.insert(name, Value::Enum(enum_value.clone()));
+                                continue;
+                            } else {
+                                return Err(RigApiError::InvalidEnumValue {
+                                    enum_name: enum_name.clone(),
+                                    value,
+                                });
                             }
                         }
                     }
@@ -396,9 +403,17 @@ impl RigApi {
     }
 
     fn get_command_param_type(&self, command_name: &str, param_name: &str) -> Option<&ValueType> {
-        self.command_param_types
+        self.commands
             .get(command_name)
-            .and_then(|params| params.get(param_name))
+            .and_then(|command| command.params.get(param_name))
+            .map(|param| &param.data_type)
+    }
+
+    fn get_command_return_type(&self, command_name: &str, return_name: &str) -> Option<&ValueType> {
+        self.commands
+            .get(command_name)
+            .and_then(|command| command.returns.get(return_name))
+            .map(|param| &param.data_type)
     }
 
     fn get_enum_type_for_param(&self, command_name: &str, param_name: &str) -> Option<String> {
@@ -415,9 +430,7 @@ impl RigApi {
     }
 
     fn get_enum_type_for_return(&self, command_name: &str, return_name: &str) -> Option<String> {
-        self.command_return_types
-            .get(command_name)
-            .and_then(|returns| returns.get(return_name))
+        self.get_command_param_type(command_name, return_name)
             .and_then(|type_name| {
                 if let ValueType::Enum(enum_name) = type_name
                     && self.enum_mappings.contains_key(enum_name)

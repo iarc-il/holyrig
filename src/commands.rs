@@ -7,6 +7,7 @@ use std::{
 use crate::{
     data_format::{DataFormat, DataFormatError},
     rig_file::RigCommand,
+    schema::ValueType,
 };
 
 #[derive(Debug)]
@@ -273,6 +274,7 @@ impl TryFrom<RigCommand> for Command {
                     index: param.index,
                     length: param.length,
                     format: param.format,
+                    data_type: ValueType::Int,
                     add: param.add,
                     multiply: param.multiply,
                 },
@@ -287,6 +289,7 @@ impl TryFrom<RigCommand> for Command {
                     index: param.index,
                     length: param.length,
                     format: param.format,
+                    data_type: ValueType::Int,
                     add: param.add,
                     multiply: param.multiply,
                 },
@@ -305,15 +308,37 @@ impl TryFrom<RigCommand> for Command {
     }
 }
 
+impl TryFrom<(RigCommand, BTreeMap<String, ValueType>)> for Command {
+    type Error = CommandError;
+
+    fn try_from(
+        (command, types): (RigCommand, BTreeMap<String, ValueType>),
+    ) -> Result<Self, Self::Error> {
+        let mut command = Command::try_from(command)?;
+        for (name, param) in &mut command.params {
+            if let Some(data_type) = types.get(name) {
+                param.data_type = data_type.clone();
+            }
+        }
+        for (name, param) in &mut command.returns {
+            if let Some(data_type) = types.get(name) {
+                param.data_type = data_type.clone();
+            }
+        }
+        Ok(command)
+    }
+}
+
 // The binary param struct is used to build commands from given argument and parse data from
 // responses.
 #[derive(Debug, Clone)]
 pub struct BinaryParam {
-    pub index: u32,
-    pub length: u32,
-    pub format: DataFormat,
-    pub add: f64,
-    pub multiply: f64,
+    index: u32,
+    length: u32,
+    format: DataFormat,
+    pub data_type: ValueType,
+    add: f64,
+    multiply: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -442,6 +467,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -452,6 +478,7 @@ mod tests {
                 index: 4,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -469,6 +496,7 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -479,6 +507,7 @@ mod tests {
                 index: 3,
                 length: 2,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -496,6 +525,7 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -506,6 +536,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -526,6 +557,7 @@ mod tests {
                 index: 1,
                 length: 2,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -546,6 +578,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -556,6 +589,7 @@ mod tests {
                 index: 4,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -576,6 +610,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -606,6 +641,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -636,6 +672,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -669,6 +706,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 10.0,
                 multiply: 2.0,
             },
@@ -699,6 +737,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 0.0,
                 multiply: 1.0,
             },
@@ -749,6 +788,7 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -784,6 +824,7 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 10.0,
                         multiply: 2.0,
                     },
@@ -822,6 +863,7 @@ mod tests {
                         index: 0,
                         length: 2,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -832,6 +874,7 @@ mod tests {
                         index: 2,
                         length: 2,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -870,6 +913,7 @@ mod tests {
                         index: 0,
                         length: 2,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -905,6 +949,7 @@ mod tests {
                         index: 0,
                         length: 3,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -941,6 +986,7 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::BcdBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -977,6 +1023,7 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 0.0,
                         multiply: 1.0,
                     },
@@ -1002,6 +1049,7 @@ mod tests {
                 index: 2,
                 length: 1,
                 format: DataFormat::BcdBu,
+                data_type: ValueType::Int,
                 add: 10.5,
                 multiply: 2.5,
             },
@@ -1043,6 +1091,7 @@ mod tests {
                         index: 0,
                         length: 1,
                         format: DataFormat::IntBu,
+                        data_type: ValueType::Int,
                         add: 10.5,
                         multiply: 2.5,
                     },
