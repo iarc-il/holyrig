@@ -148,6 +148,8 @@ pub struct Schema {
     #[serde(default)]
     pub enums: HashMap<String, Enum>,
     pub commands: HashMap<String, Command>,
+    #[serde(default)]
+    pub status: HashMap<String, ValueType>,
 }
 
 #[cfg(test)]
@@ -168,6 +170,7 @@ impl Schema {
             },
             enums: HashMap::new(),
             commands: HashMap::new(),
+            status: HashMap::new(),
         }
     }
 

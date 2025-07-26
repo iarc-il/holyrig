@@ -75,10 +75,37 @@ params = [
     ["rit", "bool"]
 ]
 
-# What are enable RX/TX?
+# pmRx, pmTx
+[commands.transmit]
+params = [
+    ["value", "bool"]
+]
 
 # pmCW_U, pmCW_L, pmSSB_U, pmSSB_L, pmDIG_U, pmDIG_L, pmAM, pmFM
 [commands.set_mode]
 params = [
     ["mode", "mode"]
 ]
+
+[status]
+# pmFreqA
+freq_a = "int"
+# pmFreqB
+freq_b = "int"
+# pmPitch
+pitch = "int"
+# pmRitOffset
+rit_offset = "int"
+# pmVfoAA, pmVfoAB, pmVfoBA, pmVfoBB, pmVfoA, pmVfoB
+rx_vfo = "vfo"
+tx_vfo = "vfo"
+# pmSplitOn, pmSplitOff
+split = "bool"
+# pmRitOn, pmRitOff
+rit = "bool"
+# pmXitOn, pmXitOff
+xit = "bool"
+# pmRx (false), pmTx (true)
+transmit = "bool"
+# pmCW_U, pmCW_L, pmSSB_U, pmSSB_L, pmDIG_U, pmDIG_L, pmAM, pmFM
+mode = "mode"
