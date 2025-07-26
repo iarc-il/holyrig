@@ -1,9 +1,6 @@
-use crate::commands::CommandError;
+use crate::data_format::DataFormat;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
-
-use crate::commands::{BinMask, BinaryParam, Command, CommandValidator};
-use crate::data_format::DataFormat;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct General {
@@ -57,67 +54,6 @@ fn is_default_multiply(value: &f64) -> bool {
 
 fn is_default_add(value: &f64) -> bool {
     value.abs() < f64::EPSILON
-}
-
-impl TryFrom<RigCommand> for Command {
-    type Error = CommandError;
-
-    fn try_from(value: RigCommand) -> Result<Self, Self::Error> {
-        let command = BinMask::try_from(value.command.as_str())?;
-
-        let validator = match (value.reply_length, value.reply_end) {
-            (Some(length), None) => Some(CommandValidator::ReplyLength(length)),
-            (None, Some(end)) => Some(CommandValidator::ReplyEnd(end)),
-            (None, None) => None,
-            _ => {
-                return Err(CommandError::MultipleValidators);
-            }
-        };
-
-        let response = if let Some(response) = value.response {
-            Some(BinMask::try_from(response.as_str())?)
-        } else {
-            None
-        };
-
-        let mut params = BTreeMap::new();
-        for (name, param) in value.params {
-            params.insert(
-                name,
-                BinaryParam {
-                    index: param.index,
-                    length: param.length,
-                    format: param.format,
-                    add: param.add,
-                    multiply: param.multiply,
-                },
-            );
-        }
-
-        let mut returns = BTreeMap::new();
-        for (name, param) in value.returns {
-            returns.insert(
-                name,
-                BinaryParam {
-                    index: param.index,
-                    length: param.length,
-                    format: param.format,
-                    add: param.add,
-                    multiply: param.multiply,
-                },
-            );
-        }
-
-        let result = Command {
-            command,
-            response,
-            validator,
-            params,
-            returns,
-        };
-        result.validate()?;
-        Ok(result)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -270,52 +206,5 @@ mod tests {
         assert!(matches!(pitch_return.format, DataFormat::BcdBu));
         assert_eq!(pitch_return.add, -127.0);
         assert_eq!(pitch_return.multiply, 4.0);
-    }
-
-    #[test]
-    fn test_command_returns_conversion() -> Result<(), CommandError> {
-        let toml_str = r#"
-            command = 'FEFE94E0.25.00.FD'
-            response = 'FEFE94E0.25.??.??.FD'
-
-            [returns.freq]
-            index = 5
-            length = 2
-            format = "bcd_lu"
-            add = 0
-            multiply = 1
-        "#;
-
-        let rig_cmd: RigCommand = toml::from_str(toml_str).unwrap();
-        let cmd = Command::try_from(rig_cmd)?;
-
-        let freq_return = cmd.returns.get("freq").unwrap();
-        assert_eq!(freq_return.index, 5);
-        assert_eq!(freq_return.length, 2);
-        assert!(matches!(freq_return.format, DataFormat::BcdLu));
-        assert_eq!(freq_return.add, 0.0);
-        assert_eq!(freq_return.multiply, 1.0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_command_returns_without_response() {
-        let toml_str = r#"
-            command = 'FEFE94E0.25.00.FD'
-
-            [returns.freq]
-            index = 5
-            length = 2
-            format = "bcd_lu"
-        "#;
-
-        let rig_cmd: RigCommand = toml::from_str(toml_str).unwrap();
-        let result = Command::try_from(rig_cmd);
-
-        assert!(matches!(
-            result,
-            Err(CommandError::ReturnValuesWithoutResponse)
-        ));
     }
 }
