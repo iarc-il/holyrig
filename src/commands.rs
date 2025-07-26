@@ -16,7 +16,7 @@ pub enum CommandError {
     OddMaskLength,
     OddPlaceholdersLength,
     UncoveredMask,
-    UncoveredParam,
+    UncoveredParam { name: String },
     OverlappingParams,
     DataFormat(DataFormatError),
     MissingArgument(String),
@@ -33,7 +33,9 @@ impl Display for CommandError {
             CommandError::OddMaskLength => write!(f, "Mask length must be even"),
             CommandError::OddPlaceholdersLength => write!(f, "Placeholder length must be even"),
             CommandError::UncoveredMask => write!(f, "Mask region not covered by parameters"),
-            CommandError::UncoveredParam => write!(f, "Parameter is not covered by mask region"),
+            CommandError::UncoveredParam { name } => {
+                write!(f, "Parameter {name} is not covered by mask region")
+            }
             CommandError::OverlappingParams => write!(f, "Parameters overlap"),
             CommandError::DataFormat(data_format_error) => {
                 write!(f, "Data format error: {data_format_error}")
@@ -161,46 +163,46 @@ impl BinMask {
             return Ok(());
         }
 
-        let mut param_regions: Vec<(usize, usize)> = params
-            .values()
-            .map(|param| (param.index as usize, param.length as usize))
+        let mut param_regions: Vec<(String, usize, usize)> = params
+            .iter()
+            .map(|(name, param)| (name.clone(), param.index as usize, param.length as usize))
             .collect();
 
-        param_regions.sort_by_key(|&(start, _)| start);
+        param_regions.sort_by_key(|&(_, start, _)| start);
 
         for i in 0..param_regions.len() - 1 {
-            let (start1, len1) = param_regions[i];
-            let (start2, _) = param_regions[i + 1];
+            let (ref name1, start1, len1) = param_regions[i];
+            let (ref name2, start2, _) = param_regions[i + 1];
 
             if start1 + len1 > start2 {
                 return Err(CommandError::OverlappingParams);
             }
         }
 
-        for &(param_start, param_len) in &param_regions {
+        for (name, param_start, param_len) in &param_regions {
             let mut is_covered = false;
 
             for &(mask_start, mask_len) in &self.masks {
-                if mask_start <= param_start && mask_start + mask_len >= param_start + param_len {
+                if mask_start <= *param_start && mask_start + mask_len >= param_start + param_len {
                     is_covered = true;
                     break;
                 }
             }
 
             if !is_covered {
-                return Err(CommandError::UncoveredParam);
+                return Err(CommandError::UncoveredParam { name: name.clone() });
             }
         }
 
         for &(mask_start, mask_len) in &self.masks {
             let mut covered_regions = vec![false; mask_len];
 
-            for &(param_start, param_len) in &param_regions {
-                if param_start + param_len <= mask_start || param_start >= mask_start + mask_len {
+            for (_name, param_start, param_len) in &param_regions {
+                if param_start + param_len <= mask_start || *param_start >= mask_start + mask_len {
                     continue;
                 }
 
-                let overlap_start = param_start.max(mask_start) - mask_start;
+                let overlap_start = (*param_start).max(mask_start) - mask_start;
                 let overlap_end = (param_start + param_len).min(mask_start + mask_len) - mask_start;
 
                 (overlap_start..overlap_end).for_each(|i| {
@@ -924,7 +926,7 @@ mod tests {
 
         assert!(matches!(
             command.validate(),
-            Err(CommandError::UncoveredParam)
+            Err(CommandError::UncoveredParam { .. }),
         ));
     }
 
