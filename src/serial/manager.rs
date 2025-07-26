@@ -132,7 +132,7 @@ impl DeviceManager {
 
     async fn handle_device_message(&mut self, device_message: DeviceMessage) {
         let result = match device_message {
-            DeviceMessage::DeviceConnected { device_id } => {
+            DeviceMessage::Connected { device_id } => {
                 let _ = self
                     .manager_message_tx
                     .send(ManagerMessage::DeviceConnected { device_id });
@@ -144,13 +144,13 @@ impl DeviceManager {
                     init_result
                 }
             }
-            DeviceMessage::DeviceDisconnected { device_id } => {
+            DeviceMessage::Disconnected { device_id } => {
                 let _ = self
                     .manager_message_tx
                     .send(ManagerMessage::DeviceDisconnected { device_id });
                 Ok(())
             }
-            DeviceMessage::DeviceError { device_id, error } => {
+            DeviceMessage::Error { device_id, error } => {
                 Err(anyhow!("Device (id: {device_id}) failed: {error}"))
             }
         };
@@ -338,7 +338,7 @@ impl DeviceManager {
 
             if let Err(err) = device.run(command_rx).await {
                 device_tx
-                    .send(DeviceMessage::DeviceError {
+                    .send(DeviceMessage::Error {
                         device_id,
                         error: err.to_string(),
                     })
@@ -346,13 +346,13 @@ impl DeviceManager {
                     .unwrap();
             }
             device_tx
-                .send(DeviceMessage::DeviceDisconnected { device_id })
+                .send(DeviceMessage::Disconnected { device_id })
                 .await
                 .unwrap();
         });
 
         self.device_tx
-            .send(DeviceMessage::DeviceConnected { device_id })
+            .send(DeviceMessage::Connected { device_id })
             .await?;
 
         Ok(())

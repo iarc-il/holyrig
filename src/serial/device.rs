@@ -18,9 +18,9 @@ pub enum DeviceCommand {
 
 #[derive(Debug)]
 pub enum DeviceMessage {
-    DeviceError { device_id: usize, error: String },
-    DeviceDisconnected { device_id: usize },
-    DeviceConnected { device_id: usize },
+    Error { device_id: usize, error: String },
+    Disconnected { device_id: usize },
+    Connected { device_id: usize },
 }
 
 pub struct SerialDevice {
@@ -92,7 +92,7 @@ impl SerialDevice {
             if let Ok(new_port) = Self::open_port(&self.settings) {
                 self.port = new_port;
                 self.device_tx
-                    .send(DeviceMessage::DeviceConnected { device_id: self.id })
+                    .send(DeviceMessage::Connected { device_id: self.id })
                     .await
                     .ok();
                 return Ok(());
@@ -111,13 +111,13 @@ impl SerialDevice {
                     let result = self.write_and_read(&data, expected_length).await;
                     if result.is_err() {
                         self.device_tx
-                            .send(DeviceMessage::DeviceDisconnected { device_id: self.id })
+                            .send(DeviceMessage::Disconnected { device_id: self.id })
                             .await
                             .ok();
 
                         if let Err(reconnect_err) = self.attempt_reconnect().await {
                             self.device_tx
-                                .send(DeviceMessage::DeviceError {
+                                .send(DeviceMessage::Error {
                                     device_id: self.id,
                                     error: reconnect_err.to_string(),
                                 })
