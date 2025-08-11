@@ -9,6 +9,8 @@ pub enum Token<'source> {
     Id(&'source str),
     #[regex(r"[0-9]+", |lex| lex.slice())]
     Number(&'source str),
+    #[regex("\"[^\"]*\"", |lex| lex.slice())]
+    Str(&'source str),
     #[token("impl")]
     Impl,
     #[token("for")]
@@ -16,13 +18,23 @@ pub enum Token<'source> {
     #[token("init")]
     Init,
     #[token("{")]
-    ParenOpen,
+    BraceOpen,
     #[token("}")]
+    BraceClose,
+    #[token("(")]
+    ParenOpen,
+    #[token(")")]
     ParenClose,
     #[token("=")]
     Equal,
     #[token(";")]
     Semicolon,
+    #[token(",")]
+    Comma,
+    #[token(".")]
+    Dot,
+    #[token("::")]
+    DoubleColon,
     #[token("\n")]
     NewLine,
     #[regex(r"//[^\n]*\n")]
@@ -84,7 +96,7 @@ peg::parser! {
             }
 
         rule init() -> Init
-            = [Token::Init] [Token::ParenOpen] [Token::ParenClose] {
+            = [Token::Init] [Token::BraceOpen] [Token::BraceClose] {
                 Init {  }
             }
 
@@ -94,9 +106,9 @@ peg::parser! {
                 [Token::Id(schema)]
                 [Token::For]
                 [Token::Id(name)]
-                [Token::ParenOpen]
+                [Token::BraceOpen]
                 init:init()
-                [Token::ParenClose]
+                [Token::BraceClose]
             {
                 Impl {
                     schema: schema.to_string(),
