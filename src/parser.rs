@@ -15,8 +15,14 @@ pub enum Token<'source> {
     Impl,
     #[token("for")]
     For,
+    #[token("enum")]
+    Enum,
     #[token("init")]
     Init,
+    #[token("fn")]
+    Fn,
+    #[token("status")]
+    Status,
     #[token("{")]
     BraceOpen,
     #[token("}")]
@@ -60,10 +66,33 @@ pub struct Init {
 }
 
 #[derive(Debug)]
+pub struct Enum {
+
+}
+
+#[derive(Debug)]
+pub struct Command {
+
+}
+
+#[derive(Debug)]
+pub struct Status {
+
+}
+
+#[derive(Debug)]
+pub enum Member {
+    Enum(Enum),
+    Init(Init),
+    Command(Command),
+    Status(Status),
+}
+
+#[derive(Debug)]
 pub struct Impl {
     schema: String,
     name: String,
-    init: Init,
+    members: Vec<Member>,
 }
 
 #[derive(Debug)]
@@ -95,10 +124,30 @@ peg::parser! {
                 }
             }
 
-        rule init() -> Init
-            = [Token::Init] [Token::BraceOpen] [Token::BraceClose] {
-                Init {  }
+        rule enum_member() -> Member
+            = [Token::Enum] [Token::BraceOpen] [Token::BraceClose] {
+                Member::Enum(Enum {  })
             }
+
+        rule init() -> Member
+            = [Token::Init] [Token::BraceOpen] [Token::BraceClose] {
+                Member::Init(Init {  })
+            }
+
+        rule command() -> Member
+            = [Token::Fn] [Token::BraceOpen] [Token::BraceClose] {
+                Member::Command(Command {  })
+            }
+
+        rule status() -> Member
+            = [Token::Status] [Token::BraceOpen] [Token::BraceClose] {
+                Member::Status(Status {  })
+            }
+
+        rule member() -> Member
+            = member:(init() / enum_member() / command() / status()) {
+            member
+        }
 
         rule impl_block() -> Impl
             =
@@ -107,13 +156,13 @@ peg::parser! {
                 [Token::For]
                 [Token::Id(name)]
                 [Token::BraceOpen]
-                init:init()
+                members:member()+
                 [Token::BraceClose]
             {
                 Impl {
                     schema: schema.to_string(),
                     name: name.to_string(),
-                    init,
+                    members,
                 }
             }
         rule impl_rig() -> RigFile
