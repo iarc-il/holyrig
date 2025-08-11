@@ -61,24 +61,16 @@ pub enum Statement {
 }
 
 #[derive(Debug)]
-pub struct Init {
-
-}
+pub struct Init {}
 
 #[derive(Debug)]
-pub struct Enum {
-
-}
+pub struct Enum {}
 
 #[derive(Debug)]
-pub struct Command {
-
-}
+pub struct Command {}
 
 #[derive(Debug)]
-pub struct Status {
-
-}
+pub struct Status {}
 
 #[derive(Debug)]
 pub enum Member {

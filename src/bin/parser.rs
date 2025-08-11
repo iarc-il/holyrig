@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use holyrig::parser::{rig, Statement, Token};
+use holyrig::parser::{Statement, Token, rig};
 use logos::Logos;
 
 fn parse(source: &str) -> Result<Vec<Statement>> {
