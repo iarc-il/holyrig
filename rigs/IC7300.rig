@@ -1,0 +1,77 @@
+version = 1;
+
+// write(bytes);
+impl Transceiver for IC7300 {
+    enum Vfo {
+        A = 0,
+        B = 1,
+    }
+
+    enum Mode {
+        LSB = 0,
+        USB = 1,
+        AM = 2,
+        CWL = 3,
+        DIGIL = 4,
+        FM = 5,
+        CWU = 7,
+        DIGIU = 8,
+    }
+
+    init {
+       write("FEFE94E0.1A050071.00.FD");
+       read("FEFE94E01A05007100FD.FEFEE094FBFD");
+    }
+
+    fn set_freq(int freq, Vfo target) {
+        freq = freq.format(fmt::BcdLu, 5);
+        target = target.format(fmt::IntLu, 1);
+        command = "FEFE94E0.25.{target}.{freq}.FD";
+        write(command);
+        read("FEFE94E025{_:6}FD.FEFEE094FBFD");
+    }
+
+    fn cw_pitch(int pitch) {
+
+    }
+
+    fn rit_offset(int offset) {
+
+    }
+
+    fn clear_rit() {
+
+    }
+
+    fn set_vfo() {
+
+    }
+
+    fn vfo_equal() {
+
+    }
+
+    fn vfo_swap() {
+
+    }
+
+    fn set_split(bool split) {
+
+    }
+
+    fn set_rit(bool rit) {
+
+    }
+
+    fn set_xit(bool xit) {
+
+    }
+
+    fn set_mode(Mode mode) {
+
+    }
+
+    status {
+
+    }
+}
