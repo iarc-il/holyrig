@@ -7,17 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-mod commands;
-mod data_format;
-mod gui;
-mod omnirig_parser;
-mod rig;
-mod rig_api;
-mod rig_file;
-mod schema;
-mod serial;
-mod udp_server;
-mod parser;
+use holyrig::{gui, rig_api, rig_file, schema, serial, udp_server};
 
 use gui::GuiMessage;
 use rig_api::RigApi;
