@@ -17,6 +17,7 @@ mod rig_file;
 mod schema;
 mod serial;
 mod udp_server;
+mod parser;
 
 use gui::GuiMessage;
 use rig_api::RigApi;
