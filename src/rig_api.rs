@@ -427,28 +427,8 @@ impl RigApi {
             .map(|param| &param.data_type)
     }
 
-    fn get_command_return_type(&self, command_name: &str, return_name: &str) -> Option<&ValueType> {
-        self.commands
-            .get(command_name)
-            .and_then(|command| command.returns.get(return_name))
-            .map(|param| &param.data_type)
-    }
-
     fn get_enum_type_for_param(&self, command_name: &str, param_name: &str) -> Option<String> {
         self.get_command_param_type(command_name, param_name)
-            .and_then(|type_name| {
-                if let ValueType::Enum(enum_name) = type_name
-                    && self.enum_mappings.contains_key(enum_name)
-                {
-                    Some(enum_name.clone())
-                } else {
-                    None
-                }
-            })
-    }
-
-    fn get_enum_type_for_return(&self, command_name: &str, return_name: &str) -> Option<String> {
-        self.get_command_param_type(command_name, return_name)
             .and_then(|type_name| {
                 if let ValueType::Enum(enum_name) = type_name
                     && self.enum_mappings.contains_key(enum_name)

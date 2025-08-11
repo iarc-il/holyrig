@@ -171,8 +171,8 @@ impl BinMask {
         param_regions.sort_by_key(|&(_, start, _)| start);
 
         for i in 0..param_regions.len() - 1 {
-            let (ref name1, start1, len1) = param_regions[i];
-            let (ref name2, start2, _) = param_regions[i + 1];
+            let (_, start1, len1) = param_regions[i];
+            let (_, start2, _) = param_regions[i + 1];
 
             if start1 + len1 > start2 {
                 return Err(CommandError::OverlappingParams);
