@@ -373,6 +373,16 @@ impl RigApi {
         Ok(command.response_length())
     }
 
+    pub fn validate_init_response(
+        &self,
+        _index: usize,
+        _response: &[u8],
+    ) -> Result<(), RigApiError> {
+        // For now, we don't validate init responses
+        // This could be extended to validate expected response patterns
+        Ok(())
+    }
+
     pub fn get_command_response_length(
         &self,
         command_name: &str,

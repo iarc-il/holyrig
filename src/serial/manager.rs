@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
 use xdg::BaseDirectories;
@@ -8,8 +8,8 @@ use xdg::BaseDirectories;
 use crate::commands::Value;
 use crate::gui::GuiMessage;
 use crate::rig::{RigSettings, Settings};
-use crate::rig_api::RigApi;
 use crate::serial::device::{DeviceCommand, DeviceMessage, SerialDevice};
+use crate::wrapper::{ExternalApi, RigWrapper};
 
 const RIGS_FILE: &str = "rigs.toml";
 
@@ -53,9 +53,9 @@ pub enum ManagerMessage {
     },
 }
 
-pub struct DeviceManager {
-    rigs: Arc<HashMap<String, RigApi>>,
-    devices: HashMap<usize, Device>,
+pub struct DeviceManager<W: RigWrapper + Clone + Send + Sync> {
+    rigs: Arc<HashMap<String, W>>,
+    devices: HashMap<usize, Device<W>>,
     settings: Settings,
     base_dirs: BaseDirectories,
 
@@ -72,56 +72,140 @@ pub struct DeviceManager {
 }
 
 #[derive(Clone)]
-struct Device {
+struct Device<W: RigWrapper + Clone> {
     // Manager to devices channel
     command_tx: mpsc::Sender<DeviceCommand>,
-    rig_api: RigApi,
+    rig_wrapper: W,
     settings: RigSettings,
 }
 
-impl Device {
-    async fn write(&self, data: Vec<u8>) -> Result<()> {
-        self.command_tx
-            .send(DeviceCommand::Write { data })
-            .await
-            .context("Failed to send write command to device")
+struct DeviceExternalApi {
+    command_tx: mpsc::Sender<DeviceCommand>,
+    status_values: Arc<Mutex<HashMap<String, Value>>>,
+}
+
+impl DeviceExternalApi {
+    fn new(command_tx: mpsc::Sender<DeviceCommand>) -> Self {
+        Self {
+            command_tx,
+            status_values: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
-    async fn read_exact(&self, length: usize) -> Result<Vec<u8>> {
-        let (read_tx, mut read_rx) = mpsc::channel(1);
-        self.command_tx
-            .send(DeviceCommand::ReadExact {
-                length,
-                response_tx: read_tx,
-            })
-            .await
-            .context("Failed to send read command to device")?;
-
-        read_rx
-            .recv()
-            .await
-            .ok_or_else(|| anyhow!("Device disconnected"))?
+    fn get_status_values(&self) -> HashMap<String, Value> {
+        self.status_values.lock().unwrap().clone()
     }
 
-    async fn read_until(&self, delimiter: Vec<u8>) -> Result<Vec<u8>> {
-        let (read_tx, mut read_rx) = mpsc::channel(1);
-        self.command_tx
-            .send(DeviceCommand::ReadUntil {
-                delimiter,
-                response_tx: read_tx,
-            })
-            .await
-            .context("Failed to send read command to device")?;
-
-        read_rx
-            .recv()
-            .await
-            .ok_or_else(|| anyhow!("Device disconnected"))?
+    fn clear_status_values(&self) {
+        self.status_values.lock().unwrap().clear();
     }
 }
 
-impl DeviceManager {
-    pub fn new(rigs: Arc<HashMap<String, RigApi>>, base_dirs: BaseDirectories) -> Self {
+impl ExternalApi for DeviceExternalApi {
+    fn write(&self, data: &[u8]) -> Result<()> {
+        let (tx, rx): (
+            std::sync::mpsc::Sender<Result<()>>,
+            std::sync::mpsc::Receiver<Result<()>>,
+        ) = std::sync::mpsc::channel();
+        let command_tx = self.command_tx.clone();
+        let data = data.to_vec();
+
+        tokio::spawn(async move {
+            let result = command_tx
+                .send(DeviceCommand::Write { data })
+                .await
+                .context("Failed to send write command to device");
+            let _ = tx.send(result);
+        });
+
+        match rx.recv() {
+            Ok(inner_result) => inner_result,
+            Err(_) => Err(anyhow!("Channel closed")),
+        }
+    }
+
+    fn read(&self, size: usize) -> Result<Vec<u8>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let command_tx = self.command_tx.clone();
+
+        tokio::spawn(async move {
+            let (read_tx, mut read_rx) = mpsc::channel(1);
+            let result = async {
+                command_tx
+                    .send(DeviceCommand::ReadExact {
+                        length: size,
+                        response_tx: read_tx,
+                    })
+                    .await
+                    .context("Failed to send read command to device")?;
+
+                read_rx
+                    .recv()
+                    .await
+                    .ok_or_else(|| anyhow!("Device disconnected"))?
+            }
+            .await;
+            let _ = tx.send(result);
+        });
+
+        match rx.recv() {
+            Ok(inner_result) => inner_result,
+            Err(_) => Err(anyhow!("Channel closed")),
+        }
+    }
+
+    fn set_var(&self, var: &str, value: Value) -> Result<()> {
+        self.status_values
+            .lock()
+            .unwrap()
+            .insert(var.to_string(), value);
+        Ok(())
+    }
+}
+
+// impl<W: RigWrapper + Clone> Device<W> {
+//     async fn write(&self, data: Vec<u8>) -> Result<()> {
+//         self.command_tx
+//             .send(DeviceCommand::Write { data })
+//             .await
+//             .context("Failed to send write command to device")
+//     }
+
+//     async fn read_exact(&self, length: usize) -> Result<Vec<u8>> {
+//         let (read_tx, mut read_rx) = mpsc::channel(1);
+//         self.command_tx
+//             .send(DeviceCommand::ReadExact {
+//                 length,
+//                 response_tx: read_tx,
+//             })
+//             .await
+//             .context("Failed to send read command to device")?;
+
+//         read_rx
+//             .recv()
+//             .await
+//             .ok_or_else(|| anyhow!("Device disconnected"))?
+//     }
+
+//     async fn read_until(&self, delimiter: Vec<u8>) -> Result<Vec<u8>> {
+//         let (read_tx, mut read_rx) = mpsc::channel(1);
+//         self.command_tx
+//             .send(DeviceCommand::ReadUntil {
+//                 delimiter,
+//                 response_tx: read_tx,
+//             })
+//             .await
+//             .context("Failed to send read command to device")?;
+
+//         read_rx
+//             .recv()
+//             .await
+//             .ok_or_else(|| anyhow!("Device disconnected"))?
+//     }
+// }
+
+impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
+    pub fn new(rigs: Arc<HashMap<String, W>>, base_dirs: BaseDirectories) -> Self {
         let (manager_command_tx, manager_command_rx) = mpsc::channel(10);
         let (device_tx, device_rx) = mpsc::channel(10);
 
@@ -205,7 +289,22 @@ impl DeviceManager {
         match manager_command {
             ManagerCommand::CreateOrUpdateDevice { settings } => {
                 if let Some(_device) = self.devices.get(&settings.id) {
-                    todo!()
+                    self.devices.remove(&settings.id);
+                    let changed_settings = self
+                        .settings
+                        .rigs
+                        .iter_mut()
+                        .find(|rig| rig.id == settings.id);
+                    if let Some(changed_settings) = changed_settings {
+                        *changed_settings = settings.clone();
+                    } else {
+                        self.settings.rigs.push(settings.clone());
+                    };
+                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let content = toml::to_string(&self.settings)?;
+                    std::fs::write(path, content)?;
+
+                    self.add_device(settings.id, settings).await?;
                 } else {
                     let changed_settings = self
                         .settings
@@ -281,28 +380,11 @@ impl DeviceManager {
         }
     }
 
-    async fn execute_status_commands(device: &Device) -> Result<HashMap<String, Value>> {
-        let mut all_values = HashMap::new();
-        let status_commands = device.rig_api.get_status_commands()?;
-
-        for (index, bytes) in status_commands.into_iter().enumerate() {
-            let expected_length = device.rig_api.get_status_response_length(index)?;
-
-            device.write(bytes).await?;
-
-            if let Some(length) = expected_length {
-                let response = device.read_exact(length).await?;
-
-                let values = device
-                    .rig_api
-                    .parse_status_response(index, &response)
-                    .map_err(|err| anyhow!(err))?;
-
-                all_values.extend(values);
-            }
-        }
-
-        Ok(all_values)
+    async fn execute_status_commands(device: &Device<W>) -> Result<HashMap<String, Value>> {
+        let external_api = DeviceExternalApi::new(device.command_tx.clone());
+        external_api.clear_status_values();
+        device.rig_wrapper.execute_status(&external_api)?;
+        Ok(external_api.get_status_values())
     }
 
     async fn start_status_polling(&self, device_id: usize) -> Result<()> {
@@ -346,7 +428,7 @@ impl DeviceManager {
     }
 
     pub async fn add_device(&mut self, device_id: usize, settings: RigSettings) -> Result<()> {
-        let rig_api = self
+        let rig_wrapper = self
             .rigs
             .get(&settings.rig_type)
             .context("Unknown rig type")?
@@ -358,7 +440,7 @@ impl DeviceManager {
 
         let device = Device {
             command_tx: serial_device.command_sender(),
-            rig_api,
+            rig_wrapper,
             settings,
         };
 
@@ -407,22 +489,10 @@ impl DeviceManager {
             .get(&device_id)
             .ok_or_else(|| anyhow!("Device not found: {}", device_id))?;
 
-        let params = device.rig_api.parse_param_values(command_name, params)?;
-        let bytes = device.rig_api.build_command(command_name, &params)?;
-        let expected_length = device.rig_api.get_command_response_length(command_name)?;
-
-        device.write(bytes).await?;
-
-        if let Some(length) = expected_length {
-            let response = device.read_exact(length).await?;
-
-            device
-                .rig_api
-                .parse_command_response(command_name, &response)
-                .map_err(|err| anyhow!(err))
-        } else {
-            Ok(HashMap::new())
-        }
+        let external_api = DeviceExternalApi::new(device.command_tx.clone());
+        device
+            .rig_wrapper
+            .execute_command(command_name, params, &external_api)
     }
 
     pub async fn initialize_device(&self, device_id: usize) -> Result<()> {
@@ -431,21 +501,7 @@ impl DeviceManager {
             .get(&device_id)
             .ok_or_else(|| anyhow!("Device not found: {device_id}"))?;
 
-        for (index, data) in device
-            .rig_api
-            .build_init_commands()?
-            .into_iter()
-            .enumerate()
-        {
-            let expected_length = device.rig_api.get_init_response_length(index)?;
-
-            device.write(data).await?;
-
-            if let Some(length) = expected_length {
-                device.read_exact(length).await?;
-            }
-        }
-
-        Ok(())
+        let external_api = DeviceExternalApi::new(device.command_tx.clone());
+        device.rig_wrapper.execute_init(&external_api)
     }
 }
