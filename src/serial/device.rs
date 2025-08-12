@@ -10,7 +10,13 @@ use crate::rig::{DataBits, RigSettings, StopBits};
 pub enum DeviceCommand {
     Write {
         data: Vec<u8>,
-        expected_length: Option<usize>,
+    },
+    ReadExact {
+        length: usize,
+        response_tx: mpsc::Sender<Result<Vec<u8>>>,
+    },
+    ReadUntil {
+        delimiter: Vec<u8>,
         response_tx: mpsc::Sender<Result<Vec<u8>>>,
     },
     Shutdown,
@@ -78,10 +84,6 @@ impl SerialDevice {
             .with_context(|| format!("Failed to open serial port {}", settings.port))
     }
 
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
     pub fn command_sender(&self) -> mpsc::Sender<DeviceCommand> {
         self.command_tx.clone()
     }
@@ -100,30 +102,54 @@ impl SerialDevice {
         }
     }
 
+    async fn write_only(&mut self, data: &[u8]) -> Result<()> {
+        self.port.write_all(data).await?;
+        Ok(())
+    }
+
+    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>> {
+        let mut buf = vec![0u8; length];
+        self.port.read_exact(&mut buf).await?;
+        Ok(buf)
+    }
+
+    async fn read_until(&mut self, delimiter: &[u8]) -> Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        let mut temp = vec![0u8; 1];
+
+        while !buf.ends_with(delimiter) {
+            self.port.read_exact(&mut temp).await?;
+            buf.push(temp[0]);
+        }
+        Ok(buf)
+    }
+
     pub async fn run(mut self, mut command_rx: mpsc::Receiver<DeviceCommand>) -> Result<()> {
         while let Some(cmd) = command_rx.recv().await {
             match cmd {
-                DeviceCommand::Write {
-                    data,
-                    expected_length,
+                DeviceCommand::Write { data } => {
+                    let result = self.write_only(&data).await;
+                    if result.is_err() {
+                        self.handle_error().await;
+                    }
+                }
+                DeviceCommand::ReadExact {
+                    length,
                     response_tx,
                 } => {
-                    let result = self.write_and_read(&data, expected_length).await;
+                    let result = self.read_exact(length).await;
                     if result.is_err() {
-                        self.device_tx
-                            .send(DeviceMessage::Disconnected { device_id: self.id })
-                            .await
-                            .ok();
-
-                        if let Err(reconnect_err) = self.attempt_reconnect().await {
-                            self.device_tx
-                                .send(DeviceMessage::Error {
-                                    device_id: self.id,
-                                    error: reconnect_err.to_string(),
-                                })
-                                .await
-                                .ok();
-                        }
+                        self.handle_error().await;
+                    }
+                    response_tx.send(result).await.ok();
+                }
+                DeviceCommand::ReadUntil {
+                    delimiter,
+                    response_tx,
+                } => {
+                    let result = self.read_until(&delimiter).await;
+                    if result.is_err() {
+                        self.handle_error().await;
                     }
                     response_tx.send(result).await.ok();
                 }
@@ -133,20 +159,20 @@ impl SerialDevice {
         Ok(())
     }
 
-    async fn write_and_read(
-        &mut self,
-        data: &[u8],
-        expected_length: Option<usize>,
-    ) -> Result<Vec<u8>> {
-        self.port.write_all(data).await?;
+    async fn handle_error(&mut self) {
+        self.device_tx
+            .send(DeviceMessage::Disconnected { device_id: self.id })
+            .await
+            .ok();
 
-        match expected_length {
-            Some(length) => {
-                let mut buf = vec![0u8; length];
-                self.port.read_exact(&mut buf).await?;
-                Ok(buf)
-            }
-            None => Ok(Vec::new()),
+        if let Err(reconnect_err) = self.attempt_reconnect().await {
+            self.device_tx
+                .send(DeviceMessage::Error {
+                    device_id: self.id,
+                    error: reconnect_err.to_string(),
+                })
+                .await
+                .ok();
         }
     }
 }

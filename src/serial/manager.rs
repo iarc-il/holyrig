@@ -71,11 +71,53 @@ pub struct DeviceManager {
     device_rx: mpsc::Receiver<DeviceMessage>,
 }
 
+#[derive(Clone)]
 struct Device {
     // Manager to devices channel
     command_tx: mpsc::Sender<DeviceCommand>,
     rig_api: RigApi,
     settings: RigSettings,
+}
+
+impl Device {
+    async fn write(&self, data: Vec<u8>) -> Result<()> {
+        self.command_tx
+            .send(DeviceCommand::Write { data })
+            .await
+            .context("Failed to send write command to device")
+    }
+
+    async fn read_exact(&self, length: usize) -> Result<Vec<u8>> {
+        let (read_tx, mut read_rx) = mpsc::channel(1);
+        self.command_tx
+            .send(DeviceCommand::ReadExact {
+                length,
+                response_tx: read_tx,
+            })
+            .await
+            .context("Failed to send read command to device")?;
+
+        read_rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow!("Device disconnected"))?
+    }
+
+    async fn read_until(&self, delimiter: Vec<u8>) -> Result<Vec<u8>> {
+        let (read_tx, mut read_rx) = mpsc::channel(1);
+        self.command_tx
+            .send(DeviceCommand::ReadUntil {
+                delimiter,
+                response_tx: read_tx,
+            })
+            .await
+            .context("Failed to send read command to device")?;
+
+        read_rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow!("Device disconnected"))?
+    }
 }
 
 impl DeviceManager {
@@ -239,58 +281,46 @@ impl DeviceManager {
         }
     }
 
-    async fn execute_status_commands(
-        command_tx: &mpsc::Sender<DeviceCommand>,
-        rig_api: &RigApi,
-    ) -> Result<HashMap<String, Value>> {
+    async fn execute_status_commands(device: &Device) -> Result<HashMap<String, Value>> {
         let mut all_values = HashMap::new();
-        let status_commands = rig_api.get_status_commands()?;
+        let status_commands = device.rig_api.get_status_commands()?;
 
         for (index, bytes) in status_commands.into_iter().enumerate() {
-            let expected_length = rig_api.get_status_response_length(index)?;
+            let expected_length = device.rig_api.get_status_response_length(index)?;
 
-            let (response_tx, mut response_rx) = mpsc::channel(1);
-            command_tx
-                .send(DeviceCommand::Write {
-                    data: bytes,
-                    expected_length,
-                    response_tx,
-                })
-                .await
-                .context("Failed to send status command to device")?;
+            device.write(bytes).await?;
 
-            let response = response_rx
-                .recv()
-                .await
-                .ok_or_else(|| anyhow!("Device disconnected"))??;
+            if let Some(length) = expected_length {
+                let response = device.read_exact(length).await?;
 
-            let values = rig_api
-                .parse_status_response(index, &response)
-                .map_err(|err| anyhow!(err))?;
+                let values = device
+                    .rig_api
+                    .parse_status_response(index, &response)
+                    .map_err(|err| anyhow!(err))?;
 
-            all_values.extend(values);
+                all_values.extend(values);
+            }
         }
 
         Ok(all_values)
     }
 
     async fn start_status_polling(&self, device_id: usize) -> Result<()> {
-        let state = self
+        let device = self
             .devices
             .get(&device_id)
             .ok_or_else(|| anyhow!("Device not found: {}", device_id))?;
 
-        let poll_interval = state.settings.poll_interval;
+        let poll_interval = device.settings.poll_interval;
         let manager_tx = self.manager_message_tx.clone();
-        let command_tx = state.command_tx.clone();
-        let rig_api = state.rig_api.clone();
+        let device_clone = device.clone();
 
         tokio::spawn(async move {
             let mut previous_values = HashMap::new();
             loop {
                 sleep(Duration::from_millis(poll_interval as u64)).await;
 
-                if let Ok(values) = Self::execute_status_commands(&command_tx, &rig_api).await {
+                if let Ok(values) = Self::execute_status_commands(&device_clone).await {
                     let changed_values: HashMap<String, Value> = values
                         .iter()
                         .filter(|(name, value)| {
@@ -321,22 +351,24 @@ impl DeviceManager {
             .get(&settings.rig_type)
             .context("Unknown rig type")?
             .clone();
-        let (device, command_rx) =
+        let (serial_device, command_rx) =
             SerialDevice::new(device_id, settings.clone(), self.device_tx.clone()).await?;
 
-        let device_state = Device {
-            command_tx: device.command_sender(),
+        let id = settings.id;
+
+        let device = Device {
+            command_tx: serial_device.command_sender(),
             rig_api,
             settings,
         };
 
-        self.devices.insert(device_id, device_state);
+        self.devices.insert(device_id, device);
 
         let device_tx = self.device_tx.clone();
         tokio::spawn(async move {
-            let device_id = device.id();
+            let device_id = id;
 
-            if let Err(err) = device.run(command_rx).await {
+            if let Err(err) = serial_device.run(command_rx).await {
                 device_tx
                     .send(DeviceMessage::Error {
                         device_id,
@@ -359,8 +391,8 @@ impl DeviceManager {
     }
 
     async fn _remove_device(&mut self, device_id: usize) {
-        if let Some(state) = self.devices.remove(&device_id) {
-            let _ = state.command_tx.send(DeviceCommand::Shutdown).await;
+        if let Some(device) = self.devices.remove(&device_id) {
+            let _ = device.command_tx.send(DeviceCommand::Shutdown).await;
         }
     }
 
@@ -370,62 +402,48 @@ impl DeviceManager {
         command_name: &str,
         params: HashMap<String, String>,
     ) -> Result<HashMap<String, Value>> {
-        let state = self
+        let device = self
             .devices
             .get(&device_id)
             .ok_or_else(|| anyhow!("Device not found: {}", device_id))?;
 
-        let params = state.rig_api.parse_param_values(command_name, params)?;
-        let bytes = state.rig_api.build_command(command_name, &params)?;
-        let expected_length = state.rig_api.get_command_response_length(command_name)?;
+        let params = device.rig_api.parse_param_values(command_name, params)?;
+        let bytes = device.rig_api.build_command(command_name, &params)?;
+        let expected_length = device.rig_api.get_command_response_length(command_name)?;
 
-        let (response_tx, mut response_rx) = mpsc::channel(1);
+        device.write(bytes).await?;
 
-        state
-            .command_tx
-            .send(DeviceCommand::Write {
-                data: bytes,
-                expected_length,
-                response_tx,
-            })
-            .await
-            .context("Failed to send command to device")?;
+        if let Some(length) = expected_length {
+            let response = device.read_exact(length).await?;
 
-        let response = response_rx
-            .recv()
-            .await
-            .ok_or_else(|| anyhow!("Device disconnected"))??;
-
-        state
-            .rig_api
-            .parse_command_response(command_name, &response)
-            .map_err(|err| anyhow!(err))
+            device
+                .rig_api
+                .parse_command_response(command_name, &response)
+                .map_err(|err| anyhow!(err))
+        } else {
+            Ok(HashMap::new())
+        }
     }
 
     pub async fn initialize_device(&self, device_id: usize) -> Result<()> {
-        let state = self
+        let device = self
             .devices
             .get(&device_id)
             .ok_or_else(|| anyhow!("Device not found: {device_id}"))?;
 
-        for (index, data) in state.rig_api.build_init_commands()?.into_iter().enumerate() {
-            let expected_length = state.rig_api.get_init_response_length(index)?;
+        for (index, data) in device
+            .rig_api
+            .build_init_commands()?
+            .into_iter()
+            .enumerate()
+        {
+            let expected_length = device.rig_api.get_init_response_length(index)?;
 
-            let (response_tx, mut response_rx) = mpsc::channel(1);
-            state
-                .command_tx
-                .send(DeviceCommand::Write {
-                    data,
-                    expected_length,
-                    response_tx,
-                })
-                .await
-                .context("Failed to send init command to device")?;
+            device.write(data).await?;
 
-            response_rx
-                .recv()
-                .await
-                .ok_or_else(|| anyhow!("Device disconnected"))??;
+            if let Some(length) = expected_length {
+                device.read_exact(length).await?;
+            }
         }
 
         Ok(())
