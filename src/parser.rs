@@ -187,3 +187,72 @@ pub fn parse(source: &str) -> Result<RigFile> {
 
     rig::impl_rig(&tokens).map_err(|e| anyhow::anyhow!("Failed to parse DSL: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_simple_dsl() {
+        let dsl_source = r#"
+            version = 1;
+            impl TestSchema for TestRig {
+                init {}
+                fn {}
+                status {}
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "TestSchema");
+        assert_eq!(rig_file.impl_block.name, "TestRig");
+        assert_eq!(rig_file.impl_block.members.len(), 3);
+        assert_eq!(rig_file.settings.settings.len(), 1); // version setting
+    }
+
+    #[test]
+    fn test_parse_complex_dsl() {
+        let dsl_source = r#"
+            version = 2;
+            baudrate = 9600;
+            impl Transceiver for IC7300 {
+                enum {}
+                init {}
+                fn {}
+                fn {}
+                status {}
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Transceiver");
+        assert_eq!(rig_file.impl_block.name, "IC7300");
+        assert_eq!(rig_file.impl_block.members.len(), 5);
+        assert_eq!(rig_file.settings.settings.len(), 2); // version and baudrate
+    }
+
+    #[test]
+    fn test_parse_invalid_dsl() {
+        let invalid_dsl = "invalid syntax here";
+        let result = parse(invalid_dsl);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse DSL")
+        );
+    }
+
+    #[test]
+    fn test_parse_empty_string() {
+        let result = parse("");
+        assert!(result.is_err());
+    }
+}
