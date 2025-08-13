@@ -124,7 +124,7 @@ impl ExternalApi for DeviceExternalApi {
         }
     }
 
-    fn read(&self, size: usize) -> Result<Vec<u8>> {
+    fn read(&self, length: usize) -> Result<Vec<u8>> {
         let (tx, rx) = std::sync::mpsc::channel();
         let command_tx = self.command_tx.clone();
 
@@ -133,7 +133,7 @@ impl ExternalApi for DeviceExternalApi {
             let result = async {
                 command_tx
                     .send(DeviceCommand::ReadExact {
-                        length: size,
+                        length,
                         response_tx: read_tx,
                     })
                     .await
@@ -162,47 +162,6 @@ impl ExternalApi for DeviceExternalApi {
         Ok(())
     }
 }
-
-// impl<W: RigWrapper + Clone> Device<W> {
-//     async fn write(&self, data: Vec<u8>) -> Result<()> {
-//         self.command_tx
-//             .send(DeviceCommand::Write { data })
-//             .await
-//             .context("Failed to send write command to device")
-//     }
-
-//     async fn read_exact(&self, length: usize) -> Result<Vec<u8>> {
-//         let (read_tx, mut read_rx) = mpsc::channel(1);
-//         self.command_tx
-//             .send(DeviceCommand::ReadExact {
-//                 length,
-//                 response_tx: read_tx,
-//             })
-//             .await
-//             .context("Failed to send read command to device")?;
-
-//         read_rx
-//             .recv()
-//             .await
-//             .ok_or_else(|| anyhow!("Device disconnected"))?
-//     }
-
-//     async fn read_until(&self, delimiter: Vec<u8>) -> Result<Vec<u8>> {
-//         let (read_tx, mut read_rx) = mpsc::channel(1);
-//         self.command_tx
-//             .send(DeviceCommand::ReadUntil {
-//                 delimiter,
-//                 response_tx: read_tx,
-//             })
-//             .await
-//             .context("Failed to send read command to device")?;
-
-//         read_rx
-//             .recv()
-//             .await
-//             .ok_or_else(|| anyhow!("Device disconnected"))?
-//     }
-// }
 
 impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
     pub fn new(rigs: Arc<HashMap<String, W>>, base_dirs: BaseDirectories) -> Self {

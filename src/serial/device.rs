@@ -15,10 +15,6 @@ pub enum DeviceCommand {
         length: usize,
         response_tx: mpsc::Sender<Result<Vec<u8>>>,
     },
-    ReadUntil {
-        delimiter: Vec<u8>,
-        response_tx: mpsc::Sender<Result<Vec<u8>>>,
-    },
     Shutdown,
 }
 
@@ -113,17 +109,6 @@ impl SerialDevice {
         Ok(buf)
     }
 
-    async fn read_until(&mut self, delimiter: &[u8]) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        let mut temp = vec![0u8; 1];
-
-        while !buf.ends_with(delimiter) {
-            self.port.read_exact(&mut temp).await?;
-            buf.push(temp[0]);
-        }
-        Ok(buf)
-    }
-
     pub async fn run(mut self, mut command_rx: mpsc::Receiver<DeviceCommand>) -> Result<()> {
         while let Some(cmd) = command_rx.recv().await {
             match cmd {
@@ -138,16 +123,6 @@ impl SerialDevice {
                     response_tx,
                 } => {
                     let result = self.read_exact(length).await;
-                    if result.is_err() {
-                        self.handle_error().await;
-                    }
-                    response_tx.send(result).await.ok();
-                }
-                DeviceCommand::ReadUntil {
-                    delimiter,
-                    response_tx,
-                } => {
-                    let result = self.read_until(&delimiter).await;
                     if result.is_err() {
                         self.handle_error().await;
                     }
