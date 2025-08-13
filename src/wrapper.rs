@@ -102,3 +102,90 @@ impl RigWrapper for RigFile {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser;
+
+    struct MockExternalApi;
+
+    impl ExternalApi for MockExternalApi {
+        fn write(&self, _data: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        fn read(&self, _size: usize) -> Result<Vec<u8>> {
+            Ok(vec![])
+        }
+
+        fn set_var(&self, _var: &str, _value: Value) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_dsl_rig_file_wrapper() {
+        let dsl_source = r#"
+            version = 1;
+
+            impl TestSchema for TestRig {
+                init {}
+                fn {}
+                status {}
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source).expect("Failed to parse DSL");
+        let external = MockExternalApi;
+
+        assert!(rig_file.execute_init(&external).is_ok());
+        assert!(rig_file.execute_status(&external).is_ok());
+        let result = rig_file.execute_command("test_command", HashMap::new(), &external);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not found in DSL RigFile")
+        );
+        assert_eq!(rig_file.impl_block.schema, "TestSchema");
+        assert_eq!(rig_file.impl_block.name, "TestRig");
+        assert!(rig_file.impl_block.init.is_some());
+        assert!(rig_file.impl_block.status.is_some());
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+    }
+
+    #[test]
+    fn test_dsl_rig_file_wrapper_complex() {
+        let dsl_source = r#"
+            version = 2;
+            baudrate = 9600;
+
+            impl Transceiver for IC7300 {
+                enum {}
+                init {}
+                fn {}
+                fn {}
+                status {}
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source).expect("Failed to parse complex DSL");
+        let external = MockExternalApi;
+
+        assert!(rig_file.execute_init(&external).is_ok());
+        assert!(rig_file.execute_status(&external).is_ok());
+
+        let result = rig_file.execute_command("unknown", HashMap::new(), &external);
+        assert!(result.is_err());
+
+        assert_eq!(rig_file.impl_block.schema, "Transceiver");
+        assert_eq!(rig_file.impl_block.name, "IC7300");
+        assert!(rig_file.impl_block.init.is_some());
+        assert!(rig_file.impl_block.status.is_some());
+        assert_eq!(rig_file.impl_block.commands.len(), 2);
+        assert_eq!(rig_file.impl_block.enums.len(), 1);
+        assert_eq!(rig_file.settings.settings.len(), 2);
+    }
+}
