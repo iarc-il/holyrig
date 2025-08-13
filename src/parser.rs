@@ -48,32 +48,32 @@ pub enum Token<'source> {
     Comment,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Number(u32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Id, Expr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Init {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Enum {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Command {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Status {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Member {
     Enum(Enum),
     Init(Init),
@@ -81,22 +81,25 @@ pub enum Member {
     Status(Status),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Impl {
-    schema: String,
-    name: String,
-    members: Vec<Member>,
+    pub schema: String,
+    pub name: String,
+    pub init: Option<Init>,
+    pub status: Option<Status>,
+    pub commands: Vec<Command>,
+    pub enums: Vec<Enum>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settings {
-    settings: BTreeMap<Id, Expr>,
+    pub settings: BTreeMap<Id, Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RigFile {
-    settings: Settings,
-    impl_block: Impl,
+    pub settings: Settings,
+    pub impl_block: Impl,
 }
 
 peg::parser! {
@@ -149,16 +152,33 @@ peg::parser! {
                 [Token::For]
                 [Token::Id(name)]
                 [Token::BraceOpen]
-                members:member()+
+                members:member()*
                 [Token::BraceClose]
             {
+                let mut init = None;
+                let mut status = None;
+                let mut commands = Vec::new();
+                let mut enums = Vec::new();
+
+                for member in members {
+                    match member {
+                        Member::Init(i) => init = Some(i),
+                        Member::Status(s) => status = Some(s),
+                        Member::Command(c) => commands.push(c),
+                        Member::Enum(e) => enums.push(e),
+                    }
+                }
+
                 Impl {
                     schema: schema.to_string(),
                     name: name.to_string(),
-                    members,
+                    init,
+                    status,
+                    commands,
+                    enums,
                 }
             }
-        rule impl_rig() -> RigFile
+        pub rule impl_rig() -> RigFile
             = settings:settings() impl_block:impl_block() {
                 RigFile {
                     settings,
@@ -209,8 +229,11 @@ mod tests {
         let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.schema, "TestSchema");
         assert_eq!(rig_file.impl_block.name, "TestRig");
-        assert_eq!(rig_file.impl_block.members.len(), 3);
-        assert_eq!(rig_file.settings.settings.len(), 1); // version setting
+        assert!(rig_file.impl_block.init.is_some());
+        assert!(rig_file.impl_block.status.is_some());
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        assert_eq!(rig_file.impl_block.enums.len(), 0);
+        assert_eq!(rig_file.settings.settings.len(), 1);
     }
 
     #[test]
@@ -233,8 +256,11 @@ mod tests {
         let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.schema, "Transceiver");
         assert_eq!(rig_file.impl_block.name, "IC7300");
-        assert_eq!(rig_file.impl_block.members.len(), 5);
-        assert_eq!(rig_file.settings.settings.len(), 2); // version and baudrate
+        assert!(rig_file.impl_block.init.is_some());
+        assert!(rig_file.impl_block.status.is_some());
+        assert_eq!(rig_file.impl_block.commands.len(), 2);
+        assert_eq!(rig_file.impl_block.enums.len(), 1);
+        assert_eq!(rig_file.settings.settings.len(), 2);
     }
 
     #[test]
@@ -254,5 +280,47 @@ mod tests {
     fn test_parse_empty_string() {
         let result = parse("");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_minimal_structure() {
+        let dsl_source = r#"
+            impl Test for Minimal {
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Test");
+        assert_eq!(rig_file.impl_block.name, "Minimal");
+        assert!(rig_file.impl_block.init.is_none());
+        assert!(rig_file.impl_block.status.is_none());
+        assert_eq!(rig_file.impl_block.commands.len(), 0);
+        assert_eq!(rig_file.impl_block.enums.len(), 0);
+        assert_eq!(rig_file.settings.settings.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_only_commands() {
+        let dsl_source = r#"
+            impl Test for Commands {
+                fn {}
+                fn {}
+                fn {}
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Test");
+        assert_eq!(rig_file.impl_block.name, "Commands");
+        assert!(rig_file.impl_block.init.is_none());
+        assert!(rig_file.impl_block.status.is_none());
+        assert_eq!(rig_file.impl_block.commands.len(), 3);
+        assert_eq!(rig_file.impl_block.enums.len(), 0);
     }
 }
