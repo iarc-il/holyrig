@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::{commands::Value, rig_api::RigApi};
+use crate::{commands::Value, parser::RigFile, rig_api::RigApi};
 
 pub trait ExternalApi {
     fn write(&self, data: &[u8]) -> Result<()>;
@@ -66,6 +66,38 @@ impl RigWrapper for RigApi {
             for (name, value) in values {
                 external.set_var(&name, value)?;
             }
+        }
+        Ok(())
+    }
+}
+
+impl RigWrapper for RigFile {
+    fn execute_init(&self, _external: &impl ExternalApi) -> Result<()> {
+        if let Some(_init) = &self.impl_block.init {
+            // TODO
+        }
+        Ok(())
+    }
+
+    fn execute_command(
+        &self,
+        command_name: &str,
+        _params: HashMap<String, String>,
+        _external: &impl ExternalApi,
+    ) -> Result<HashMap<String, Value>> {
+        if !self.impl_block.commands.is_empty() {
+            // TODO
+        }
+
+        Err(anyhow::anyhow!(
+            "Command '{}' not found in DSL RigFile (DSL parsing not yet complete)",
+            command_name
+        ))
+    }
+
+    fn execute_status(&self, _external: &impl ExternalApi) -> Result<()> {
+        if let Some(_status) = &self.impl_block.status {
+            // TODO
         }
         Ok(())
     }
