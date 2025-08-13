@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use anyhow::Result;
 use logos::Logos;
 
 #[derive(Logos, Debug, Copy, Clone)]
@@ -176,4 +177,13 @@ peg::parser! {
             }
 
     }
+}
+
+pub fn parse(source: &str) -> Result<RigFile> {
+    let tokens: Vec<_> = Token::lexer(source)
+        .filter(|token| !matches!(token, Ok(Token::Comment) | Ok(Token::NewLine)))
+        .collect::<Result<_, _>>()
+        .map_err(|_| anyhow::anyhow!("Failed to tokenize DSL string"))?;
+
+    rig::impl_rig(&tokens).map_err(|e| anyhow::anyhow!("Failed to parse DSL: {}", e))
 }
