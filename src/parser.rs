@@ -24,6 +24,10 @@ pub enum Token<'source> {
     Fn,
     #[token("status")]
     Status,
+    #[token("int")]
+    Int,
+    #[token("bool")]
+    Bool,
     #[token("{")]
     BraceOpen,
     #[token("}")]
@@ -51,27 +55,82 @@ pub enum Token<'source> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(String);
 
-#[derive(Debug, Clone)]
+impl From<String> for Id {
+    fn from(value: String) -> Self {
+        Id(value)
+    }
+}
+
+impl From<&str> for Id {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Number(u32),
+    String(String),
+    Identifier(Id),
+    QualifiedIdentifier(Id, Id),
+    MethodCall {
+        object: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
+    StringInterpolation {
+        template: String,
+        variables: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Id, Expr),
+    FunctionCall { name: String, args: Vec<Expr> },
 }
 
 #[derive(Debug, Clone)]
-pub struct Init {}
+pub struct EnumVariant {
+    pub name: String,
+    pub value: u32,
+}
 
 #[derive(Debug, Clone)]
-pub struct Enum {}
+pub struct Init {
+    pub statements: Vec<Statement>,
+}
 
 #[derive(Debug, Clone)]
-pub struct Command {}
+pub struct Enum {
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataType {
+    Int,
+    Bool,
+    Enum(String),
+}
 
 #[derive(Debug, Clone)]
-pub struct Status {}
+pub struct Parameter {
+    pub param_type: DataType,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Status {
+    pub statements: Vec<Statement>,
+}
 
 #[derive(Debug, Clone)]
 pub enum Member {
@@ -113,31 +172,84 @@ peg::parser! {
                     settings: assigns
                         .into_iter()
                         .map(|statement| {
-                            let Statement::Assign(id, expr) = statement;
-                            (id, expr)
+                            match statement {
+                                Statement::Assign(id, expr) => (id, expr),
+                                _ => panic!("Expected assign statement in settings"),
+                            }
                         })
                         .collect()
                 }
             }
 
+        rule enum_variant() -> EnumVariant
+            = [Token::Id(name)] [Token::Equal] [Token::Number(value)] {?
+                Ok(EnumVariant {
+                    name: name.to_string(),
+                    value: value.parse().or(Err("Not a number"))?,
+                })
+            }
+
         rule enum_member() -> Member
-            = [Token::Enum] [Token::BraceOpen] [Token::BraceClose] {
-                Member::Enum(Enum {  })
+            = [Token::Enum] [Token::Id(name)] [Token::BraceOpen]
+              variants:(enum_variant() ** [Token::Comma]) [Token::Comma]?
+              [Token::BraceClose] {
+                Member::Enum(Enum {
+                    name: name.to_string(),
+                    variants,
+                })
+            }
+
+        rule parameter() -> Parameter
+            = param_type:(
+                [Token::Int] { DataType::Int } /
+                [Token::Bool] { DataType::Bool } /
+                [Token::Id(data_type)] { DataType::Enum(data_type.to_string()) }
+            ) [Token::Id(name)] {
+                Parameter {
+                    param_type,
+                    name: name.to_string(),
+                }
+            }
+
+        rule statement() -> Statement
+            = function_call_stmt() / var_assign_statement()
+
+        rule function_call_stmt() -> Statement
+            = [Token::Id(name)] [Token::ParenOpen]
+              args:(expr() ** [Token::Comma]) [Token::Comma]?
+              [Token::ParenClose] [Token::Semicolon] {
+                Statement::FunctionCall {
+                    name: name.to_string(),
+                    args
+                }
+            }
+
+        rule var_assign_statement() -> Statement
+            = [Token::Id(var)] [Token::Equal] expr:expr() [Token::Semicolon] {
+                Statement::Assign(Id(var.to_string()), expr)
             }
 
         rule init() -> Member
-            = [Token::Init] [Token::BraceOpen] [Token::BraceClose] {
-                Member::Init(Init {  })
+            = [Token::Init] [Token::BraceOpen] statements:statement()* [Token::BraceClose] {
+                Member::Init(Init { statements })
             }
 
         rule command() -> Member
-            = [Token::Fn] [Token::BraceOpen] [Token::BraceClose] {
-                Member::Command(Command {  })
+            = [Token::Fn] [Token::Id(name)] [Token::ParenOpen]
+              params:(parameter() ** [Token::Comma]) [Token::Comma]?
+              [Token::ParenClose] [Token::BraceOpen]
+              statements:statement()*
+              [Token::BraceClose] {
+                Member::Command(Command {
+                    name: name.to_string(),
+                    parameters: params,
+                    statements,
+                })
             }
 
         rule status() -> Member
-            = [Token::Status] [Token::BraceOpen] [Token::BraceClose] {
-                Member::Status(Status {  })
+            = [Token::Status] [Token::BraceOpen] statements:statement()* [Token::BraceClose] {
+                Member::Status(Status { statements })
             }
 
         rule member() -> Member
@@ -191,10 +303,62 @@ peg::parser! {
                 Statement::Assign(Id(id.into()), expr)
             }
 
-        rule expr() -> Expr
+        rule method_call() -> Expr
+            = object:primary_expr() [Token::Dot] [Token::Id(method)] [Token::ParenOpen]
+              args:(expr() ** [Token::Comma]) [Token::Comma]?
+              [Token::ParenClose] {
+                Expr::MethodCall {
+                    object: Box::new(object),
+                    method: method.to_string(),
+                    args,
+                }
+            }
+
+        rule primary_expr() -> Expr
             = [Token::Number(number)] {?
                 Ok(Expr::Number(number.parse().or(Err("Not a number"))?))
             }
+            / [Token::Str(s)] {
+                // Handle string interpolation
+                let content = &s[1..s.len()-1]; // Remove quotes
+                if content.contains('{') && content.contains('}') {
+                    // Extract variables from {var} patterns
+                    let mut variables = Vec::new();
+                    let mut chars = content.chars();
+                    let mut current_var = String::new();
+                    let mut in_brace = false;
+
+                    for ch in chars {
+                        if ch == '{' {
+                            in_brace = true;
+                            current_var.clear();
+                        } else if ch == '}' && in_brace {
+                            if !current_var.is_empty() {
+                                variables.push(current_var.clone());
+                            }
+                            in_brace = false;
+                        } else if in_brace {
+                            current_var.push(ch);
+                        }
+                    }
+
+                    Expr::StringInterpolation {
+                        template: content.to_string(),
+                        variables,
+                    }
+                } else {
+                    Expr::String(content.to_string())
+                }
+            }
+            / [Token::Id(scope)] [Token::DoubleColon] [Token::Id(id)] {
+                Expr::QualifiedIdentifier(scope.into(), id.into())
+            }
+            / [Token::Id(id)] {
+                Expr::Identifier(id.into())
+            }
+
+        rule expr() -> Expr
+            = method_call() / primary_expr()
 
     }
 }
