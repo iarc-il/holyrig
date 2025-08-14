@@ -509,7 +509,15 @@ mod tests {
         );
         rig_file.status.push(create_test_command(false, true, true));
 
-        let api = RigApi::try_from((rig_file, schema::Schema::new()))?;
+        let mut schema = schema::Schema::new();
+        schema.commands.insert(
+            "test_cmd".into(),
+            schema::Command {
+                params: vec![],
+                returns: vec![],
+            },
+        );
+        let api = RigApi::try_from((rig_file, schema))?;
 
         let init_cmds = api.build_init_commands()?;
         assert_eq!(init_cmds.len(), 1);
