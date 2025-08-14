@@ -131,7 +131,7 @@ mod tests {
 
             impl TestSchema for TestRig {
                 init {}
-                fn {}
+                fn test_command() {}
                 status {}
             }
         "#;
@@ -163,10 +163,13 @@ mod tests {
             baudrate = 9600;
 
             impl Transceiver for IC7300 {
-                enum {}
+                enum TestEnum {
+                    A = 0,
+                    B = 1,
+                }
                 init {}
-                fn {}
-                fn {}
+                fn command1() {}
+                fn command2() {}
                 status {}
             }
         "#;

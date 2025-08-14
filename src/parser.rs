@@ -382,7 +382,7 @@ mod tests {
             version = 1;
             impl TestSchema for TestRig {
                 init {}
-                fn {}
+                fn test_command() {}
                 status {}
             }
         "#;
@@ -396,6 +396,7 @@ mod tests {
         assert!(rig_file.impl_block.init.is_some());
         assert!(rig_file.impl_block.status.is_some());
         assert_eq!(rig_file.impl_block.commands.len(), 1);
+        assert_eq!(rig_file.impl_block.commands[0].name, "test_command");
         assert_eq!(rig_file.impl_block.enums.len(), 0);
         assert_eq!(rig_file.settings.settings.len(), 1);
     }
@@ -406,10 +407,13 @@ mod tests {
             version = 2;
             baudrate = 9600;
             impl Transceiver for IC7300 {
-                enum {}
+                enum TestEnum {
+                    A = 0,
+                    B = 1,
+                }
                 init {}
-                fn {}
-                fn {}
+                fn command1() {}
+                fn command2() {}
                 status {}
             }
         "#;
@@ -424,7 +428,86 @@ mod tests {
         assert!(rig_file.impl_block.status.is_some());
         assert_eq!(rig_file.impl_block.commands.len(), 2);
         assert_eq!(rig_file.impl_block.enums.len(), 1);
+        assert_eq!(rig_file.impl_block.enums[0].name, "TestEnum");
+        assert_eq!(rig_file.impl_block.enums[0].variants.len(), 2);
         assert_eq!(rig_file.settings.settings.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_function_with_parameters() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn set_freq(int freq, bool enabled) {
+                    write("test");
+                    read("response");
+                    command = "test_command";
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.name, "set_freq");
+        assert_eq!(cmd.parameters.len(), 2);
+        assert_eq!(cmd.parameters[0].param_type, DataType::Int);
+        assert_eq!(cmd.parameters[0].name, "freq");
+        assert_eq!(cmd.parameters[1].param_type, DataType::Bool);
+        assert_eq!(cmd.parameters[1].name, "enabled");
+        assert_eq!(cmd.statements.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_ic7300_subset() {
+        let dsl_source = r#"
+            version = 1;
+            impl Transceiver for IC7300 {
+                enum Vfo {
+                    A = 0,
+                    B = 1,
+                }
+                enum Mode {
+                    LSB = 0,
+                    USB = 1,
+                    AM = 2,
+                }
+                init {
+                    write("FEFE94E0.1A050071.00.FD");
+                    read("FEFE94E01A05007100FD.FEFEE094FBFD");
+                }
+                fn set_freq(int freq, Vfo target) {
+                    command = "FEFE94E0.25.{target}.{freq}.FD";
+                    write(command);
+                }
+                status {}
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Transceiver");
+        assert_eq!(rig_file.impl_block.name, "IC7300");
+        assert_eq!(rig_file.impl_block.enums.len(), 2);
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+
+        let vfo_enum = &rig_file.impl_block.enums[0];
+        assert_eq!(vfo_enum.name, "Vfo");
+        assert_eq!(vfo_enum.variants.len(), 2);
+        assert_eq!(vfo_enum.variants[0].name, "A");
+        assert_eq!(vfo_enum.variants[0].value, 0);
+
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.name, "set_freq");
+        assert_eq!(cmd.parameters.len(), 2);
+        assert_eq!(
+            cmd.parameters[1].param_type,
+            DataType::Enum("Vfo".to_string())
+        );
     }
 
     #[test]
@@ -470,9 +553,9 @@ mod tests {
     fn test_parse_only_commands() {
         let dsl_source = r#"
             impl Test for Commands {
-                fn {}
-                fn {}
-                fn {}
+                fn cmd1() {}
+                fn cmd2() {}
+                fn cmd3() {}
             }
         "#;
 
@@ -486,5 +569,177 @@ mod tests {
         assert!(rig_file.impl_block.status.is_none());
         assert_eq!(rig_file.impl_block.commands.len(), 3);
         assert_eq!(rig_file.impl_block.enums.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_real_ic7300_file() {
+        let ic7300_content =
+            std::fs::read_to_string("rigs/IC7300.rig").expect("Failed to read IC7300.rig");
+
+        let result = parse(&ic7300_content);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Transceiver");
+        assert_eq!(rig_file.impl_block.name, "IC7300");
+        assert!(rig_file.impl_block.init.is_some());
+        assert!(rig_file.impl_block.status.is_some());
+        assert_eq!(rig_file.impl_block.enums.len(), 2);
+
+        // Check that we have the expected functions
+        let function_names: Vec<&str> = rig_file
+            .impl_block
+            .commands
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert!(function_names.contains(&"set_freq"));
+        assert!(function_names.contains(&"cw_pitch"));
+        assert!(function_names.contains(&"set_mode"));
+    }
+
+    #[test]
+    fn test_identifiers_not_tokens() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_func() {
+                    write("test");
+                    read("response");
+                    command = "test_command";
+                    freq = freq.format(fmt::BcdLu, 5);
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.name, "test_func");
+        assert_eq!(cmd.statements.len(), 4);
+
+        // Verify that write, read, command, format, and fmt are parsed as identifiers/function calls
+        match &cmd.statements[0] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "write");
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    Expr::String(s) => assert_eq!(s, "test"),
+                    _ => panic!("Expected string for write"),
+                }
+            }
+            _ => panic!("Expected function call for write"),
+        }
+
+        match &cmd.statements[1] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "read");
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    Expr::String(s) => assert_eq!(s, "response"),
+                    _ => panic!("Expected string for read"),
+                }
+            }
+            _ => panic!("Expected function call for read"),
+        }
+
+        match &cmd.statements[2] {
+            Statement::Assign(var, _) => {
+                assert_eq!(var.0, "command"); // command parsed as identifier
+            }
+            _ => panic!("Expected variable assignment"),
+        }
+
+        match &cmd.statements[3] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "freq");
+                // Verify the method call contains format and fmt as identifiers
+                match expr {
+                    Expr::MethodCall { method, args, .. } => {
+                        assert_eq!(method, "format");
+                        assert_eq!(args.len(), 2);
+                        assert_eq!(
+                            args[0],
+                            Expr::QualifiedIdentifier(Id::from("fmt"), Id::from("BcdLu"))
+                        );
+                    }
+                    _ => panic!("Expected method call"),
+                }
+            }
+            _ => panic!("Expected variable assignment"),
+        }
+    }
+
+    #[test]
+    fn test_generic_function_calls() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_func() {
+                    write("data");
+                    read("response");
+                    send_command("AT", "OK");
+                    delay(100);
+                    custom_func();
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 5);
+
+        // Test write with 1 argument
+        match &cmd.statements[0] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "write");
+                assert_eq!(args.len(), 1);
+            }
+            _ => panic!("Expected function call"),
+        }
+
+        // Test read with 1 argument
+        match &cmd.statements[1] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "read");
+                assert_eq!(args.len(), 1);
+            }
+            _ => panic!("Expected function call"),
+        }
+
+        // Test custom function with 2 arguments
+        match &cmd.statements[2] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "send_command");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("Expected function call"),
+        }
+
+        // Test function with numeric argument
+        match &cmd.statements[3] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "delay");
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    Expr::Number(n) => assert_eq!(*n, 100),
+                    _ => panic!("Expected number"),
+                }
+            }
+            _ => panic!("Expected function call"),
+        }
+
+        // Test function with no arguments
+        match &cmd.statements[4] {
+            Statement::FunctionCall { name, args } => {
+                assert_eq!(name, "custom_func");
+                assert_eq!(args.len(), 0);
+            }
+            _ => panic!("Expected function call"),
+        }
     }
 }
