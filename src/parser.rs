@@ -845,42 +845,6 @@ mod tests {
     }
 
     #[test]
-    fn test_error_levels() {
-        let invalid_dsl = "impl Test for Rig { fn test() { x = (1 + 2); } }";
-
-        // Test Normal level - should hide implementation details
-        let normal_result = parse_with_level(invalid_dsl, ErrorLevel::Normal);
-        assert!(normal_result.is_err());
-        let normal_error = normal_result.unwrap_err();
-        let normal_msg = normal_error.to_string();
-        assert!(normal_msg.contains("Arithmetic expressions are not supported"));
-        assert!(!normal_msg.contains("PEG Error")); // Should not contain implementation details
-
-        // Test Detailed level - should show more context but still clean
-        let detailed_result = parse_with_level(invalid_dsl, ErrorLevel::Detailed);
-        assert!(detailed_result.is_err());
-        let detailed_error = detailed_result.unwrap_err();
-        let detailed_msg = detailed_error.to_string();
-        assert!(detailed_msg.contains("Arithmetic expressions are not supported"));
-        assert!(detailed_msg.contains("Found:")); // Should show what was found
-        assert!(detailed_msg.contains("Expected:")); // Should show what was expected
-        assert!(!detailed_msg.contains("PEG Error")); // Should not contain raw PEG errors
-
-        // Test Verbose level - should show everything including implementation details
-        let verbose_result = parse_with_level(invalid_dsl, ErrorLevel::Verbose);
-        assert!(verbose_result.is_err());
-        let verbose_error = verbose_result.unwrap_err();
-        let verbose_msg = verbose_error.to_string();
-        assert!(verbose_msg.contains("Found"));
-        assert!(verbose_msg.contains("expected one of"));
-        assert!(verbose_msg.contains("PEG Error")); // Should contain implementation details
-
-        // Test error level modification
-        let error_with_level = normal_error.with_level(ErrorLevel::Verbose);
-        assert_eq!(error_with_level.level, ErrorLevel::Verbose);
-    }
-
-    #[test]
     fn test_parse_minimal_structure() {
         let dsl_source = r#"
             impl Test for Minimal {
@@ -928,18 +892,17 @@ mod tests {
             std::fs::read_to_string("rigs/IC7300.rig").expect("Failed to read IC7300.rig");
 
         let result = parse(&ic7300_content);
-        // The IC7300.rig file contains arithmetic expressions that our parser doesn't support yet
-        // This test demonstrates our enhanced error reporting
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
-        let error = result.unwrap_err();
-        if let ParseErrorType::Syntax { .. } = error.error_type.as_ref() {
-            // Should point to the arithmetic expression on line 41
-            assert_eq!(error.position.line, 41);
-            assert!(error.position.column > 0);
-        } else {
-            panic!("Expected syntax error for unsupported arithmetic expression");
-        }
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.schema, "Transceiver");
+        assert_eq!(rig_file.impl_block.name, "IC7300");
+
+        assert!(rig_file.impl_block.commands.len() > 5);
+
+        assert_eq!(rig_file.impl_block.enums.len(), 2);
+        assert_eq!(rig_file.impl_block.enums[0].name, "Vfo");
+        assert_eq!(rig_file.impl_block.enums[1].name, "Mode");
     }
 
     #[test]
@@ -1015,6 +978,209 @@ mod tests {
     }
 
     #[test]
+    fn test_simple_expressions() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    x = 42;
+                    y = "hello";
+                    z = identifier;
+                    w = a + b;
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 4);
+
+        match &cmd.statements[0] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "x");
+                match expr {
+                    Expr::Integer(n) => assert_eq!(*n, 42),
+                    _ => panic!("Expected integer"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[1] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "y");
+                match expr {
+                    Expr::String(s) => assert_eq!(s, "hello"),
+                    _ => panic!("Expected string"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[2] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "z");
+                match expr {
+                    Expr::Identifier(id) => assert_eq!(id.0, "identifier"),
+                    _ => panic!("Expected identifier"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[3] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "w");
+                match expr {
+                    Expr::BinaryOp {
+                        op: BinaryOp::Add, ..
+                    } => {
+                        // This is expected
+                    }
+                    _ => panic!("Expected binary operation"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+    }
+
+    #[test]
+    fn test_integer_and_float_parsing() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_numbers() {
+                    int_var = 42;
+                    float_var = 3.5;
+                    hex_var = 0xFF;
+                    result = int_var + float_var;
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 4);
+
+        match &cmd.statements[0] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "int_var");
+                match expr {
+                    Expr::Integer(n) => assert_eq!(*n, 42),
+                    _ => panic!("Expected integer, got {expr:?}"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[1] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "float_var");
+                match expr {
+                    Expr::Float(n) => assert_eq!(*n, 3.5),
+                    _ => panic!("Expected float, got {expr:?}"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[2] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "hex_var");
+                match expr {
+                    Expr::Integer(n) => assert_eq!(*n, 255),
+                    _ => panic!("Expected hex integer, got {expr:?}"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+
+        match &cmd.statements[3] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "result");
+                match expr {
+                    Expr::BinaryOp {
+                        op: BinaryOp::Add, ..
+                    } => {}
+                    _ => panic!("Expected binary operation, got {expr:?}"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+    }
+
+    #[test]
+    fn test_binary_operations() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_arithmetic() {
+                    x = (pitch - 127.5) * 0.425;
+                    y = a + b;
+                    z = c / d;
+                    result = (a + b) * (c - d);
+                }
+                fn test_comparisons() {
+                    if a == b {
+                        write("equal");
+                    } else if a > b {
+                        write("greater");
+                    } else if a <= b {
+                        write("less or equal");
+                    }
+                }
+                fn test_logical() {
+                    if a && b || c {
+                        write("logical");
+                    }
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+
+        let rig_file = result.unwrap();
+        assert_eq!(rig_file.impl_block.commands.len(), 3);
+
+        let arithmetic_cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(arithmetic_cmd.name, "test_arithmetic");
+        assert_eq!(arithmetic_cmd.statements.len(), 4);
+
+        match &arithmetic_cmd.statements[0] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.0, "x");
+                match expr {
+                    Expr::BinaryOp {
+                        op: BinaryOp::Multiply,
+                        ..
+                    } => {}
+                    _ => panic!("Expected binary operation (multiplication)"),
+                }
+            }
+            _ => panic!("Expected assignment statement"),
+        }
+
+        let comparison_cmd = &rig_file.impl_block.commands[1];
+        assert_eq!(comparison_cmd.name, "test_comparisons");
+        assert_eq!(comparison_cmd.statements.len(), 1);
+
+        match &comparison_cmd.statements[0] {
+            Statement::If { condition, .. } => match condition {
+                Expr::BinaryOp {
+                    op: BinaryOp::Equal,
+                    ..
+                } => {}
+                _ => panic!("Expected equality comparison"),
+            },
+            _ => panic!("Expected if statement"),
+        }
+    }
+
+    #[test]
     fn test_generic_function_calls() {
         let dsl_source = r#"
             impl Test for Rig {
@@ -1064,8 +1230,8 @@ mod tests {
                 assert_eq!(name, "delay");
                 assert_eq!(args.len(), 1);
                 match &args[0] {
-                    Expr::Number(n) => assert_eq!(*n, 100),
-                    _ => panic!("Expected number"),
+                    Expr::Integer(n) => assert_eq!(*n, 100),
+                    _ => panic!("Expected integer"),
                 }
             }
             _ => panic!("Expected function call"),
