@@ -429,9 +429,28 @@ pub fn parse_with_level(source: &str, level: ErrorLevel) -> Result<RigFile, Pars
     rig::rig_file(&tokens).map_err(|peg_error| {
         let error_msg = format!("{peg_error}");
 
-        // Try to extract position information from PEG error
-        // PEG errors often contain position information we can parse
-        let (position, expected, found) = parse_peg_error(&error_msg, &tokens_with_positions);
+        let position = if peg_error.location < tokens_with_positions.len() {
+            tokens_with_positions[peg_error.location].position.clone()
+        } else if !tokens_with_positions.is_empty() {
+            tokens_with_positions[0].position.clone()
+        } else {
+            SourcePosition::new(1, 1, 0)
+        };
+
+        let found = if peg_error.location < tokens_with_positions.len() {
+            Some(format!(
+                "{:?}",
+                tokens_with_positions[peg_error.location].token
+            ))
+        } else {
+            Some("unexpected token".to_string())
+        };
+
+        let expected = peg_error
+            .expected
+            .tokens()
+            .map(|token| token.to_string())
+            .collect();
 
         ParseError {
             position,
@@ -446,125 +465,6 @@ pub fn parse_with_level(source: &str, level: ErrorLevel) -> Result<RigFile, Pars
             level,
         }
     })
-}
-
-fn parse_peg_error(
-    error_msg: &str,
-    tokens_with_positions: &[TokenWithPosition],
-) -> (SourcePosition, Vec<String>, Option<String>) {
-    let default_position = if !tokens_with_positions.is_empty() {
-        tokens_with_positions[0].position.clone()
-    } else {
-        SourcePosition::new(1, 1, 0)
-    };
-
-    // Try to extract position from error message
-    // PEG errors have format like "error at 140:" where 140 is the token index
-    if let Some(at_pos) = error_msg.find("error at ") {
-        let after_at = &error_msg[at_pos + 9..];
-        if let Some(colon_pos) = after_at.find(':') {
-            let num_str = &after_at[..colon_pos];
-            if let Ok(token_index) = num_str.parse::<usize>() {
-                if token_index < tokens_with_positions.len() {
-                    let position = tokens_with_positions[token_index].position.clone();
-                    let found_token = format!("{:?}", tokens_with_positions[token_index].token);
-                    return (
-                        position,
-                        extract_expected_from_error(error_msg),
-                        Some(found_token),
-                    );
-                }
-            }
-        }
-    }
-
-    // Fallback: try the old "position " format
-    if let Some(pos_start) = error_msg.find("position ") {
-        if let Some(pos_str) = error_msg[pos_start + 9..].split_whitespace().next() {
-            if let Ok(token_index) = pos_str.parse::<usize>() {
-                if token_index < tokens_with_positions.len() {
-                    let position = tokens_with_positions[token_index].position.clone();
-                    let found_token = format!("{:?}", tokens_with_positions[token_index].token);
-                    return (
-                        position,
-                        extract_expected_from_error(error_msg),
-                        Some(found_token),
-                    );
-                }
-            }
-        }
-    }
-
-    // Try to extract expected tokens from error message
-    let expected = extract_expected_from_error(error_msg);
-
-    (
-        default_position,
-        expected,
-        Some("unexpected token".to_string()),
-    )
-}
-
-/// Extract expected tokens from PEG error message
-fn extract_expected_from_error(error_msg: &str) -> Vec<String> {
-    let mut expected = Vec::new();
-
-    // Look for the "expected one of" pattern in PEG error messages
-    if let Some(expected_start) = error_msg.find("expected one of [") {
-        let after_bracket = &error_msg[expected_start + 17..];
-        if let Some(closing_bracket) = after_bracket.find(']') {
-            let expected_list = &after_bracket[..closing_bracket];
-
-            // Parse the token list like "Token::DecimalNumber(num)], [Token::HexNumber(num)]"
-            for token_part in expected_list.split("], [") {
-                let clean_token = token_part.trim_start_matches('[').trim_end_matches(']');
-                if let Some(token_start) = clean_token.find("Token::") {
-                    let token_name_part = &clean_token[token_start + 7..];
-                    if let Some(paren_pos) = token_name_part.find('(') {
-                        let token_name = &token_name_part[..paren_pos];
-                        expected.push(format!("'{}'", token_name.to_lowercase()));
-                    } else {
-                        expected.push(format!("'{}'", token_name_part.to_lowercase()));
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: Try to extract token names from the error using simple string parsing
-    if expected.is_empty() && error_msg.contains("Token::") {
-        let mut remaining = error_msg;
-        while let Some(start) = remaining.find("Token::") {
-            remaining = &remaining[start + 7..]; // Skip "Token::"
-            if let Some(end) = remaining.find(|c: char| !c.is_alphanumeric() && c != '_') {
-                let token_name = &remaining[..end];
-                if !token_name.is_empty() {
-                    expected.push(format!("'{}'", token_name.to_lowercase()));
-                }
-                remaining = &remaining[end..];
-            } else if !remaining.is_empty() {
-                expected.push(format!("'{}'", remaining.to_lowercase()));
-                break;
-            }
-        }
-    }
-
-    // If we couldn't extract specific tokens, provide general guidance
-    if expected.is_empty() {
-        if error_msg.contains("rig_file") {
-            expected.push("impl block".to_string());
-        } else if error_msg.contains("impl") {
-            expected.push("'impl' keyword".to_string());
-        } else if error_msg.contains("enum") {
-            expected.push("enum definition".to_string());
-        } else if error_msg.contains("fn") {
-            expected.push("function definition".to_string());
-        } else {
-            expected.push("valid DSL syntax".to_string());
-        }
-    }
-
-    expected
 }
 
 pub fn create_semantic_error(
