@@ -65,18 +65,19 @@ impl ParseError {
         let end_line = (line_idx + 3).min(lines.len());
 
         let mut context = String::new();
+        let line_num_width = (end_line.checked_ilog10().unwrap_or(0) + 1) as usize;
         for (i, line) in lines[start_line..end_line].iter().enumerate() {
             let current_line_num = start_line + i + 1;
             if current_line_num == position.line {
-                context.push_str(&format!(" → {current_line_num:3} | {line}\n"));
-                // Add pointer to the specific column
+                context.push_str(&format!(" → {current_line_num:line_num_width$} | {line}\n"));
                 context.push_str(&format!(
-                    "     | {}{}\n",
+                    "   {} | {}{}\n",
+                    " ".repeat(line_num_width),
                     " ".repeat(position.column.saturating_sub(1)),
                     "^"
                 ));
             } else {
-                context.push_str(&format!("   {current_line_num:3} | {line}\n"));
+                context.push_str(&format!("   {current_line_num:line_num_width$} | {line}\n"));
             }
         }
         context
@@ -168,7 +169,7 @@ impl std::fmt::Display for ParseError {
                     writeln!(f, "{message}")?;
                     writeln!(f, "{}", self.format_context(&self.position))?;
                     if !context.is_empty() && self.level == ErrorLevel::Verbose {
-                        writeln!(f, "Context: {context}")?;
+                        write!(f, "Context: {context}")?;
                     }
                 }
             },
@@ -193,7 +194,7 @@ impl std::fmt::Display for ParseError {
                         writeln!(f, "{friendly_msg}")?;
                     }
 
-                    writeln!(f, "{}", self.format_context(&self.position))?;
+                    write!(f, "{}", self.format_context(&self.position))?;
                 }
                 ErrorLevel::Detailed => {
                     writeln!(
@@ -213,7 +214,7 @@ impl std::fmt::Display for ParseError {
                         writeln!(f, "Found: {found_token}")?;
                     }
                     writeln!(f, "Expected: {}", expected.join(", "))?;
-                    writeln!(f, "{}", self.format_context(&self.position))?;
+                    write!(f, "{}", self.format_context(&self.position))?;
                 }
                 ErrorLevel::Verbose => {
                     writeln!(
