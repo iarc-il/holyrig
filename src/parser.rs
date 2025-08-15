@@ -177,9 +177,6 @@ pub struct RigFile {
 
 peg::parser! {
     pub grammar rig<'source>() for [Token<'source>] {
-        pub rule rig_file() -> Vec<Statement>
-            = assigns:assign()+ { assigns }
-
         rule settings() -> Settings
             = assigns:assign()* {
                 Settings {
@@ -195,12 +192,16 @@ peg::parser! {
                 }
             }
 
+        rule number() -> u32
+            = [Token::DecimalNumber(num)] {? num.parse::<u32>().or(Err("Not a number")) }/
+              [Token::HexNumber(num)] {? u32::from_str_radix(&num[2..], 16).or(Err("Not a number")) }
+
         rule enum_variant() -> EnumVariant
-            = [Token::Id(name)] [Token::Equal] [Token::Number(value)] {?
-                Ok(EnumVariant {
+            = [Token::Id(name)] [Token::EqualAssign] number:number() {
+                EnumVariant {
                     name: name.to_string(),
-                    value: value.parse().or(Err("Not a number"))?,
-                })
+                    value: number,
+                }
             }
 
         rule enum_member() -> Member
@@ -239,7 +240,7 @@ peg::parser! {
             }
 
         rule var_assign_statement() -> Statement
-            = [Token::Id(var)] [Token::Equal] expr:expr() [Token::Semicolon] {
+            = [Token::Id(var)] [Token::EqualAssign] expr:expr() [Token::Semicolon] {
                 Statement::Assign(Id(var.to_string()), expr)
             }
 
@@ -268,8 +269,8 @@ peg::parser! {
 
         rule member() -> Member
             = member:(init() / enum_member() / command() / status()) {
-            member
-        }
+                member
+            }
 
         rule impl_block() -> Impl
             =
@@ -304,7 +305,7 @@ peg::parser! {
                     enums,
                 }
             }
-        pub rule impl_rig() -> RigFile
+        pub rule rig_file() -> RigFile
             = settings:settings() impl_block:impl_block() {
                 RigFile {
                     settings,
@@ -313,7 +314,7 @@ peg::parser! {
             }
 
         rule assign() -> Statement
-            = [Token::Id(id)] [Token::Equal] expr:expr() [Token::Semicolon] {
+            = [Token::Id(id)] [Token::EqualAssign] expr:expr() [Token::Semicolon] {
                 Statement::Assign(Id(id.into()), expr)
             }
 
@@ -329,8 +330,8 @@ peg::parser! {
             }
 
         rule primary_expr() -> Expr
-            = [Token::Number(number)] {?
-                Ok(Expr::Number(number.parse().or(Err("Not a number"))?))
+            = number:number() {
+                Expr::Number(number)
             }
             / [Token::Str(s)] {
                 // Handle string interpolation
@@ -383,7 +384,7 @@ pub fn parse(source: &str) -> Result<RigFile> {
         .collect::<Result<_, _>>()
         .map_err(|_| anyhow::anyhow!("Failed to tokenize DSL string"))?;
 
-    rig::impl_rig(&tokens).map_err(|e| anyhow::anyhow!("Failed to parse DSL: {}", e))
+    rig::rig_file(&tokens).map_err(|e| anyhow::anyhow!(e))
 }
 
 #[cfg(test)]
