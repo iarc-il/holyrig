@@ -9,7 +9,9 @@ pub enum Token<'source> {
     #[regex(r"[a-zA-Z_][a-zA-Z_0-9]*", |lex| lex.slice())]
     Id(&'source str),
     #[regex(r"[0-9]+", |lex| lex.slice())]
-    Number(&'source str),
+    DecimalNumber(&'source str),
+    #[regex(r"0x[a-fA-F0-9]+", |lex| lex.slice())]
+    HexNumber(&'source str),
     #[regex("\"[^\"]*\"", |lex| lex.slice())]
     Str(&'source str),
     #[token("impl")]
@@ -24,6 +26,8 @@ pub enum Token<'source> {
     Fn,
     #[token("status")]
     Status,
+    #[token("if")]
+    If,
     #[token("int")]
     Int,
     #[token("bool")]
@@ -37,7 +41,17 @@ pub enum Token<'source> {
     #[token(")")]
     ParenClose,
     #[token("=")]
+    EqualAssign,
+    #[token("==")]
     Equal,
+    #[token("&&")]
+    And,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Multiply,
     #[token(";")]
     Semicolon,
     #[token(",")]
