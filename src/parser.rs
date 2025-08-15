@@ -12,8 +12,10 @@ use crate::parser_errors::{
 pub enum Token<'source> {
     #[regex(r"[a-zA-Z_][a-zA-Z_0-9]*", |lex| lex.slice())]
     Id(&'source str),
+    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice())]
+    Float(&'source str),
     #[regex(r"[0-9]+", |lex| lex.slice())]
-    DecimalNumber(&'source str),
+    Integer(&'source str),
     #[regex(r"0x[a-fA-F0-9]+", |lex| lex.slice())]
     HexNumber(&'source str),
     #[regex("\"[^\"]*\"", |lex| lex.slice())]
@@ -32,6 +34,8 @@ pub enum Token<'source> {
     Status,
     #[token("if")]
     If,
+    #[token("else")]
+    Else,
     #[token("int")]
     Int,
     #[token("bool")]
@@ -48,14 +52,30 @@ pub enum Token<'source> {
     EqualAssign,
     #[token("==")]
     Equal,
+    #[token("!=")]
+    NotEqual,
+    #[token("<=")]
+    LessEqual,
+    #[token(">=")]
+    GreaterEqual,
+    #[token("<")]
+    Less,
+    #[token(">")]
+    Greater,
     #[token("&&")]
     And,
+    #[token("||")]
+    Or,
     #[token("+")]
     Plus,
     #[token("-")]
     Minus,
     #[token("*")]
     Multiply,
+    #[token("/")]
+    Divide,
+    #[token("%")]
+    Modulo,
     #[token(";")]
     Semicolon,
     #[token(",")]
@@ -86,11 +106,55 @@ impl From<&str> for Id {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Or,
+}
+
+impl From<Token<'_>> for BinaryOp {
+    fn from(token: Token<'_>) -> Self {
+        match token {
+            Token::Plus => Self::Add,
+            Token::Minus => Self::Subtract,
+            Token::Multiply => Self::Multiply,
+            Token::Divide => Self::Divide,
+            Token::Modulo => Self::Modulo,
+            Token::Equal => Self::Equal,
+            Token::NotEqual => Self::NotEqual,
+            Token::Less => Self::Less,
+            Token::LessEqual => Self::LessEqual,
+            Token::Greater => Self::Greater,
+            Token::GreaterEqual => Self::GreaterEqual,
+            Token::And => Self::And,
+            Token::Or => Self::Or,
+            _ => panic!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Number(u32),
+    Integer(i64),
+    Float(f64),
     String(String),
     Identifier(Id),
     QualifiedIdentifier(Id, Id),
+    BinaryOp {
+        left: Box<Expr>,
+        op: BinaryOp,
+        right: Box<Expr>,
+    },
     MethodCall {
         object: Box<Expr>,
         method: String,
@@ -102,10 +166,28 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    fn binary_op(a: Expr, op: Token<'_>, b: Expr) -> Self {
+        Expr::BinaryOp {
+            left: Box::new(a),
+            op: op.into(),
+            right: Box::new(b),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign(Id, Expr),
-    FunctionCall { name: String, args: Vec<Expr> },
+    FunctionCall {
+        name: String,
+        args: Vec<Expr>,
+    },
+    If {
+        condition: Expr,
+        then_body: Vec<Statement>,
+        else_body: Option<Vec<Statement>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -196,19 +278,26 @@ peg::parser! {
                 }
             }
 
-        rule number() -> u32
-            = [Token::DecimalNumber(num)] {?
-                num.parse::<u32>().or(Err("Invalid decimal number"))
+        rule integer() -> i64
+            = [Token::Integer(num)] {?
+                num.parse::<i64>().or(Err("Invalid integer"))
             } /
               [Token::HexNumber(num)] {?
-                  u32::from_str_radix(&num[2..], 16).or(Err("Invalid hexadecimal number"))
+                  u32::from_str_radix(&num[2..], 16)
+                      .map(|n| n as i64)
+                      .or(Err("Invalid hexadecimal number"))
               }
 
+        rule float() -> f64
+            = [Token::Float(num)] {?
+                num.parse::<f64>().or(Err("Invalid float"))
+            }
+
         rule enum_variant() -> EnumVariant
-            = [Token::Id(name)] [Token::EqualAssign] number:number() {
+            = [Token::Id(name)] [Token::EqualAssign] integer:integer() {
                 EnumVariant {
                     name: name.to_string(),
-                    value: number,
+                    value: integer as u32,
                 }
             }
 
@@ -235,7 +324,7 @@ peg::parser! {
             }
 
         rule statement() -> Statement
-            = function_call_stmt() / var_assign_statement()
+            = if_statement() / function_call_stmt() / var_assign_statement()
 
         rule function_call_stmt() -> Statement
             = [Token::Id(name)] [Token::ParenOpen]
@@ -250,6 +339,22 @@ peg::parser! {
         rule var_assign_statement() -> Statement
             = [Token::Id(var)] [Token::EqualAssign] expr:expr() [Token::Semicolon] {
                 Statement::Assign(Id(var.to_string()), expr)
+            }
+
+        rule if_statement() -> Statement
+            = [Token::If] condition:expr() [Token::BraceOpen]
+              then_body:statement()*
+              [Token::BraceClose]
+              else_body:([Token::Else] else_part:(
+                  nested_if:if_statement() { vec![nested_if] } /
+                  [Token::BraceOpen] body:statement()* [Token::BraceClose] { body }
+              ) { else_part })?
+            {
+                Statement::If {
+                    condition,
+                    then_body,
+                    else_body,
+                }
             }
 
         rule init() -> Member
@@ -327,7 +432,7 @@ peg::parser! {
             }
 
         rule method_call() -> Expr
-            = object:primary_expr() [Token::Dot] [Token::Id(method)] [Token::ParenOpen]
+            = object:atomic_expr() [Token::Dot] [Token::Id(method)] [Token::ParenOpen]
               args:(expr() ** [Token::Comma]) [Token::Comma]?
               [Token::ParenClose] {
                 Expr::MethodCall {
@@ -337,9 +442,12 @@ peg::parser! {
                 }
             }
 
-        rule primary_expr() -> Expr
-            = number:number() {
-                Expr::Number(number)
+        rule atomic_expr() -> Expr
+            = integer:integer() {
+                Expr::Integer(integer)
+            }
+            / float:float() {
+                Expr::Float(float)
             }
             / [Token::Str(s)] {
                 // Handle string interpolation
@@ -380,9 +488,42 @@ peg::parser! {
                 Expr::Identifier(id.into())
             }
 
-        rule expr() -> Expr
-            = method_call() / primary_expr()
-
+        rule expr() -> Expr = precedence! {
+            a:(@) op:([Token::Or] / [Token::And]) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            a:(@) op:([Token::Equal] / [Token::NotEqual]) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            a:(@) op:(
+                  [Token::Less] /
+                  [Token::LessEqual] /
+                  [Token::Greater] /
+                  [Token::GreaterEqual]
+            ) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            a:(@) op:([Token::Plus] / [Token::Minus]) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            a:(@) op:([Token::Multiply] / [Token::Divide] / [Token::Modulo]) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            a:(@) op:([Token::Multiply] / [Token::Divide] / [Token::Modulo]) b:@ {
+                Expr::binary_op(a, op, b)
+            }
+            --
+            [Token::ParenOpen] expr:expr() [Token::ParenClose] { expr }
+            --
+            expr:method_call() { expr }
+            --
+            expr:atomic_expr() { expr }
+        }
     }
 }
 
