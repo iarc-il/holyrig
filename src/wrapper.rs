@@ -136,7 +136,9 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source).expect("Failed to parse DSL");
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
+            .unwrap();
         let external = MockExternalApi;
 
         assert!(rig_file.execute_init(&external).is_ok());
@@ -174,7 +176,9 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source).expect("Failed to parse complex DSL");
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse complex DSL: {e}"))
+            .unwrap();
         let external = MockExternalApi;
 
         assert!(rig_file.execute_init(&external).is_ok());

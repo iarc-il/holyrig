@@ -7,10 +7,12 @@ fn main() -> Result<()> {
 
     match parser::parse(&rig_file_content) {
         Ok(rig_file) => {
-            println!("Successfully parsed RigFile: {rig_file:#?}");
+            println!("Successfully parsed IC7300.rig");
+            println!(" - Schema: {}", rig_file.impl_block.schema);
+            println!(" - Name: {}", rig_file.impl_block.name);
         }
-        Err(e) => {
-            println!("Failed to parse DSL: {e}");
+        Err(err) => {
+            println!("{err}");
         }
     }
 

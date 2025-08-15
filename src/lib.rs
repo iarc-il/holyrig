@@ -3,6 +3,7 @@ pub mod data_format;
 pub mod gui;
 pub mod omnirig_parser;
 pub mod parser;
+pub mod parser_errors;
 pub mod rig;
 pub mod rig_api;
 pub mod rig_file;
