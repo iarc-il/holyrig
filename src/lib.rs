@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod data_format;
 pub mod gui;
+pub mod interpreter;
 pub mod omnirig_parser;
 pub mod parser;
 pub mod parser_errors;
@@ -13,5 +14,6 @@ pub mod translator;
 pub mod udp_server;
 pub mod wrapper;
 
+pub use interpreter::{Interpreter, InterpreterContext, Value};
 pub use omnirig_parser::parse_ini_file;
 pub use translator::translate_omnirig_to_rig;

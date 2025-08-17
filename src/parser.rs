@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use anyhow::Result;
 use logos::Logos;
@@ -93,6 +93,18 @@ pub enum Token<'source> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(String);
 
+impl Id {
+    pub fn new(id: &str) -> Self {
+        Self(id.to_string())
+    }
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl From<String> for Id {
     fn from(value: String) -> Self {
         Id(value)
@@ -102,6 +114,12 @@ impl From<String> for Id {
 impl From<&str> for Id {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
+    }
+}
+
+impl Id {
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
