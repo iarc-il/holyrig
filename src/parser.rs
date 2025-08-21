@@ -96,7 +96,6 @@ pub enum Token<'source> {
 pub enum StringToken<'source> {
     #[regex(r"[a-fA-F0-9]*[a-fA-F][a-fA-F0-9]*", priority = 3, callback = |lex| {
         let s = lex.slice();
-        // Only match if it's even length (pairs of hex digits)
         if s.len() % 2 == 0 { Some(s) } else { None }
     })]
     HexString(&'source str),
@@ -564,7 +563,6 @@ peg::parser! {
             = hex:(
                 [StringToken::HexString(hex)] { hex } /
                 [StringToken::Integer(int)] {?
-                    // Accept integer if it's valid hex and even length
                     if int.len() % 2 == 0 && int.chars().all(|c| c.is_ascii_hexdigit()) {
                         Ok(int)
                     } else {
@@ -841,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ic7300_subset() {
+    fn test_parse_ic7300_subset() -> Result<()> {
         let dsl_source = r#"
             version = 1;
             impl Transceiver for IC7300 {
@@ -859,17 +857,15 @@ mod tests {
                     read("FEFE94E01A05007100FD.FEFEE094FBFD");
                 }
                 fn set_freq(int freq, Vfo target) {
-                    command = "FEFE94E0.25.{target}.{freq}.FD";
+                    command = "FEFE94E0.25.{target:1}.{freq:4}.FD";
                     write(command);
                 }
                 status {}
             }
         "#;
 
-        let result = parse(dsl_source);
-        assert!(result.is_ok());
+        let rig_file  = parse(dsl_source)?;
 
-        let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.schema, "Transceiver");
         assert_eq!(rig_file.impl_block.name, "IC7300");
         assert_eq!(rig_file.impl_block.enums.len(), 2);
@@ -888,6 +884,7 @@ mod tests {
             cmd.parameters[1].param_type,
             DataType::Enum("Vfo".to_string())
         );
+        Ok(())
     }
 
     #[test]

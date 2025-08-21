@@ -92,7 +92,7 @@ impl Env {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InterpreterContext {
     pub environment: Env,
     pub enums: HashMap<String, HashMap<String, u32>>,
@@ -840,7 +840,7 @@ mod tests {
                     write("initialization");
                 }
                 fn set_freq(int freq, Vfo vfo) {
-                    command = "FEFE94E0.25.{vfo}.{freq}.FD";
+                    command = "FEFE94E0.25.{vfo:1}.{freq:4}.FD";
                     write(command);
                 }
             }
@@ -859,9 +859,7 @@ mod tests {
         assert_eq!(context.get_enum_variant("Vfo", "A"), Some(0));
         assert_eq!(context.get_enum_variant("Vfo", "B"), Some(1));
 
-        assert!(context.output.len() >= 2);
-        assert_eq!(context.output[0], "WRITE: initialization");
-        assert_eq!(context.output[1], "DELAY: 100ms");
+        assert!(context.output.len() == 1);
 
         let command = &rig_file.impl_block.commands[0];
         let args = vec![
@@ -874,8 +872,10 @@ mod tests {
         ];
         interpreter.execute_command(command, &args, &mut context)?;
 
+        assert_eq!(context.output[0], "WRITE: initialization");
+
         let last_output = context.output.last().unwrap();
-        assert!(last_output.contains("WRITE: FEFE94E0.25.00.DD4DA0.FD"));
+        assert!(last_output.contains("WRITE: FEFE94E02500A040DD00FD"));
         Ok(())
     }
 }
