@@ -864,7 +864,7 @@ mod tests {
             }
         "#;
 
-        let rig_file  = parse(dsl_source)?;
+        let rig_file = parse(dsl_source)?;
 
         assert_eq!(rig_file.impl_block.schema, "Transceiver");
         assert_eq!(rig_file.impl_block.name, "IC7300");
@@ -1436,5 +1436,411 @@ mod tests {
             }
             _ => panic!("Expected function call"),
         }
+    }
+
+    #[test]
+    fn test_missing_semicolon_error() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    x = 42  // Missing semicolon
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+        assert!(error.to_string().contains("semicolon") || error.to_string().contains("Semicolon"));
+    }
+
+    #[test]
+    fn test_invalid_enum_syntax() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                enum TestEnum {
+                    A = "invalid",  // Should be integer
+                    B = 1,
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+    }
+
+    #[test]
+    fn test_malformed_string_interpolation() {
+        let dsl_source = r#"
+             impl Test for Rig {
+                 fn test() {
+                     command = "FEFE{var:}FD";  // Malformed - missing length
+                 }
+             }
+         "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+    }
+
+    #[test]
+    fn test_invalid_parameter_types() {
+        let dsl_source = r#"
+             impl Test for Rig {
+                 fn test(123invalid param) {  // Invalid - starts with number
+                 }
+             }
+         "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+    }
+
+    #[test]
+    fn test_missing_impl_block() {
+        let dsl_source = r#"
+            version = 1;
+            // Missing impl block
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+    }
+
+    #[test]
+    fn test_empty_functions_and_blocks() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                enum EmptyEnum {
+                }
+                init {
+                }
+                fn empty_function() {
+                }
+                status {
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        assert_eq!(rig_file.impl_block.enums.len(), 1);
+        assert_eq!(rig_file.impl_block.enums[0].variants.len(), 0);
+        assert!(rig_file.impl_block.init.is_some());
+        assert_eq!(
+            rig_file.impl_block.init.as_ref().unwrap().statements.len(),
+            0
+        );
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        assert_eq!(rig_file.impl_block.commands[0].statements.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_hex_number_parsing() -> Result<()> {
+        let dsl_source = r#"
+            version = 0xFF;
+            baudrate = 0x2580;
+            impl Test for Rig {
+                fn test() {
+                    x = 0xABCD;
+                    y = 0x1;
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        assert_eq!(rig_file.settings.settings.len(), 2);
+
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 2);
+
+        match &cmd.statements[0] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.as_str(), "x");
+                match expr {
+                    Expr::Integer(n) => assert_eq!(*n, 0xABCD),
+                    _ => panic!("Expected hex integer"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_float_parsing() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    x = 4.14159;
+                    y = 0.5;
+                    z = 123.456;
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 3);
+
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::Float(f) => assert!((f - 4.14159).abs() < 1e-6),
+                _ => panic!("Expected float"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_very_long_identifier() -> Result<()> {
+        let long_id = "a".repeat(100);
+        let dsl_source = format!(
+            r#"
+            impl Test for Rig {{
+                fn test() {{
+                    {} = 42;
+                }}
+            }}
+        "#,
+            long_id
+        );
+
+        let rig_file = parse(&dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        match &cmd.statements[0] {
+            Statement::Assign(var, _) => {
+                assert_eq!(var.as_str(), long_id);
+            }
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_comments_in_various_positions() -> Result<()> {
+        let dsl_source = r#"
+            // Top level comment
+            version = 1; // Inline comment
+            impl Test for Rig { // Comment after brace
+                // Comment in impl block
+                enum TestEnum {
+                    A = 0, // Comment after enum variant
+                    B = 1,
+                }
+                fn test() { // Comment in function
+                    // Comment before statement
+                    x = 42; // Comment after statement
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        assert_eq!(rig_file.impl_block.enums.len(), 1);
+        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_interpolation_zero_length() {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    command = "FEFE{var:int_lu:0}FD";
+                }
+            }
+        "#;
+
+        let result = parse(dsl_source);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_string_interpolation_large_length() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    command = "FEFE{var:int_lu:1000}FD";
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::StringInterpolation { parts } => match &parts[1] {
+                    InterpolationPart::Variable { length, .. } => {
+                        assert_eq!(*length, 1000);
+                    }
+                    _ => panic!("Expected variable part"),
+                },
+                _ => panic!("Expected string interpolation"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_hex_patterns() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    command = "FEFE{var:2}94E0{freq:int_lu:4}FD";
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::StringInterpolation { parts } => {
+                    assert_eq!(parts.len(), 5);
+                    match &parts[0] {
+                        InterpolationPart::Literal(bytes) => {
+                            assert_eq!(bytes, &[0xFE, 0xFE]);
+                        }
+                        _ => panic!("Expected literal part"),
+                    }
+                    match &parts[1] {
+                        InterpolationPart::Variable { name, length, .. } => {
+                            assert_eq!(name, "var");
+                            assert_eq!(*length, 2);
+                        }
+                        _ => panic!("Expected variable part"),
+                    }
+                }
+                _ => panic!("Expected string interpolation"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_deeply_nested_expressions() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    result = ((a + b) * (c - d)) / ((e + f) - (g * h));
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::BinaryOp {
+                    op: BinaryOp::Divide,
+                    ..
+                } => {}
+                _ => panic!("Expected deeply nested binary operation"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_qualified_identifier_parsing() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                enum TestEnum {
+                    A = 0,
+                    B = 1,
+                }
+                fn test() {
+                    x = TestEnum::A;
+                    y = SomeOther::Value;
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 2);
+
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::QualifiedIdentifier(scope, id) => {
+                    assert_eq!(scope.as_str(), "TestEnum");
+                    assert_eq!(id.as_str(), "A");
+                }
+                _ => panic!("Expected qualified identifier"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_method_calls_parsing() -> Result<()> {
+        let dsl_source = r#"
+             impl Test for Rig {
+                 fn test() {
+                     result = value.format(DataFormat::IntLu, 4);
+                     simple = obj.method1(arg1, arg2);
+                 }
+             }
+         "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 2);
+
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::MethodCall {
+                    object,
+                    method,
+                    args,
+                } => {
+                    assert_eq!(method, "format");
+                    assert_eq!(args.len(), 2);
+                    match object.as_ref() {
+                        Expr::Identifier(id) => assert_eq!(id.as_str(), "value"),
+                        _ => panic!("Expected identifier as object"),
+                    }
+                }
+                _ => panic!("Expected method call"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_expression_types() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    result = 42 + 3.14 + identifier + method.call();
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        match &cmd.statements[0] {
+            Statement::Assign(_, expr) => match expr {
+                Expr::BinaryOp { .. } => {}
+                _ => panic!("Expected binary operation with mixed types"),
+            },
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
     }
 }

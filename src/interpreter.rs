@@ -360,8 +360,20 @@ impl Interpreter {
                 BinaryOp::Add => Ok(Value::Integer(a + b)),
                 BinaryOp::Subtract => Ok(Value::Integer(a - b)),
                 BinaryOp::Multiply => Ok(Value::Integer(a * b)),
-                BinaryOp::Divide => Ok(Value::Integer(a / b)),
-                BinaryOp::Modulo => Ok(Value::Integer(a % b)),
+                BinaryOp::Divide => {
+                    if *b == 0 {
+                        Err(anyhow!("Division by zero"))
+                    } else {
+                        Ok(Value::Integer(a / b))
+                    }
+                }
+                BinaryOp::Modulo => {
+                    if *b == 0 {
+                        Err(anyhow!("Modulo by zero"))
+                    } else {
+                        Ok(Value::Integer(a % b))
+                    }
+                }
                 BinaryOp::Equal => Ok(Value::Boolean(a == b)),
                 BinaryOp::NotEqual => Ok(Value::Boolean(a != b)),
                 BinaryOp::Less => Ok(Value::Boolean(a < b)),
@@ -632,7 +644,10 @@ impl Interpreter {
                         Ok(Value::String(format!("{i:02X}")))
                     }
                 }
-                _ => Ok(Value::String(object.to_string())),
+                _ => Err(anyhow!(
+                    "Format method is only supported on integers, got: {:?}",
+                    object
+                )),
             },
             _ => Err(anyhow!("Unknown method: {}", method)),
         }
@@ -876,6 +891,576 @@ mod tests {
 
         let last_output = context.output.last().unwrap();
         assert!(last_output.contains("WRITE: FEFE94E02500A040DD00FD"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_division_by_zero_error() {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::Integer(10)),
+            op: BinaryOp::Divide,
+            right: Box::new(Expr::Integer(0)),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().to_lowercase().contains("division")
+                || error.to_string().to_lowercase().contains("zero")
+        );
+    }
+
+    #[test]
+    fn test_modulo_by_zero_error() {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::Integer(10)),
+            op: BinaryOp::Modulo,
+            right: Box::new(Expr::Integer(0)),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_undefined_variable_access() {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::Identifier(Id::new("undefined_variable"));
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("undefined") || error.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_complex_nested_expressions() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context.environment.set("a".to_string(), Value::Integer(10));
+        context.environment.set("b".to_string(), Value::Integer(5));
+        context.environment.set("c".to_string(), Value::Integer(3));
+        context.environment.set("d".to_string(), Value::Integer(2));
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Id::new("a"))),
+                    op: BinaryOp::Add,
+                    right: Box::new(Expr::Identifier(Id::new("b"))),
+                }),
+                op: BinaryOp::Multiply,
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Id::new("c"))),
+                    op: BinaryOp::Subtract,
+                    right: Box::new(Expr::Identifier(Id::new("d"))),
+                }),
+            }),
+            op: BinaryOp::Add,
+            right: Box::new(Expr::Integer(5)),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        assert_eq!(result, Value::Integer(20));
+        Ok(())
+    }
+
+    #[test]
+    fn test_operator_precedence_validation() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context.environment.set("a".to_string(), Value::Integer(2));
+        context.environment.set("b".to_string(), Value::Integer(3));
+        context.environment.set("c".to_string(), Value::Integer(4));
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier(Id::new("a"))),
+            op: BinaryOp::Add,
+            right: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Id::new("b"))),
+                op: BinaryOp::Multiply,
+                right: Box::new(Expr::Identifier(Id::new("c"))),
+            }),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        assert_eq!(result, Value::Integer(14));
+        Ok(())
+    }
+
+    #[test]
+    fn test_float_integer_mixed_operations() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::Float(3.5)),
+            op: BinaryOp::Add,
+            right: Box::new(Expr::Integer(2)),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        match result {
+            Value::Float(f) => assert!((f - 5.5).abs() < 1e-6),
+            _ => panic!("Expected float result"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_nested_if_statements() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let nested_if = Statement::If {
+            condition: Expr::BinaryOp {
+                left: Box::new(Expr::Integer(5)),
+                op: BinaryOp::Greater,
+                right: Box::new(Expr::Integer(3)),
+            },
+            then_body: vec![
+                Statement::FunctionCall {
+                    name: "write".to_string(),
+                    args: vec![Expr::String("nested_true".to_string())],
+                },
+                Statement::If {
+                    condition: Expr::BinaryOp {
+                        left: Box::new(Expr::Integer(1)),
+                        op: BinaryOp::Equal,
+                        right: Box::new(Expr::Integer(1)),
+                    },
+                    then_body: vec![Statement::FunctionCall {
+                        name: "write".to_string(),
+                        args: vec![Expr::String("deeply_nested".to_string())],
+                    }],
+                    else_body: None,
+                },
+            ],
+            else_body: Some(vec![Statement::FunctionCall {
+                name: "write".to_string(),
+                args: vec![Expr::String("nested_false".to_string())],
+            }]),
+        };
+
+        interpreter.execute_statement(&nested_if, &mut context)?;
+
+        assert_eq!(context.output.len(), 2);
+        assert_eq!(context.output[0], "WRITE: nested_true");
+        assert_eq!(context.output[1], "WRITE: deeply_nested");
+        Ok(())
+    }
+
+    #[test]
+    fn test_complex_boolean_expressions() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::BinaryOp {
+            left: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Integer(1)),
+                    op: BinaryOp::Equal,
+                    right: Box::new(Expr::Integer(1)),
+                }),
+                op: BinaryOp::And,
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Integer(1)),
+                    op: BinaryOp::Equal,
+                    right: Box::new(Expr::Integer(2)),
+                }),
+            }),
+            op: BinaryOp::Or,
+            right: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::Integer(3)),
+                op: BinaryOp::Greater,
+                right: Box::new(Expr::Integer(2)),
+            }),
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        assert_eq!(result, Value::Boolean(true));
+        Ok(())
+    }
+
+    #[test]
+    fn test_if_with_non_boolean_condition_error() {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let if_stmt = Statement::If {
+            condition: Expr::Integer(42),
+            then_body: vec![Statement::FunctionCall {
+                name: "write".to_string(),
+                args: vec![Expr::String("should not execute".to_string())],
+            }],
+            else_body: None,
+        };
+
+        let result = interpreter.execute_statement(&if_stmt, &mut context);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("boolean") || error.to_string().contains("condition"));
+    }
+
+    #[test]
+    fn test_variable_scoping_in_commands() -> Result<()> {
+        let dsl_source = r#"
+            version = 1;
+            global_var = 42;
+            impl Test for Rig {
+                fn test_command(int param) {
+                    local_var = param + 10;
+                    write("test");
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let interpreter = Interpreter::new();
+        let mut context = interpreter.execute_rig_file(&rig_file)?;
+
+        assert_eq!(context.environment.get("version"), Some(Value::Integer(1)));
+        assert_eq!(
+            context.environment.get("global_var"),
+            Some(Value::Integer(42))
+        );
+
+        let command = &rig_file.impl_block.commands[0];
+        let args = vec![Value::Integer(5)];
+        interpreter.execute_command(command, &args, &mut context)?;
+
+        assert_eq!(context.environment.get("local_var"), None);
+        assert_eq!(
+            context.environment.get("global_var"),
+            Some(Value::Integer(42))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_parameter_passing_to_functions() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_params(int a, bool b) {
+                    if b {
+                        result = a * 2;
+                    } else {
+                        result = a;
+                    }
+                    write("executed");
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let command = &rig_file.impl_block.commands[0];
+        let args = vec![Value::Integer(10), Value::Boolean(true)];
+        interpreter.execute_command(command, &args, &mut context)?;
+
+        assert_eq!(context.output.len(), 1);
+        assert_eq!(context.output[0], "WRITE: executed");
+        Ok(())
+    }
+
+    #[test]
+    fn test_all_data_formats_in_interpolation() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let test_cases = vec![
+            ("int_lu", 418),
+            ("int_ls", 418),
+            ("int_bu", 418),
+            ("int_bs", 418),
+            ("bcd_lu", 418),
+            ("bcd_ls", 418),
+            ("bcd_bu", 418),
+            ("bcd_bs", 418),
+            ("text", 418),
+        ];
+
+        for (format, value) in test_cases {
+            context
+                .environment
+                .set("test_var".to_string(), Value::Integer(value));
+
+            let parts = vec![
+                InterpolationPart::Literal(vec![0xFE, 0xFE]),
+                InterpolationPart::Variable {
+                    name: "test_var".to_string(),
+                    format: Some(format.to_string()),
+                    length: 4,
+                },
+                InterpolationPart::Literal(vec![0xFD]),
+            ];
+
+            let expr = Expr::StringInterpolation { parts };
+            let result = interpreter.evaluate_expression(&expr, &mut context);
+
+            match result {
+                Ok(Value::String(_)) => {}
+                Ok(_) => {
+                    panic!("Expected string result for format {}", format);
+                }
+                Err(e) if format == "invalid_format" => {
+                    assert!(e.to_string().contains("format") || e.to_string().contains("invalid"));
+                }
+                Err(e) => {
+                    panic!("Unexpected error for format {}: {}", format, e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_interpolation_with_invalid_format() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context
+            .environment
+            .set("test_var".to_string(), Value::Integer(418));
+
+        let parts = vec![InterpolationPart::Variable {
+            name: "test_var".to_string(),
+            format: Some("invalid_format".to_string()),
+            length: 4,
+        }];
+
+        let expr = Expr::StringInterpolation { parts };
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("format") || error.to_string().contains("invalid"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_interpolation_zero_length() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context
+            .environment
+            .set("test_var".to_string(), Value::Integer(1));
+
+        let parts = vec![InterpolationPart::Variable {
+            name: "test_var".to_string(),
+            format: Some("int_lu".to_string()),
+            length: 0,
+        }];
+
+        let expr = Expr::StringInterpolation { parts };
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("too long") || error.to_string().contains("0 bytes"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_interpolation_large_numbers() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context
+            .environment
+            .set("large_num".to_string(), Value::Integer(0x12345678));
+
+        let parts = vec![InterpolationPart::Variable {
+            name: "large_num".to_string(),
+            format: Some("int_lu".to_string()),
+            length: 4,
+        }];
+
+        let expr = Expr::StringInterpolation { parts };
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+
+        match result {
+            Value::String(s) => {
+                assert!(!s.is_empty());
+            }
+            _ => panic!("Expected string result"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_method_call_with_multiple_args() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        context
+            .environment
+            .set("value".to_string(), Value::Integer(418));
+
+        let expr = Expr::MethodCall {
+            object: Box::new(Expr::Identifier(Id::new("value"))),
+            method: "format".to_string(),
+            args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+
+        match result {
+            Value::String(_) => {}
+            _ => panic!("Expected string result from format method"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_method_call_on_different_types() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr1 = Expr::MethodCall {
+            object: Box::new(Expr::Integer(418)),
+            method: "format".to_string(),
+            args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
+        };
+
+        let result1 = interpreter.evaluate_expression(&expr1, &mut context)?;
+        assert!(matches!(result1, Value::String(_)));
+
+        let expr2 = Expr::MethodCall {
+            object: Box::new(Expr::String("test".to_string())),
+            method: "format".to_string(),
+            args: vec![Expr::Integer(4)],
+        };
+
+        let result2 = interpreter.evaluate_expression(&expr2, &mut context);
+        assert!(result2.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_method_names() -> Result<()> {
+        let interpreter = Interpreter::new();
+        let mut context = InterpreterContext::new();
+
+        let expr = Expr::MethodCall {
+            object: Box::new(Expr::Integer(418)),
+            method: "invalid_method".to_string(),
+            args: vec![],
+        };
+
+        let result = interpreter.evaluate_expression(&expr, &mut context);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("method") || error.to_string().contains("invalid"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_qualified_identifier_enum_access() -> Result<()> {
+        let dsl_source = r#"
+            version = 1;
+            impl Test for Rig {
+                enum TestEnum {
+                    A = 10,
+                    B = 20,
+                }
+                fn test() {
+                    x = TestEnum::A;
+                    y = TestEnum::B;
+                    write("test");
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let interpreter = Interpreter::new();
+        let mut context = interpreter.execute_rig_file(&rig_file)?;
+
+        let command = &rig_file.impl_block.commands[0];
+        let result = interpreter.execute_command(command, &[], &mut context);
+
+        assert!(
+            result.is_ok(),
+            "Command with qualified identifiers should execute successfully"
+        );
+
+        assert_eq!(context.output.len(), 1);
+        assert_eq!(context.output[0], "WRITE: test");
+        Ok(())
+    }
+
+    #[test]
+    fn test_undefined_enum_access() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                enum TestEnum {
+                    A = 10,
+                }
+                fn test() {
+                    x = TestEnum::NonExistent;
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+        let interpreter = Interpreter::new();
+        let mut context = interpreter.execute_rig_file(&rig_file)?;
+
+        let command = &rig_file.impl_block.commands[0];
+        let result = interpreter.execute_command(command, &[], &mut context);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("variant") || error.to_string().contains("NonExistent"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_interpolation_invalid_format() -> Result<()> {
+        use crate::interpreter::{Interpreter, Value};
+
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test() {
+                    command = "FEFE{var:invalid_format:2}FD";
+                    write(command);
+                }
+            }
+        "#;
+
+        let rig_file = parse(dsl_source)?;
+
+        let interpreter = Interpreter::new();
+        let mut context = interpreter.execute_rig_file(&rig_file)?;
+
+        context
+            .environment
+            .set("var".to_string(), Value::Integer(42));
+
+        let command = &rig_file.impl_block.commands[0];
+        let result = interpreter.execute_command(command, &[], &mut context);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        println!("Error:\n{error}");
+        assert!(
+            error.to_string().to_lowercase().contains("format")
+                || error.to_string().to_lowercase().contains("invalid")
+        );
         Ok(())
     }
 }
