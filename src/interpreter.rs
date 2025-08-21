@@ -2,7 +2,10 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::parser::{BinaryOp, Command, Enum, Expr, Init, RigFile, Statement, Status};
+use crate::data_format::DataFormat;
+use crate::parser::{
+    BinaryOp, Command, Enum, Expr, Init, InterpolationPart, RigFile, Statement, Status,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -345,18 +348,8 @@ impl Interpreter {
 
                 self.call_method(&object_val, method, &arg_values, context)
             }
-            Expr::StringInterpolation {
-                template,
-                variables,
-            } => {
-                let mut result = template.clone();
-                for var in variables {
-                    if let Some(value) = context.environment.get(var) {
-                        let placeholder = format!("{{{var}}}");
-                        result = result.replace(&placeholder, &value.to_interpolation_string());
-                    }
-                }
-                Ok(Value::String(result))
+            Expr::StringInterpolation { parts } => {
+                self.process_parsed_string_interpolation(parts, context)
             }
         }
     }
@@ -418,6 +411,208 @@ impl Interpreter {
                 op,
                 right
             )),
+        }
+    }
+
+    fn process_parsed_string_interpolation(
+        &self,
+        parts: &[InterpolationPart],
+        context: &mut InterpreterContext,
+    ) -> Result<Value> {
+        let mut result = Vec::new();
+
+        for part in parts {
+            match part {
+                InterpolationPart::Literal(bytes) => {
+                    result.extend_from_slice(bytes);
+                }
+                InterpolationPart::Variable {
+                    name,
+                    format,
+                    length,
+                } => {
+                    let interpolated = self.interpolate_parsed_variable(
+                        name,
+                        format.as_deref(),
+                        *length,
+                        context,
+                    )?;
+                    result.extend_from_slice(&interpolated);
+                }
+            }
+        }
+
+        let hex_string = result
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<String>();
+
+        Ok(Value::String(hex_string))
+    }
+
+    fn interpolate_parsed_variable(
+        &self,
+        name: &str,
+        format: Option<&str>,
+        length: usize,
+        context: &mut InterpreterContext,
+    ) -> Result<Vec<u8>> {
+        let value = context
+            .environment
+            .get(name)
+            .ok_or_else(|| anyhow!("Undefined variable: {}", name))?;
+
+        match format {
+            None => {
+                // {name:length} - use default format (int_lu) with specified length
+                match value {
+                    Value::Integer(i) => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(i as i32, length)?;
+                        Ok(bytes)
+                    }
+                    Value::String(s) => {
+                        let mut bytes = s.as_bytes().to_vec();
+                        bytes.resize(length, 0);
+                        Ok(bytes)
+                    }
+                    Value::EnumVariant { value, .. } => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(value as i32, length)?;
+                        Ok(bytes)
+                    }
+                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+                }
+            }
+            Some(format_str) => {
+                // {name:format} or {name:format:length} - use specified format
+                let format = DataFormat::try_from(format_str)
+                    .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
+
+                match value {
+                    Value::Integer(i) => {
+                        let bytes = format.encode(i as i32, length)?;
+                        Ok(bytes)
+                    }
+                    Value::String(s) => {
+                        if format == DataFormat::Text {
+                            let bytes = format.encode(s.parse::<i32>().unwrap_or(0), length)?;
+                            Ok(bytes)
+                        } else {
+                            let mut bytes = s.as_bytes().to_vec();
+                            bytes.resize(length, 0);
+                            Ok(bytes)
+                        }
+                    }
+                    Value::EnumVariant { value, .. } => {
+                        let bytes = format.encode(value as i32, length)?;
+                        Ok(bytes)
+                    }
+                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+                }
+            }
+        }
+    }
+
+    /// Old interpolate_variable method - keeping for reference
+    fn _old_interpolate_variable(
+        &self,
+        var_spec: &str,
+        context: &mut InterpreterContext,
+    ) -> Result<Vec<u8>> {
+        let parts: Vec<&str> = var_spec.split(':').collect();
+
+        match parts.len() {
+            1 => {
+                let var_name = parts[0];
+                let value = context
+                    .environment
+                    .get(var_name)
+                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
+
+                match value {
+                    Value::Integer(i) => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(i as i32, 4)?;
+                        Ok(bytes)
+                    }
+                    Value::String(s) => Ok(s.as_bytes().to_vec()),
+                    Value::EnumVariant { value, .. } => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(value as i32, 1)?;
+                        Ok(bytes)
+                    }
+                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+                }
+            }
+            2 => {
+                let var_name = parts[0];
+                let length = parts[1]
+                    .parse::<usize>()
+                    .map_err(|_| anyhow!("Invalid length: {}", parts[1]))?;
+
+                let value = context
+                    .environment
+                    .get(var_name)
+                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
+
+                match value {
+                    Value::Integer(i) => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(i as i32, length)?;
+                        Ok(bytes)
+                    }
+                    Value::String(s) => {
+                        let mut bytes = s.as_bytes().to_vec();
+                        bytes.resize(length, 0);
+                        Ok(bytes)
+                    }
+                    Value::EnumVariant { value, .. } => {
+                        let format = DataFormat::IntLu;
+                        let bytes = format.encode(value as i32, length)?;
+                        Ok(bytes)
+                    }
+                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+                }
+            }
+            3 => {
+                let var_name = parts[0];
+                let format_str = parts[1];
+                let length = parts[2]
+                    .parse::<usize>()
+                    .map_err(|_| anyhow!("Invalid length: {}", parts[2]))?;
+
+                let format = DataFormat::try_from(format_str)
+                    .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
+
+                let value = context
+                    .environment
+                    .get(var_name)
+                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
+
+                match value {
+                    Value::Integer(i) => {
+                        let bytes = format.encode(i as i32, length)?;
+                        Ok(bytes)
+                    }
+                    Value::String(s) => {
+                        if format == DataFormat::Text {
+                            let bytes = format.encode(s.parse::<i32>().unwrap_or(0), length)?;
+                            Ok(bytes)
+                        } else {
+                            let mut bytes = s.as_bytes().to_vec();
+                            bytes.resize(length, 0);
+                            Ok(bytes)
+                        }
+                    }
+                    Value::EnumVariant { value, .. } => {
+                        let bytes = format.encode(value as i32, length)?;
+                        Ok(bytes)
+                    }
+                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+                }
+            }
+            _ => Err(anyhow!("Invalid variable specification: {}", var_spec)),
         }
     }
 
@@ -540,12 +735,26 @@ mod tests {
             .set("vfo".to_string(), Value::String("A".to_string()));
 
         let expr = Expr::StringInterpolation {
-            template: "FEFE94E0.25.{vfo}.{freq}.FD".to_string(),
-            variables: vec!["vfo".to_string(), "freq".to_string()],
+            parts: vec![
+                InterpolationPart::Literal(vec![0xFE, 0xFE, 0x94, 0xE0]),
+                InterpolationPart::Literal(vec![0x25]),
+                InterpolationPart::Variable {
+                    name: "vfo".to_string(),
+                    format: None,
+                    length: 1,
+                },
+                InterpolationPart::Variable {
+                    name: "freq".to_string(),
+                    format: Some("int_lu".to_string()),
+                    length: 4,
+                },
+                InterpolationPart::Literal(vec![0xFD]),
+            ],
         };
 
         let result = interpreter.evaluate_expression(&expr, &mut context)?;
-        assert_eq!(result, Value::String("FEFE94E0.25.A.DD4DA0.FD".to_string()));
+        // FEFE94E0 (literal hex) + 25 (literal hex) + 41 (vfo="A" as ASCII) + A040DD00 (freq=14500000 in int_lu:4) + FD (literal hex)
+        assert_eq!(result, Value::String("FEFE94E02541A040DD00FD".to_string()));
         Ok(())
     }
 

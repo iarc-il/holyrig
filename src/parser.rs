@@ -20,6 +20,8 @@ pub enum Token<'source> {
     HexNumber(&'source str),
     #[regex("\"[^\"]*\"", |lex| lex.slice())]
     Str(&'source str),
+    #[token(":")]
+    Colon,
     #[token("impl")]
     Impl,
     #[token("for")]
@@ -90,6 +92,26 @@ pub enum Token<'source> {
     Comment,
 }
 
+#[derive(Logos, Debug, Copy, Clone)]
+pub enum StringToken<'source> {
+    #[regex(r"[a-fA-F0-9]{2}", |lex| lex.slice())]
+    HexByte(&'source str),
+    #[token(".", priority = 2)]
+    Dot,
+    #[token("{", priority = 2)]
+    BraceOpen,
+    #[token("}", priority = 2)]
+    BraceClose,
+    #[token(":", priority = 2)]
+    Colon,
+    #[regex(r"[a-zA-Z_][a-zA-Z_0-9]*", priority = 2, callback = |lex| lex.slice())]
+    Id(&'source str),
+    #[regex(r"[0-9]+", priority = 2, callback = |lex| lex.slice())]
+    Integer(&'source str),
+    #[regex(r".", priority = 1, callback = |lex| lex.slice())]
+    Other(&'source str),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(String);
 
@@ -121,6 +143,16 @@ impl Id {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolationPart {
+    Literal(Vec<u8>),
+    Variable {
+        name: String,
+        format: Option<String>,
+        length: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,8 +211,7 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     StringInterpolation {
-        template: String,
-        variables: Vec<String>,
+        parts: Vec<InterpolationPart>,
     },
 }
 
@@ -467,36 +498,14 @@ peg::parser! {
             / float:float() {
                 Expr::Float(float)
             }
-            / [Token::Str(s)] {
-                // Handle string interpolation
-                let content = &s[1..s.len()-1]; // Remove quotes
+            / [Token::Str(s)] {?
+                let content = &s[1..s.len()-1];
+
                 if content.contains('{') && content.contains('}') {
-                    // Extract variables from {var} patterns
-                    let mut variables = Vec::new();
-                    let mut chars = content.chars();
-                    let mut current_var = String::new();
-                    let mut in_brace = false;
-
-                    for ch in chars {
-                        if ch == '{' {
-                            in_brace = true;
-                            current_var.clear();
-                        } else if ch == '}' && in_brace {
-                            if !current_var.is_empty() {
-                                variables.push(current_var.clone());
-                            }
-                            in_brace = false;
-                        } else if in_brace {
-                            current_var.push(ch);
-                        }
-                    }
-
-                    Expr::StringInterpolation {
-                        template: content.to_string(),
-                        variables,
-                    }
+                    let parts = parse_string_interpolation(content)?;
+                    Ok(Expr::StringInterpolation { parts })
                 } else {
-                    Expr::String(content.to_string())
+                    Ok(Expr::String(content.to_string()))
                 }
             }
             / [Token::Id(scope)] [Token::DoubleColon] [Token::Id(id)] {
@@ -543,6 +552,95 @@ peg::parser! {
             expr:atomic_expr() { expr }
         }
     }
+}
+
+peg::parser! {
+    pub grammar string_interpolation<'source>() for [StringToken<'source>] {
+        rule hex_literal() -> Vec<u8>
+            = bytes:([StringToken::HexByte(hex)] {?
+                u8::from_str_radix(hex, 16).or(Err("Invalid hex byte"))
+            })+ {
+                bytes
+            }
+
+        rule variable_spec() -> InterpolationPart
+            = [StringToken::BraceOpen] name:([StringToken::Id(id)] { id.to_string() })
+                fmt:([StringToken::Colon] [StringToken::Id(fmt)] { fmt })?
+                [StringToken::Colon]
+                [StringToken::Integer(len)]
+                [StringToken::BraceClose]
+                {?
+                    let format = fmt.map(|fmt| fmt.to_string());
+                    let length = len.parse::<usize>().or(Err("Invalid length"))?;
+                    Ok(InterpolationPart::Variable { name, format, length })
+                }
+
+        rule literal_content() -> Vec<u8>
+            = content:([StringToken::Other(ch)] { ch.as_bytes().to_vec() })+ {
+                content.into_iter().flatten().collect()
+            }
+
+        rule interpolation_part() -> InterpolationPart
+            = hex:hex_literal() { InterpolationPart::Literal(hex) }
+            / var:variable_spec() { var }
+            // / id:([StringToken::Id(id)] {
+            //     // Try to parse identifier as hex bytes
+            //     if id.len() % 2 == 0 && id.chars().all(|c| c.is_ascii_hexdigit()) {
+            //         let mut bytes = Vec::new();
+            //         for chunk in id.as_bytes().chunks(2) {
+            //             if let Ok(hex_str) = std::str::from_utf8(chunk)
+            //                 && let Ok(byte_val) = u8::from_str_radix(hex_str, 16) {
+            //                     bytes.push(byte_val);
+            //                 }
+            //         }
+            //         if !bytes.is_empty() {
+            //             InterpolationPart::Literal(bytes)
+            //         } else {
+            //             InterpolationPart::Literal(id.as_bytes().to_vec())
+            //         }
+            //     } else {
+            //         InterpolationPart::Literal(id.as_bytes().to_vec())
+            //     }
+            // }) { id }
+            / content:literal_content() { InterpolationPart::Literal(content) }
+
+        pub rule parse_interpolation() -> Vec<InterpolationPart>
+            = parts:(interpolation_part() / [StringToken::Dot] { InterpolationPart::Literal(vec![]) })* {
+                let mut result = Vec::new();
+                let mut current_literal = Vec::new();
+
+                for part in parts {
+                    match part {
+                        InterpolationPart::Literal(bytes) => {
+                            if !bytes.is_empty() {
+                                current_literal.extend_from_slice(&bytes);
+                            }
+                        }
+                        var @ InterpolationPart::Variable { .. } => {
+                            if !current_literal.is_empty() {
+                                result.push(InterpolationPart::Literal(current_literal.clone()));
+                                current_literal.clear();
+                            }
+                            result.push(var);
+                        }
+                    }
+                }
+
+                if !current_literal.is_empty() {
+                    result.push(InterpolationPart::Literal(current_literal));
+                }
+
+                result
+            }
+    }
+}
+
+fn parse_string_interpolation(template: &str) -> Result<Vec<InterpolationPart>, &'static str> {
+    let lexer = StringToken::lexer(template);
+    let tokens: Vec<_> = lexer
+        .collect::<Result<_, ()>>()
+        .map_err(|_| "Lexer failed")?;
+    string_interpolation::parse_interpolation(&tokens).map_err(|_| "Parser failed")
 }
 
 pub fn parse(source: &str) -> Result<RigFile, ParseError> {
@@ -1196,6 +1294,76 @@ mod tests {
             },
             _ => panic!("Expected if statement"),
         }
+    }
+
+    #[test]
+    fn test_string_interpolation_parsing() -> Result<()> {
+        let dsl_source = r#"
+            impl Test for Rig {
+                fn test_interpolation() {
+                    command = "FEFE94E0.25.{vfo:1}.{freq:int_lu:4}.FD";
+                    write(command);
+                }
+            }
+        "#;
+
+        let rig_file  = parse(dsl_source)?;
+        let cmd = &rig_file.impl_block.commands[0];
+        assert_eq!(cmd.statements.len(), 2);
+
+        match &cmd.statements[0] {
+            Statement::Assign(var, expr) => {
+                assert_eq!(var.as_str(), "command");
+                match expr {
+                    Expr::StringInterpolation { parts } => {
+                        assert_eq!(parts.len(), 4);
+
+                        match &parts[0] {
+                            InterpolationPart::Literal(bytes) => {
+                                assert_eq!(bytes, &[0xFE, 0xFE, 0x94, 0xE0, 0x25]);
+                            }
+                            _ => panic!("Expected literal part"),
+                        }
+
+                        match &parts[1] {
+                            InterpolationPart::Variable {
+                                name,
+                                format,
+                                length,
+                            } => {
+                                assert_eq!(name, "vfo");
+                                assert_eq!(format, &None);
+                                assert_eq!(*length, 1);
+                            }
+                            _ => panic!("Expected variable part"),
+                        }
+
+                        match &parts[2] {
+                            InterpolationPart::Variable {
+                                name,
+                                format,
+                                length,
+                            } => {
+                                assert_eq!(name, "freq");
+                                assert_eq!(format, &Some("int_lu".to_string()));
+                                assert_eq!(*length, 4);
+                            }
+                            _ => panic!("Expected variable part"),
+                        }
+
+                        match &parts[3] {
+                            InterpolationPart::Literal(bytes) => {
+                                assert_eq!(bytes, &[0xFD]);
+                            }
+                            _ => panic!("Expected literal part"),
+                        }
+                    }
+                    _ => panic!("Expected string interpolation"),
+                }
+            }
+            _ => panic!("Expected assignment"),
+        }
+        Ok(())
     }
 
     #[test]
