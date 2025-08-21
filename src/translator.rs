@@ -286,17 +286,17 @@ fn convert_command(cmd: &Command) -> RigCommand {
         let mask_bytes = hex_string_to_bytes(&flag.mask);
         let bits_bytes = hex_string_to_bytes(&flag.bits);
 
-        if let (Some(mask_bytes), Some(bits_bytes)) = (mask_bytes, bits_bytes) {
-            if let Some((index, length)) = find_different_bits(&mask_bytes, &bits_bytes) {
-                let param = RigBinaryParam {
-                    index: index as u32,
-                    length: length as u32,
-                    format: DataFormat::IntLu,
-                    multiply: 1.0,
-                    add: 0.0,
-                };
-                returns.insert(flag.param.clone(), param);
-            }
+        if let (Some(mask_bytes), Some(bits_bytes)) = (mask_bytes, bits_bytes)
+            && let Some((index, length)) = find_different_bits(&mask_bytes, &bits_bytes)
+        {
+            let param = RigBinaryParam {
+                index: index as u32,
+                length: length as u32,
+                format: DataFormat::IntLu,
+                multiply: 1.0,
+                add: 0.0,
+            };
+            returns.insert(flag.param.clone(), param);
         }
     }
 
@@ -393,36 +393,36 @@ pub fn translate_omnirig_to_rig(omnirig: RigDescription) -> Result<RigFile> {
         let translation = determine_command_name(cmd)?;
         let mut command_format = convert_command(cmd);
 
-        if translation.mode_params.is_some() {
-            if let Some(loc) = &mode_param_location {
-                let mode_param = RigBinaryParam {
-                    index: loc.offset as u32,
-                    length: loc.length as u32,
-                    format: DataFormat::Text,
-                    multiply: 1.0,
-                    add: 0.0,
-                };
-                command_format.params.insert("mode".to_string(), mode_param);
-                command_format.command =
-                    insert_question_marks(&command_format.command, loc.offset, loc.length);
-            }
+        if translation.mode_params.is_some()
+            && let Some(loc) = &mode_param_location
+        {
+            let mode_param = RigBinaryParam {
+                index: loc.offset as u32,
+                length: loc.length as u32,
+                format: DataFormat::Text,
+                multiply: 1.0,
+                add: 0.0,
+            };
+            command_format.params.insert("mode".to_string(), mode_param);
+            command_format.command =
+                insert_question_marks(&command_format.command, loc.offset, loc.length);
         }
 
-        if let Some((param_type, _toggle_value)) = &translation.toggle_param {
-            if let Some(loc) = toggle_locations.get(param_type.as_str()) {
-                let toggle_param = RigBinaryParam {
-                    index: loc.offset as u32,
-                    length: loc.length as u32,
-                    format: DataFormat::IntLu,
-                    multiply: 1.0,
-                    add: 0.0,
-                };
-                command_format
-                    .params
-                    .insert(param_type.clone(), toggle_param);
-                command_format.command =
-                    insert_question_marks(&command_format.command, loc.offset, loc.length);
-            }
+        if let Some((param_type, _toggle_value)) = &translation.toggle_param
+            && let Some(loc) = toggle_locations.get(param_type.as_str())
+        {
+            let toggle_param = RigBinaryParam {
+                index: loc.offset as u32,
+                length: loc.length as u32,
+                format: DataFormat::IntLu,
+                multiply: 1.0,
+                add: 0.0,
+            };
+            command_format
+                .params
+                .insert(param_type.clone(), toggle_param);
+            command_format.command =
+                insert_question_marks(&command_format.command, loc.offset, loc.length);
         }
 
         rig_file.commands.insert(translation.name, command_format);

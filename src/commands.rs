@@ -138,12 +138,12 @@ impl From<&BinMask> for String {
         let mut current_mask = mask_iter.next();
 
         for (i, byte) in value.data.iter().enumerate() {
-            if let Some(&(start, len)) = current_mask {
-                if i == start {
-                    result.push_str(&"?".repeat(len * 2));
-                    current_mask = mask_iter.next();
-                    continue;
-                }
+            if let Some(&(start, len)) = current_mask
+                && i == start
+            {
+                result.push_str(&"?".repeat(len * 2));
+                current_mask = mask_iter.next();
+                continue;
             }
             if i > 0 {
                 result.push('.');

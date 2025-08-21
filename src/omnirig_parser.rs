@@ -112,16 +112,16 @@ pub fn parse_ini_data(ini_data: String) -> Result<RigDescription> {
                 if let Ok(index) = index.parse::<u8>() {
                     values.push((index, value));
                 }
-            } else if let Some(index) = key.strip_prefix("flag") {
-                if let Ok(_index) = index.parse::<u8>() {
-                    // Flag format: mask|bits|param or mask|bits|param|param2
-                    let parts: Vec<&str> = value.split('|').collect();
-                    if parts.len() >= 3 {
-                        let mask = parts[0].to_string();
-                        let bits = parts[1].to_string();
-                        let param = parts[2].to_string();
-                        command.flags.push(Flag { mask, bits, param });
-                    }
+            } else if let Some(index) = key.strip_prefix("flag")
+                && let Ok(_index) = index.parse::<u8>()
+            {
+                // Flag format: mask|bits|param or mask|bits|param|param2
+                let parts: Vec<&str> = value.split('|').collect();
+                if parts.len() >= 3 {
+                    let mask = parts[0].to_string();
+                    let bits = parts[1].to_string();
+                    let param = parts[2].to_string();
+                    command.flags.push(Flag { mask, bits, param });
                 }
             }
         }
