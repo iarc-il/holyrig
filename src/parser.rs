@@ -94,8 +94,12 @@ pub enum Token<'source> {
 
 #[derive(Logos, Debug, Copy, Clone)]
 pub enum StringToken<'source> {
-    #[regex(r"[a-fA-F0-9]{2}", |lex| lex.slice())]
-    HexByte(&'source str),
+    #[regex(r"[a-fA-F0-9]*[a-fA-F][a-fA-F0-9]*", priority = 3, callback = |lex| {
+        let s = lex.slice();
+        // Only match if it's even length (pairs of hex digits)
+        if s.len() % 2 == 0 { Some(s) } else { None }
+    })]
+    HexString(&'source str),
     #[token(".", priority = 2)]
     Dot,
     #[token("{", priority = 2)]
@@ -557,51 +561,55 @@ peg::parser! {
 peg::parser! {
     pub grammar string_interpolation<'source>() for [StringToken<'source>] {
         rule hex_literal() -> Vec<u8>
-            = bytes:([StringToken::HexByte(hex)] {?
-                u8::from_str_radix(hex, 16).or(Err("Invalid hex byte"))
-            })+ {
-                bytes
+            = hex:(
+                [StringToken::HexString(hex)] { hex } /
+                [StringToken::Integer(int)] {?
+                    // Accept integer if it's valid hex and even length
+                    if int.len() % 2 == 0 && int.chars().all(|c| c.is_ascii_hexdigit()) {
+                        Ok(int)
+                    } else {
+                        Err("Not valid hex")
+                    }
+                }
+            ) {?
+                let mut bytes = Vec::new();
+                for chunk in hex.as_bytes().chunks(2) {
+                    if let Ok(hex_str) = std::str::from_utf8(chunk)
+                        && let Ok(byte_val) = u8::from_str_radix(hex_str, 16) {
+                            bytes.push(byte_val);
+                        }
+                }
+                Ok(bytes)
             }
 
         rule variable_spec() -> InterpolationPart
             = [StringToken::BraceOpen] name:([StringToken::Id(id)] { id.to_string() })
-                fmt:([StringToken::Colon] [StringToken::Id(fmt)] { fmt })?
-                [StringToken::Colon]
-                [StringToken::Integer(len)]
-                [StringToken::BraceClose]
-                {?
-                    let format = fmt.map(|fmt| fmt.to_string());
-                    let length = len.parse::<usize>().or(Err("Invalid length"))?;
-                    Ok(InterpolationPart::Variable { name, format, length })
-                }
+              format_and_length:(
+                  [StringToken::Colon] format:([StringToken::Id(fmt)] { fmt.to_string() })
+                  [StringToken::Colon] length:([StringToken::Integer(len)] {?
+                      len.parse::<usize>().or(Err("Invalid length"))
+                  }) {
+                      (Some(format), length)
+                  } /
+                  [StringToken::Colon] length:([StringToken::Integer(len)] {?
+                      len.parse::<usize>().or(Err("Invalid length"))
+                  }) {
+                      (None, length)
+                  }
+              ) [StringToken::BraceClose] {
+                  let (format, length) = format_and_length;
+                  InterpolationPart::Variable { name, format, length }
+              }
 
         rule literal_content() -> Vec<u8>
             = content:([StringToken::Other(ch)] { ch.as_bytes().to_vec() })+ {
                 content.into_iter().flatten().collect()
             }
 
-        rule interpolation_part() -> InterpolationPart
+                rule interpolation_part() -> InterpolationPart
             = hex:hex_literal() { InterpolationPart::Literal(hex) }
             / var:variable_spec() { var }
-            // / id:([StringToken::Id(id)] {
-            //     // Try to parse identifier as hex bytes
-            //     if id.len() % 2 == 0 && id.chars().all(|c| c.is_ascii_hexdigit()) {
-            //         let mut bytes = Vec::new();
-            //         for chunk in id.as_bytes().chunks(2) {
-            //             if let Ok(hex_str) = std::str::from_utf8(chunk)
-            //                 && let Ok(byte_val) = u8::from_str_radix(hex_str, 16) {
-            //                     bytes.push(byte_val);
-            //                 }
-            //         }
-            //         if !bytes.is_empty() {
-            //             InterpolationPart::Literal(bytes)
-            //         } else {
-            //             InterpolationPart::Literal(id.as_bytes().to_vec())
-            //         }
-            //     } else {
-            //         InterpolationPart::Literal(id.as_bytes().to_vec())
-            //     }
-            // }) { id }
+            / id:([StringToken::Id(id)] { InterpolationPart::Literal(id.as_bytes().to_vec()) }) { id }
             / content:literal_content() { InterpolationPart::Literal(content) }
 
         pub rule parse_interpolation() -> Vec<InterpolationPart>
@@ -638,8 +646,9 @@ peg::parser! {
 fn parse_string_interpolation(template: &str) -> Result<Vec<InterpolationPart>, &'static str> {
     let lexer = StringToken::lexer(template);
     let tokens: Vec<_> = lexer
-        .collect::<Result<_, ()>>()
+        .collect::<Result<_, _>>()
         .map_err(|_| "Lexer failed")?;
+
     string_interpolation::parse_interpolation(&tokens).map_err(|_| "Parser failed")
 }
 
@@ -1307,7 +1316,7 @@ mod tests {
             }
         "#;
 
-        let rig_file  = parse(dsl_source)?;
+        let rig_file = parse(dsl_source)?;
         let cmd = &rig_file.impl_block.commands[0];
         assert_eq!(cmd.statements.len(), 2);
 
