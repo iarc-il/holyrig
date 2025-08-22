@@ -40,25 +40,6 @@ impl fmt::Display for Value {
     }
 }
 
-impl Value {
-    pub fn to_interpolation_string(&self) -> String {
-        match self {
-            Value::Integer(i) => format!("{i:02X}"),
-            Value::Float(f) => f.to_string(),
-            Value::String(s) => s.clone(),
-            Value::Boolean(b) => {
-                if *b {
-                    "1".to_string()
-                } else {
-                    "0".to_string()
-                }
-            }
-            Value::EnumVariant { value, .. } => format!("{value:02X}"),
-            Value::Unit => String::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     variables: HashMap<String, Value>,
