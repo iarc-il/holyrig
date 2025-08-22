@@ -243,12 +243,6 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnumVariant {
-    pub name: String,
-    pub value: u32,
-}
-
-#[derive(Debug, Clone)]
 pub struct Init {
     pub statements: Vec<Statement>,
 }
@@ -256,7 +250,7 @@ pub struct Init {
 #[derive(Debug, Clone)]
 pub struct Enum {
     pub name: String,
-    pub variants: Vec<EnumVariant>,
+    pub variants: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,12 +339,9 @@ peg::parser! {
                 num.parse::<f64>().or(Err("Invalid float"))
             }
 
-        rule enum_variant() -> EnumVariant
+        rule enum_variant() -> (String, u32)
             = [Token::Id(name)] [Token::EqualAssign] integer:integer() {
-                EnumVariant {
-                    name: name.to_string(),
-                    value: integer as u32,
-                }
+                (name.to_string(), integer as u32)
             }
 
         rule enum_member() -> Member
@@ -359,7 +350,7 @@ peg::parser! {
               [Token::BraceClose] {
                 Member::Enum(Enum {
                     name: name.to_string(),
-                    variants,
+                    variants: variants.into_iter().collect(),
                 })
             }
 

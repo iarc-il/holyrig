@@ -86,11 +86,10 @@ impl Context {
     }
 
     pub fn register_enum(&mut self, enum_def: &Enum) {
-        let mut variants = HashMap::new();
-        for variant in &enum_def.variants {
-            variants.insert(variant.name.clone(), variant.value);
-        }
-        self.enums.insert(enum_def.name.clone(), variants);
+        self.enums.insert(
+            enum_def.name.clone(),
+            enum_def.variants.clone().into_iter().collect(),
+        );
     }
 
     pub fn get_enum_variant(&self, enum_name: &str, variant_name: &str) -> Option<u32> {
@@ -632,7 +631,7 @@ impl Default for Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{EnumVariant, Id, parse};
+    use crate::parser::{Id, parse};
 
     #[test]
     fn test_basic_expression_evaluation() -> Result<()> {
@@ -779,16 +778,7 @@ mod tests {
 
         let enum_def = Enum {
             name: "Vfo".to_string(),
-            variants: vec![
-                EnumVariant {
-                    name: "A".to_string(),
-                    value: 0,
-                },
-                EnumVariant {
-                    name: "B".to_string(),
-                    value: 1,
-                },
-            ],
+            variants: BTreeMap::from([("A".to_string(), 0), ("B".to_string(), 1)]),
         };
         context.register_enum(&enum_def);
 
