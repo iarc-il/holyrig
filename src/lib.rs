@@ -14,6 +14,6 @@ pub mod translator;
 pub mod udp_server;
 pub mod wrapper;
 
-pub use interpreter::{Interpreter, InterpreterContext, Value};
+pub use interpreter::{Context, Interpreter, Value};
 pub use omnirig_parser::parse_ini_file;
 pub use translator::translate_omnirig_to_rig;
