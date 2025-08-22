@@ -1,11 +1,9 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::data_format::DataFormat;
-use crate::parser::{
-    BinaryOp, Command, Enum, Expr, Init, InterpolationPart, RigFile, Statement, Status,
-};
+use crate::parser::{BinaryOp, Command, Expr, InterpolationPart, RigFile, Statement, Status};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -44,6 +42,8 @@ impl fmt::Display for Value {
 pub struct Env {
     variables: HashMap<String, Value>,
     parent: Option<Box<Env>>,
+    pub output: Vec<String>,
+    enums: HashMap<String, HashMap<String, u32>>,
 }
 
 impl Env {
@@ -55,6 +55,8 @@ impl Env {
         Env {
             variables: HashMap::new(),
             parent: Some(Box::new(parent)),
+            output: Vec::new(),
+            enums: HashMap::new(),
         }
     }
 
@@ -71,40 +73,34 @@ impl Env {
             None
         }
     }
-}
 
-#[derive(Default, Debug)]
-pub struct Context {
-    pub environment: Env,
-    pub enums: HashMap<String, HashMap<String, u32>>,
-    pub output: Vec<String>,
-}
-
-impl Context {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn get_enum_variant(&self, enum_name: &str, variant_name: &str) -> Option<u32> {
+        self.enums
+            .get(enum_name)
+            .and_then(|variants| variants.get(variant_name).copied())
+            .or_else(|| {
+                self.parent
+                    .as_ref()
+                    .and_then(|parent| parent.get_enum_variant(enum_name, variant_name))
+            })
     }
 
-    pub fn register_enum(&mut self, enum_def: &Enum) {
+    pub fn register_enum(&mut self, enum_def: &crate::parser::Enum) {
         self.enums.insert(
             enum_def.name.clone(),
             enum_def.variants.clone().into_iter().collect(),
         );
     }
-
-    pub fn get_enum_variant(&self, enum_name: &str, variant_name: &str) -> Option<u32> {
-        self.enums.get(enum_name)?.get(variant_name).copied()
-    }
 }
 
 pub trait BuiltinFunction {
-    fn call(&self, args: &[Value], context: &mut Context) -> Result<Value>;
+    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value>;
 }
 
 pub struct WriteFunction;
 
 impl BuiltinFunction for WriteFunction {
-    fn call(&self, args: &[Value], context: &mut Context) -> Result<Value> {
+    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value> {
         if args.len() != 1 {
             return Err(anyhow!(
                 "write() expects exactly 1 argument, got {}",
@@ -113,7 +109,7 @@ impl BuiltinFunction for WriteFunction {
         }
 
         let output = args[0].to_string();
-        context.output.push(format!("WRITE: {output}"));
+        env.output.push(format!("WRITE: {output}"));
         Ok(Value::Unit)
     }
 }
@@ -121,7 +117,7 @@ impl BuiltinFunction for WriteFunction {
 pub struct ReadFunction;
 
 impl BuiltinFunction for ReadFunction {
-    fn call(&self, args: &[Value], context: &mut Context) -> Result<Value> {
+    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value> {
         if args.len() != 1 {
             return Err(anyhow!(
                 "read() expects exactly 1 argument, got {}",
@@ -130,7 +126,7 @@ impl BuiltinFunction for ReadFunction {
         }
 
         let expected = args[0].to_string();
-        context.output.push(format!("READ: {expected}"));
+        env.output.push(format!("READ: {expected}"));
         Ok(Value::Unit)
     }
 }
@@ -138,7 +134,7 @@ impl BuiltinFunction for ReadFunction {
 pub struct FormatFunction;
 
 impl BuiltinFunction for FormatFunction {
-    fn call(&self, args: &[Value], _context: &mut Context) -> Result<Value> {
+    fn call(&self, args: &[Value], _env: &mut Env) -> Result<Value> {
         if args.is_empty() {
             return Err(anyhow!("format() expects at least 1 argument"));
         }
@@ -149,46 +145,36 @@ impl BuiltinFunction for FormatFunction {
 }
 
 pub struct Interpreter {
+    rig_file: RigFile,
     builtins: HashMap<String, Box<dyn BuiltinFunction>>,
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
+    pub fn new(rig_file: RigFile) -> Self {
         let mut builtins: HashMap<String, Box<dyn BuiltinFunction>> = HashMap::new();
         builtins.insert("write".to_string(), Box::new(WriteFunction));
         builtins.insert("read".to_string(), Box::new(ReadFunction));
         builtins.insert("format".to_string(), Box::new(FormatFunction));
 
-        Interpreter { builtins }
+                Interpreter { rig_file, builtins }
     }
 
-    pub fn execute_rig_file(&self, rig_file: &RigFile) -> Result<Context> {
-        let mut context = Context::new();
+    pub fn create_env(&self) -> Result<Env> {
+        let mut env = Env::new();
 
-        for (id, expr) in &rig_file.settings.settings {
-            let value = self.evaluate_expression(expr, &mut context)?;
-            context.environment.set(id.to_string(), value);
+        for (id, expr) in &self.rig_file.settings.settings {
+            let value = self.evaluate_expression(expr, &mut env)?;
+            env.set(id.to_string(), value);
         }
 
-        for enum_def in &rig_file.impl_block.enums {
-            context.register_enum(enum_def);
+        for enum_def in &self.rig_file.impl_block.enums {
+            env.register_enum(enum_def);
         }
 
-        if let Some(init) = &rig_file.impl_block.init {
-            self.execute_init(init, &mut context)?;
-        }
-
-        Ok(context)
+        Ok(env)
     }
 
-    pub fn execute_command(
-        &self,
-        command: &Command,
-        args: &[Value],
-        context: &mut Context,
-    ) -> Result<()> {
-        let mut local_env = Env::with_parent(context.environment.clone());
-
+    pub fn execute_command(&self, command: &Command, args: &[Value], env: &mut Env) -> Result<()> {
         if args.len() != command.parameters.len() {
             return Err(anyhow!(
                 "Command '{}' expects {} arguments, got {}",
@@ -198,50 +184,51 @@ impl Interpreter {
             ));
         }
 
+        let mut local_env = Env::with_parent(env.clone());
         for (param, arg) in command.parameters.iter().zip(args.iter()) {
             local_env.set(param.name.clone(), arg.clone());
         }
 
-        let old_env = std::mem::replace(&mut context.environment, local_env);
-
         for statement in &command.statements {
-            self.execute_statement(statement, context)?;
+            self.execute_statement(statement, &mut local_env)?;
         }
 
-        context.environment = old_env;
+        env.output.extend(local_env.output);
 
         Ok(())
     }
 
-    pub fn execute_init(&self, init: &Init, context: &mut Context) -> Result<()> {
-        for statement in &init.statements {
-            self.execute_statement(statement, context)?;
+    pub fn execute_init(&self, env: &mut Env) -> Result<()> {
+        if let Some(init) = &self.rig_file.impl_block.init {
+            for statement in &init.statements {
+                self.execute_statement(statement, env)?;
+            }
         }
         Ok(())
     }
 
-    pub fn execute_status(&self, status: &Status, context: &mut Context) -> Result<()> {
+    pub fn execute_status(&self, status: &Status, env: &mut Env) -> Result<()> {
         for statement in &status.statements {
-            self.execute_statement(statement, context)?;
+            self.execute_statement(statement, env)?;
         }
         Ok(())
     }
 
-    pub fn execute_statement(&self, statement: &Statement, context: &mut Context) -> Result<()> {
+    pub fn execute_statement(&self, statement: &Statement, env: &mut Env) -> Result<()> {
         match statement {
             Statement::Assign(id, expr) => {
-                let value = self.evaluate_expression(expr, context)?;
-                context.environment.set(id.to_string(), value);
+                let value = self.evaluate_expression(expr, env)?;
+                env.set(id.to_string(), value);
             }
             Statement::FunctionCall { name, args } => {
                 let arg_values: Result<Vec<_>> = args
                     .iter()
-                    .map(|arg| self.evaluate_expression(arg, context))
+                    .map(|arg| self.evaluate_expression(arg, env))
                     .collect();
                 let arg_values = arg_values?;
 
                 if let Some(builtin) = self.builtins.get(name) {
-                    builtin.call(&arg_values, context)?;
+                    builtin.call(&arg_values, env)?;
                 } else {
                     return Err(anyhow!("Unknown function: {}", name));
                 }
@@ -251,17 +238,17 @@ impl Interpreter {
                 then_body,
                 else_body,
             } => {
-                let condition_value = self.evaluate_expression(condition, context)?;
+                let condition_value = self.evaluate_expression(condition, env)?;
                 match condition_value {
                     Value::Boolean(true) => {
                         for stmt in then_body {
-                            self.execute_statement(stmt, context)?;
+                            self.execute_statement(stmt, env)?;
                         }
                     }
                     Value::Boolean(false) => {
                         if let Some(else_stmts) = else_body {
                             for stmt in else_stmts {
-                                self.execute_statement(stmt, context)?;
+                                self.execute_statement(stmt, env)?;
                             }
                         }
                     }
@@ -277,17 +264,16 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn evaluate_expression(&self, expr: &Expr, context: &mut Context) -> Result<Value> {
+    pub fn evaluate_expression(&self, expr: &Expr, env: &mut Env) -> Result<Value> {
         match expr {
             Expr::Integer(i) => Ok(Value::Integer(*i)),
             Expr::Float(f) => Ok(Value::Float(*f)),
             Expr::String(s) => Ok(Value::String(s.clone())),
-            Expr::Identifier(id) => context
-                .environment
+            Expr::Identifier(id) => env
                 .get(id.as_str())
                 .ok_or_else(|| anyhow!("Undefined variable: {}", id.as_str())),
             Expr::QualifiedIdentifier(scope, id) => {
-                if let Some(value) = context.get_enum_variant(scope.as_str(), id.as_str()) {
+                if let Some(value) = env.get_enum_variant(scope.as_str(), id.as_str()) {
                     Ok(Value::EnumVariant {
                         enum_name: scope.to_string(),
                         variant_name: id.to_string(),
@@ -302,8 +288,8 @@ impl Interpreter {
                 }
             }
             Expr::BinaryOp { left, op, right } => {
-                let left_val = self.evaluate_expression(left, context)?;
-                let right_val = self.evaluate_expression(right, context)?;
+                let left_val = self.evaluate_expression(left, env)?;
+                let right_val = self.evaluate_expression(right, env)?;
                 Self::apply_binary_op(&left_val, op, &right_val)
             }
             Expr::MethodCall {
@@ -311,17 +297,17 @@ impl Interpreter {
                 method,
                 args,
             } => {
-                let object_val = self.evaluate_expression(object, context)?;
+                let object_val = self.evaluate_expression(object, env)?;
                 let arg_values: Result<Vec<_>> = args
                     .iter()
-                    .map(|arg| self.evaluate_expression(arg, context))
+                    .map(|arg| self.evaluate_expression(arg, env))
                     .collect();
                 let arg_values = arg_values?;
 
-                self.call_method(&object_val, method, &arg_values, context)
+                self.call_method(&object_val, method, &arg_values, env)
             }
             Expr::StringInterpolation { parts } => {
-                self.process_parsed_string_interpolation(parts, context)
+                self.process_parsed_string_interpolation(parts, env)
             }
         }
     }
@@ -367,8 +353,9 @@ impl Interpreter {
                 BinaryOp::LessEqual => Ok(Value::Boolean(a <= b)),
                 BinaryOp::Greater => Ok(Value::Boolean(a > b)),
                 BinaryOp::GreaterEqual => Ok(Value::Boolean(a >= b)),
-                BinaryOp::And => Ok(Value::Boolean(*a != 0.0 && *b != 0.0)),
-                BinaryOp::Or => Ok(Value::Boolean(*a != 0.0 || *b != 0.0)),
+                BinaryOp::And | BinaryOp::Or => {
+                    Err(anyhow!("Binary operator is not supported in floats"))
+                }
             },
             (Value::Integer(a), Value::Float(b)) => {
                 Self::apply_binary_op(&Value::Float(*a as f64), op, &Value::Float(*b))
@@ -401,7 +388,7 @@ impl Interpreter {
     fn process_parsed_string_interpolation(
         &self,
         parts: &[InterpolationPart],
-        context: &mut Context,
+        env: &mut Env,
     ) -> Result<Value> {
         let mut result = Vec::new();
 
@@ -415,12 +402,8 @@ impl Interpreter {
                     format,
                     length,
                 } => {
-                    let interpolated = self.interpolate_parsed_variable(
-                        name,
-                        format.as_deref(),
-                        *length,
-                        context,
-                    )?;
+                    let interpolated =
+                        self.interpolate_parsed_variable(name, format.as_deref(), *length, env)?;
                     result.extend_from_slice(&interpolated);
                 }
             }
@@ -439,10 +422,9 @@ impl Interpreter {
         name: &str,
         format: Option<&str>,
         length: usize,
-        context: &mut Context,
+        env: &mut Env,
     ) -> Result<Vec<u8>> {
-        let value = context
-            .environment
+        let value = env
             .get(name)
             .ok_or_else(|| anyhow!("Undefined variable: {}", name))?;
 
@@ -499,14 +481,13 @@ impl Interpreter {
     }
 
     /// Old interpolate_variable method - keeping for reference
-    fn _old_interpolate_variable(&self, var_spec: &str, context: &mut Context) -> Result<Vec<u8>> {
+    fn _old_interpolate_variable(&self, var_spec: &str, env: &mut Env) -> Result<Vec<u8>> {
         let parts: Vec<&str> = var_spec.split(':').collect();
 
         match parts.len() {
             1 => {
                 let var_name = parts[0];
-                let value = context
-                    .environment
+                let value = env
                     .get(var_name)
                     .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
 
@@ -531,8 +512,7 @@ impl Interpreter {
                     .parse::<usize>()
                     .map_err(|_| anyhow!("Invalid length: {}", parts[1]))?;
 
-                let value = context
-                    .environment
+                let value = env
                     .get(var_name)
                     .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
 
@@ -565,8 +545,7 @@ impl Interpreter {
                 let format = DataFormat::try_from(format_str)
                     .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
 
-                let value = context
-                    .environment
+                let value = env
                     .get(var_name)
                     .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
 
@@ -601,7 +580,7 @@ impl Interpreter {
         object: &Value,
         method: &str,
         args: &[Value],
-        _context: &mut Context,
+        _env: &mut Env,
     ) -> Result<Value> {
         match method {
             "format" => match object {
@@ -624,45 +603,46 @@ impl Interpreter {
 
 impl Default for Interpreter {
     fn default() -> Self {
-        Self::new()
+        Self::new(Default::default())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{Id, parse};
+    use crate::parser::{parse, Id};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_basic_expression_evaluation() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::Integer(42);
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Integer(42));
 
         let expr = Expr::Float(3.5);
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Float(3.5));
 
         let expr = Expr::String("hello".to_string());
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::String("hello".to_string()));
         Ok(())
     }
 
     #[test]
     fn test_binary_operations() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Integer(10)),
             op: BinaryOp::Add,
             right: Box::new(Expr::Integer(5)),
         };
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Integer(15));
 
         let expr = Expr::BinaryOp {
@@ -670,52 +650,48 @@ mod tests {
             op: BinaryOp::Greater,
             right: Box::new(Expr::Integer(5)),
         };
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Boolean(true));
         Ok(())
     }
 
     #[test]
     fn test_variable_assignment_and_lookup() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let statement = Statement::Assign(Id::new("x"), Expr::Integer(42));
-        interpreter.execute_statement(&statement, &mut context)?;
+        interpreter.execute_statement(&statement, &mut env)?;
 
         let expr = Expr::Identifier(Id::new("x"));
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Integer(42));
         Ok(())
     }
 
     #[test]
     fn test_function_call() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let statement = Statement::FunctionCall {
             name: "write".to_string(),
             args: vec![Expr::String("test".to_string())],
         };
-        interpreter.execute_statement(&statement, &mut context)?;
+        interpreter.execute_statement(&statement, &mut env)?;
 
-        assert_eq!(context.output.len(), 1);
-        assert_eq!(context.output[0], "WRITE: test");
+        assert_eq!(env.output.len(), 1);
+        assert_eq!(env.output[0], "WRITE: test");
         Ok(())
     }
 
     #[test]
     fn test_string_interpolation() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context
-            .environment
-            .set("freq".to_string(), Value::Integer(14500000));
-        context
-            .environment
-            .set("vfo".to_string(), Value::String("A".to_string()));
+        env.set("freq".to_string(), Value::Integer(14500000));
+        env.set("vfo".to_string(), Value::String("A".to_string()));
 
         let expr = Expr::StringInterpolation {
             parts: vec![
@@ -735,7 +711,7 @@ mod tests {
             ],
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         // FEFE94E0 (literal hex) + 25 (literal hex) + 41 (vfo="A" as ASCII) + A040DD00 (freq=14500000 in int_lu:4) + FD (literal hex)
         assert_eq!(result, Value::String("FEFE94E02541A040DD00FD".to_string()));
         Ok(())
@@ -743,10 +719,10 @@ mod tests {
 
     #[test]
     fn test_if_statement() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context.environment.set("x".to_string(), Value::Integer(10));
+        env.set("x".to_string(), Value::Integer(10));
 
         let statement = Statement::If {
             condition: Expr::BinaryOp {
@@ -764,26 +740,26 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&statement, &mut context)?;
+        interpreter.execute_statement(&statement, &mut env)?;
 
-        assert_eq!(context.output.len(), 1);
-        assert_eq!(context.output[0], "WRITE: condition true");
+        assert_eq!(env.output.len(), 1);
+        assert_eq!(env.output[0], "WRITE: condition true");
         Ok(())
     }
 
     #[test]
     fn test_enum_handling() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        let enum_def = Enum {
+        let enum_def = crate::parser::Enum {
             name: "Vfo".to_string(),
             variants: BTreeMap::from([("A".to_string(), 0), ("B".to_string(), 1)]),
         };
-        context.register_enum(&enum_def);
+        env.register_enum(&enum_def);
 
         let expr = Expr::QualifiedIdentifier(Id::new("Vfo"), Id::new("A"));
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
 
         match result {
             Value::EnumVariant {
@@ -821,19 +797,17 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source).unwrap();
-        let interpreter = Interpreter::new();
-        let mut context = interpreter.execute_rig_file(&rig_file).unwrap();
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = interpreter.create_env().unwrap();
+        interpreter.execute_init(&mut env).unwrap();
 
-        assert_eq!(context.environment.get("version"), Some(Value::Integer(1)));
-        assert_eq!(
-            context.environment.get("baudrate"),
-            Some(Value::Integer(9600))
-        );
+        assert_eq!(env.get("version"), Some(Value::Integer(1)));
+        assert_eq!(env.get("baudrate"), Some(Value::Integer(9600)));
 
-        assert_eq!(context.get_enum_variant("Vfo", "A"), Some(0));
-        assert_eq!(context.get_enum_variant("Vfo", "B"), Some(1));
+        assert_eq!(env.get_enum_variant("Vfo", "A"), Some(0));
+        assert_eq!(env.get_enum_variant("Vfo", "B"), Some(1));
 
-        assert!(context.output.len() == 1);
+        assert!(env.output.len() == 1);
 
         let command = &rig_file.impl_block.commands[0];
         let args = vec![
@@ -844,19 +818,19 @@ mod tests {
                 value: 0,
             },
         ];
-        interpreter.execute_command(command, &args, &mut context)?;
+        interpreter.execute_command(command, &args, &mut env)?;
 
-        assert_eq!(context.output[0], "WRITE: initialization");
+        assert_eq!(env.output[0], "WRITE: initialization");
 
-        let last_output = context.output.last().unwrap();
+        let last_output = env.output.last().unwrap();
         assert!(last_output.contains("WRITE: FEFE94E02500A040DD00FD"));
         Ok(())
     }
 
     #[test]
     fn test_division_by_zero_error() {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Integer(10)),
@@ -864,7 +838,7 @@ mod tests {
             right: Box::new(Expr::Integer(0)),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(
@@ -875,8 +849,8 @@ mod tests {
 
     #[test]
     fn test_modulo_by_zero_error() {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Integer(10)),
@@ -884,17 +858,17 @@ mod tests {
             right: Box::new(Expr::Integer(0)),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_undefined_variable_access() {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::Identifier(Id::new("undefined_variable"));
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -903,13 +877,13 @@ mod tests {
 
     #[test]
     fn test_complex_nested_expressions() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context.environment.set("a".to_string(), Value::Integer(10));
-        context.environment.set("b".to_string(), Value::Integer(5));
-        context.environment.set("c".to_string(), Value::Integer(3));
-        context.environment.set("d".to_string(), Value::Integer(2));
+        env.set("a".to_string(), Value::Integer(10));
+        env.set("b".to_string(), Value::Integer(5));
+        env.set("c".to_string(), Value::Integer(3));
+        env.set("d".to_string(), Value::Integer(2));
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
@@ -929,19 +903,19 @@ mod tests {
             right: Box::new(Expr::Integer(5)),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Integer(20));
         Ok(())
     }
 
     #[test]
     fn test_operator_precedence_validation() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context.environment.set("a".to_string(), Value::Integer(2));
-        context.environment.set("b".to_string(), Value::Integer(3));
-        context.environment.set("c".to_string(), Value::Integer(4));
+        env.set("a".to_string(), Value::Integer(2));
+        env.set("b".to_string(), Value::Integer(3));
+        env.set("c".to_string(), Value::Integer(4));
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Id::new("a"))),
@@ -953,15 +927,15 @@ mod tests {
             }),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Integer(14));
         Ok(())
     }
 
     #[test]
     fn test_float_integer_mixed_operations() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Float(3.5)),
@@ -969,7 +943,7 @@ mod tests {
             right: Box::new(Expr::Integer(2)),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         match result {
             Value::Float(f) => assert!((f - 5.5).abs() < 1e-6),
             _ => panic!("Expected float result"),
@@ -979,8 +953,8 @@ mod tests {
 
     #[test]
     fn test_nested_if_statements() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let nested_if = Statement::If {
             condition: Expr::BinaryOp {
@@ -1012,18 +986,18 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&nested_if, &mut context)?;
+        interpreter.execute_statement(&nested_if, &mut env)?;
 
-        assert_eq!(context.output.len(), 2);
-        assert_eq!(context.output[0], "WRITE: nested_true");
-        assert_eq!(context.output[1], "WRITE: deeply_nested");
+        assert_eq!(env.output.len(), 2);
+        assert_eq!(env.output[0], "WRITE: nested_true");
+        assert_eq!(env.output[1], "WRITE: deeply_nested");
         Ok(())
     }
 
     #[test]
     fn test_complex_boolean_expressions() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
@@ -1047,15 +1021,15 @@ mod tests {
             }),
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
         assert_eq!(result, Value::Boolean(true));
         Ok(())
     }
 
     #[test]
     fn test_if_with_non_boolean_condition_error() {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let if_stmt = Statement::If {
             condition: Expr::Integer(42),
@@ -1066,7 +1040,7 @@ mod tests {
             else_body: None,
         };
 
-        let result = interpreter.execute_statement(&if_stmt, &mut context);
+        let result = interpreter.execute_statement(&if_stmt, &mut env);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("boolean") || error.to_string().contains("condition"));
@@ -1086,24 +1060,18 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let interpreter = Interpreter::new();
-        let mut context = interpreter.execute_rig_file(&rig_file)?;
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = interpreter.create_env()?;
 
-        assert_eq!(context.environment.get("version"), Some(Value::Integer(1)));
-        assert_eq!(
-            context.environment.get("global_var"),
-            Some(Value::Integer(42))
-        );
+        assert_eq!(env.get("version"), Some(Value::Integer(1)));
+        assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
 
         let command = &rig_file.impl_block.commands[0];
         let args = vec![Value::Integer(5)];
-        interpreter.execute_command(command, &args, &mut context)?;
+        interpreter.execute_command(command, &args, &mut env)?;
 
-        assert_eq!(context.environment.get("local_var"), None);
-        assert_eq!(
-            context.environment.get("global_var"),
-            Some(Value::Integer(42))
-        );
+        assert_eq!(env.get("local_var"), None);
+        assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
         Ok(())
     }
 
@@ -1123,22 +1091,22 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = Env::new();
 
         let command = &rig_file.impl_block.commands[0];
         let args = vec![Value::Integer(10), Value::Boolean(true)];
-        interpreter.execute_command(command, &args, &mut context)?;
+        interpreter.execute_command(command, &args, &mut env)?;
 
-        assert_eq!(context.output.len(), 1);
-        assert_eq!(context.output[0], "WRITE: executed");
+        assert_eq!(env.output.len(), 1);
+        assert_eq!(env.output[0], "WRITE: executed");
         Ok(())
     }
 
     #[test]
     fn test_all_data_formats_in_interpolation() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let test_cases = vec![
             ("int_lu", 418),
@@ -1153,9 +1121,7 @@ mod tests {
         ];
 
         for (format, value) in test_cases {
-            context
-                .environment
-                .set("test_var".to_string(), Value::Integer(value));
+            env.set("test_var".to_string(), Value::Integer(value));
 
             let parts = vec![
                 InterpolationPart::Literal(vec![0xFE, 0xFE]),
@@ -1168,7 +1134,7 @@ mod tests {
             ];
 
             let expr = Expr::StringInterpolation { parts };
-            let result = interpreter.evaluate_expression(&expr, &mut context);
+            let result = interpreter.evaluate_expression(&expr, &mut env);
 
             match result {
                 Ok(Value::String(_)) => {}
@@ -1188,12 +1154,10 @@ mod tests {
 
     #[test]
     fn test_string_interpolation_with_invalid_format() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context
-            .environment
-            .set("test_var".to_string(), Value::Integer(418));
+        env.set("test_var".to_string(), Value::Integer(418));
 
         let parts = vec![InterpolationPart::Variable {
             name: "test_var".to_string(),
@@ -1202,7 +1166,7 @@ mod tests {
         }];
 
         let expr = Expr::StringInterpolation { parts };
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1212,12 +1176,10 @@ mod tests {
 
     #[test]
     fn test_string_interpolation_zero_length() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context
-            .environment
-            .set("test_var".to_string(), Value::Integer(1));
+        env.set("test_var".to_string(), Value::Integer(1));
 
         let parts = vec![InterpolationPart::Variable {
             name: "test_var".to_string(),
@@ -1226,7 +1188,7 @@ mod tests {
         }];
 
         let expr = Expr::StringInterpolation { parts };
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1236,12 +1198,10 @@ mod tests {
 
     #[test]
     fn test_string_interpolation_large_numbers() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context
-            .environment
-            .set("large_num".to_string(), Value::Integer(0x12345678));
+        env.set("large_num".to_string(), Value::Integer(0x12345678));
 
         let parts = vec![InterpolationPart::Variable {
             name: "large_num".to_string(),
@@ -1250,7 +1210,7 @@ mod tests {
         }];
 
         let expr = Expr::StringInterpolation { parts };
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
 
         match result {
             Value::String(s) => {
@@ -1263,12 +1223,10 @@ mod tests {
 
     #[test]
     fn test_method_call_with_multiple_args() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
-        context
-            .environment
-            .set("value".to_string(), Value::Integer(418));
+        env.set("value".to_string(), Value::Integer(418));
 
         let expr = Expr::MethodCall {
             object: Box::new(Expr::Identifier(Id::new("value"))),
@@ -1276,7 +1234,7 @@ mod tests {
             args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context)?;
+        let result = interpreter.evaluate_expression(&expr, &mut env)?;
 
         match result {
             Value::String(_) => {}
@@ -1287,8 +1245,8 @@ mod tests {
 
     #[test]
     fn test_method_call_on_different_types() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr1 = Expr::MethodCall {
             object: Box::new(Expr::Integer(418)),
@@ -1296,7 +1254,7 @@ mod tests {
             args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
         };
 
-        let result1 = interpreter.evaluate_expression(&expr1, &mut context)?;
+        let result1 = interpreter.evaluate_expression(&expr1, &mut env)?;
         assert!(matches!(result1, Value::String(_)));
 
         let expr2 = Expr::MethodCall {
@@ -1305,15 +1263,15 @@ mod tests {
             args: vec![Expr::Integer(4)],
         };
 
-        let result2 = interpreter.evaluate_expression(&expr2, &mut context);
+        let result2 = interpreter.evaluate_expression(&expr2, &mut env);
         assert!(result2.is_err());
         Ok(())
     }
 
     #[test]
     fn test_invalid_method_names() -> Result<()> {
-        let interpreter = Interpreter::new();
-        let mut context = Context::new();
+        let interpreter = Interpreter::default();
+        let mut env = Env::new();
 
         let expr = Expr::MethodCall {
             object: Box::new(Expr::Integer(418)),
@@ -1321,7 +1279,7 @@ mod tests {
             args: vec![],
         };
 
-        let result = interpreter.evaluate_expression(&expr, &mut context);
+        let result = interpreter.evaluate_expression(&expr, &mut env);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("method") || error.to_string().contains("invalid"));
@@ -1346,19 +1304,18 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let interpreter = Interpreter::new();
-        let mut context = interpreter.execute_rig_file(&rig_file)?;
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = interpreter.create_env()?;
 
         let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut context);
-
+        let result = interpreter.execute_command(command, &[], &mut env);
         assert!(
             result.is_ok(),
             "Command with qualified identifiers should execute successfully"
         );
 
-        assert_eq!(context.output.len(), 1);
-        assert_eq!(context.output[0], "WRITE: test");
+        assert_eq!(env.output.len(), 1);
+        assert_eq!(env.output[0], "WRITE: test");
         Ok(())
     }
 
@@ -1376,11 +1333,11 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let interpreter = Interpreter::new();
-        let mut context = interpreter.execute_rig_file(&rig_file)?;
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = interpreter.create_env()?;
 
         let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut context);
+        let result = interpreter.execute_command(command, &[], &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1403,15 +1360,13 @@ mod tests {
 
         let rig_file = parse(dsl_source)?;
 
-        let interpreter = Interpreter::new();
-        let mut context = interpreter.execute_rig_file(&rig_file)?;
+        let interpreter = Interpreter::new(rig_file.clone());
+        let mut env = interpreter.create_env()?;
 
-        context
-            .environment
-            .set("var".to_string(), Value::Integer(42));
+        env.set("var".to_string(), Value::Integer(42));
 
         let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut context);
+        let result = interpreter.execute_command(command, &[], &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();

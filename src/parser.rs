@@ -296,7 +296,7 @@ pub struct Impl {
     pub enums: Vec<Enum>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub settings: BTreeMap<Id, Expr>,
 }
@@ -305,6 +305,22 @@ pub struct Settings {
 pub struct RigFile {
     pub settings: Settings,
     pub impl_block: Impl,
+}
+
+impl Default for RigFile {
+    fn default() -> Self {
+        Self {
+            settings: Default::default(),
+            impl_block: Impl {
+                schema: String::new(),
+                name: String::new(),
+                init: None,
+                status: None,
+                commands: vec![],
+                enums: vec![],
+            },
+        }
+    }
 }
 
 peg::parser! {
@@ -865,8 +881,8 @@ mod tests {
         let vfo_enum = &rig_file.impl_block.enums[0];
         assert_eq!(vfo_enum.name, "Vfo");
         assert_eq!(vfo_enum.variants.len(), 2);
-        assert_eq!(vfo_enum.variants[0].name, "A");
-        assert_eq!(vfo_enum.variants[0].value, 0);
+        assert_eq!(vfo_enum.variants.get("A"), Some(&0));
+        assert_eq!(vfo_enum.variants.get("B"), Some(&1));
 
         let cmd = &rig_file.impl_block.commands[0];
         assert_eq!(cmd.name, "set_freq");
