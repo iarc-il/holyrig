@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::data_format::DataFormat;
-use crate::parser::{BinaryOp, Expr, InterpolationPart, RigFile, Statement};
+use crate::parser::{BinaryOp, Expr, InterpolationPart, RigFile, Statement, parse_atomic_expr};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -445,6 +445,48 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    pub fn eval_external_args(
+        &self,
+        name: &str,
+        args: HashMap<String, String>,
+        env: &mut Env,
+    ) -> Result<Vec<Value>> {
+        let mut evaluated_args = args
+            .iter()
+            .map(|(key, value)| {
+                let parsed = parse_atomic_expr(value).map_err(|err| anyhow!(err))?;
+                let value = self.evaluate_expression(&parsed, env)?;
+                Ok((key.clone(), value))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
+        let params = &self
+            .rig_file
+            .impl_block
+            .commands
+            .get(name)
+            .context("Unknown command")?
+            .parameters;
+
+        let result = params
+            .iter()
+            .map(|param| {
+                let value = evaluated_args
+                    .remove(&param.name)
+                    .context(format!("Missing parameter {}", param.name))?;
+                Ok(value)
+            })
+            .collect::<Result<_>>()?;
+
+        if !evaluated_args.is_empty() {
+            bail!(
+                "Unknown parameters: {}",
+                evaluated_args.into_keys().collect::<Vec<_>>().join(", ")
+            );
+        }
+        Ok(result)
     }
 }
 

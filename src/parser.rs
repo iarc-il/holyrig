@@ -487,7 +487,7 @@ peg::parser! {
                 Statement::Assign(Id(id.into()), expr)
             }
 
-        rule atomic_expr() -> Expr
+        pub rule atomic_expr() -> Expr
             = integer:integer() {
                 Expr::Integer(integer)
             }
@@ -633,12 +633,18 @@ peg::parser! {
 }
 
 fn parse_string_interpolation(template: &str) -> Result<Vec<InterpolationPart>, &'static str> {
-    let lexer = StringToken::lexer(template);
-    let tokens: Vec<_> = lexer
+    let tokens: Vec<_> = StringToken::lexer(template)
         .collect::<Result<_, _>>()
         .map_err(|_| "Lexer failed")?;
 
     string_interpolation::parse_interpolation(&tokens).map_err(|_| "Parser failed")
+}
+
+pub fn parse_atomic_expr(expr: &str) -> Result<Expr, &'static str> {
+    let tokens: Vec<_> = Token::lexer(expr)
+        .collect::<Result<_, _>>()
+        .map_err(|_| "Lexer failed")?;
+    rig::atomic_expr(&tokens).map_err(|_| "Parsing atomic expr failed")
 }
 
 pub fn parse(source: &str) -> Result<RigFile, ParseError> {

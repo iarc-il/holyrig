@@ -113,7 +113,10 @@ impl RigWrapper for Interpreter {
         external: &impl ExternalApi,
     ) -> Result<HashMap<String, Value>> {
         let mut env = self.create_env()?;
-        Interpreter::execute_command(self, name, &[], external, &mut env)?;
+
+        let args = self.eval_external_args(name, params, &mut self.create_env()?)?;
+        Interpreter::execute_command(self, name, &args, external, &mut env)?;
+
         Ok(HashMap::new())
     }
 
