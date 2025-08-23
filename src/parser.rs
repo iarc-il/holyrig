@@ -208,11 +208,6 @@ pub enum Expr {
         op: BinaryOp,
         right: Box<Expr>,
     },
-    MethodCall {
-        object: Box<Expr>,
-        method: String,
-        args: Vec<Expr>,
-    },
     StringInterpolation {
         parts: Vec<InterpolationPart>,
     },
@@ -492,17 +487,6 @@ peg::parser! {
                 Statement::Assign(Id(id.into()), expr)
             }
 
-        rule method_call() -> Expr
-            = object:atomic_expr() [Token::Dot] [Token::Id(method)] [Token::ParenOpen]
-              args:(expr() ** [Token::Comma]) [Token::Comma]?
-              [Token::ParenClose] {
-                Expr::MethodCall {
-                    object: Box::new(object),
-                    method: method.to_string(),
-                    args,
-                }
-            }
-
         rule atomic_expr() -> Expr
             = integer:integer() {
                 Expr::Integer(integer)
@@ -558,8 +542,6 @@ peg::parser! {
             }
             --
             [Token::ParenOpen] expr:expr() [Token::ParenClose] { expr }
-            --
-            expr:method_call() { expr }
             --
             expr:atomic_expr() { expr }
         }
@@ -1043,7 +1025,6 @@ mod tests {
                     write("test");
                     read("response");
                     command = "test_command";
-                    freq = freq.format(fmt::BcdLu, 5);
                 }
             }
         "#;
@@ -1055,7 +1036,7 @@ mod tests {
         assert_eq!(rig_file.impl_block.commands.len(), 1);
         let cmd = &rig_file.impl_block.commands["test_func"];
         assert_eq!(cmd.name, "test_func");
-        assert_eq!(cmd.statements.len(), 4);
+        assert_eq!(cmd.statements.len(), 3);
 
         match &cmd.statements[0] {
             Statement::FunctionCall { name, args } => {
@@ -1084,24 +1065,6 @@ mod tests {
         match &cmd.statements[2] {
             Statement::Assign(var, _) => {
                 assert_eq!(var.0, "command");
-            }
-            _ => panic!("Expected variable assignment"),
-        }
-
-        match &cmd.statements[3] {
-            Statement::Assign(var, expr) => {
-                assert_eq!(var.0, "freq");
-                match expr {
-                    Expr::MethodCall { method, args, .. } => {
-                        assert_eq!(method, "format");
-                        assert_eq!(args.len(), 2);
-                        assert_eq!(
-                            args[0],
-                            Expr::QualifiedIdentifier(Id::from("fmt"), Id::from("BcdLu"))
-                        );
-                    }
-                    _ => panic!("Expected method call"),
-                }
             }
             _ => panic!("Expected variable assignment"),
         }

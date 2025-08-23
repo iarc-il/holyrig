@@ -293,20 +293,6 @@ impl Interpreter {
                 let right_val = self.evaluate_expression(right, env)?;
                 Self::apply_binary_op(&left_val, op, &right_val)
             }
-            Expr::MethodCall {
-                object,
-                method,
-                args,
-            } => {
-                let object_val = self.evaluate_expression(object, env)?;
-                let arg_values: Result<Vec<_>> = args
-                    .iter()
-                    .map(|arg| self.evaluate_expression(arg, env))
-                    .collect();
-                let arg_values = arg_values?;
-
-                self.call_method(&object_val, method, &arg_values, env)
-            }
             Expr::StringInterpolation { parts } => {
                 self.process_parsed_string_interpolation(parts, env)
             }
@@ -458,32 +444,6 @@ impl Interpreter {
                     _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
                 }
             }
-            _ => Err(anyhow!("Invalid variable specification: {}", var_spec)),
-        }
-    }
-
-    fn call_method(
-        &self,
-        object: &Value,
-        method: &str,
-        args: &[Value],
-        _env: &mut Env,
-    ) -> Result<Value> {
-        match method {
-            "format" => match object {
-                Value::Integer(i) => {
-                    if args.len() >= 2 {
-                        Ok(Value::String(format!("{i:0width$X}", width = 2)))
-                    } else {
-                        Ok(Value::String(format!("{i:02X}")))
-                    }
-                }
-                _ => Err(anyhow!(
-                    "Format method is only supported on integers, got: {:?}",
-                    object
-                )),
-            },
-            _ => Err(anyhow!("Unknown method: {}", method)),
         }
     }
 }
@@ -1111,76 +1071,11 @@ mod tests {
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
 
         match result {
-            Value::String(s) => {
-                assert!(!s.is_empty());
+            Value::Bytes(bytes) => {
+                assert!(!bytes.is_empty());
             }
             _ => panic!("Expected string result"),
         }
-        Ok(())
-    }
-
-    #[test]
-    fn test_method_call_with_multiple_args() -> Result<()> {
-        let interpreter = Interpreter::default();
-        let mut env = Env::new();
-
-        env.set("value".to_string(), Value::Integer(418));
-
-        let expr = Expr::MethodCall {
-            object: Box::new(Expr::Identifier(Id::new("value"))),
-            method: "format".to_string(),
-            args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
-        };
-
-        let result = interpreter.evaluate_expression(&expr, &mut env)?;
-
-        match result {
-            Value::String(_) => {}
-            _ => panic!("Expected string result from format method"),
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_method_call_on_different_types() -> Result<()> {
-        let interpreter = Interpreter::default();
-        let mut env = Env::new();
-
-        let expr1 = Expr::MethodCall {
-            object: Box::new(Expr::Integer(418)),
-            method: "format".to_string(),
-            args: vec![Expr::String("int_lu".to_string()), Expr::Integer(4)],
-        };
-
-        let result1 = interpreter.evaluate_expression(&expr1, &mut env)?;
-        assert!(matches!(result1, Value::String(_)));
-
-        let expr2 = Expr::MethodCall {
-            object: Box::new(Expr::String("test".to_string())),
-            method: "format".to_string(),
-            args: vec![Expr::Integer(4)],
-        };
-
-        let result2 = interpreter.evaluate_expression(&expr2, &mut env);
-        assert!(result2.is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn test_invalid_method_names() -> Result<()> {
-        let interpreter = Interpreter::default();
-        let mut env = Env::new();
-
-        let expr = Expr::MethodCall {
-            object: Box::new(Expr::Integer(418)),
-            method: "invalid_method".to_string(),
-            args: vec![],
-        };
-
-        let result = interpreter.evaluate_expression(&expr, &mut env);
-        assert!(result.is_err());
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("method") || error.to_string().contains("invalid"));
         Ok(())
     }
 
