@@ -128,29 +128,56 @@ mod tests {
     use super::*;
     use crate::parser;
 
-    struct MockExternalApi;
+    struct MockExternalApi {
+        pub written_data: std::cell::RefCell<Vec<Vec<u8>>>,
+        pub read_responses: std::cell::RefCell<Vec<Vec<u8>>>,
+        pub set_vars: std::cell::RefCell<Vec<(String, Value)>>,
+    }
+
+    impl MockExternalApi {
+        fn new() -> Self {
+            Self {
+                written_data: std::cell::RefCell::new(Vec::new()),
+                read_responses: std::cell::RefCell::new(Vec::new()),
+                set_vars: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+
+        fn add_read_response(&self, data: Vec<u8>) {
+            self.read_responses.borrow_mut().push(data);
+        }
+    }
 
     impl ExternalApi for MockExternalApi {
-        fn write(&self, _data: &[u8]) -> Result<()> {
+        fn write(&self, data: &[u8]) -> Result<()> {
+            self.written_data.borrow_mut().push(data.to_vec());
             Ok(())
         }
 
-        fn read(&self, _size: usize) -> Result<Vec<u8>> {
-            Ok(vec![])
+        fn read(&self, size: usize) -> Result<Vec<u8>> {
+            let mut responses = self.read_responses.borrow_mut();
+            if responses.is_empty() {
+                Ok(vec![0; size])
+            } else {
+                Ok(responses.remove(0))
+            }
         }
 
-        fn set_var(&self, _var: &str, _value: Value) -> Result<()> {
+        fn set_var(&self, var: &str, value: Value) -> Result<()> {
+            self.set_vars.borrow_mut().push((var.to_string(), value));
             Ok(())
         }
     }
 
     #[test]
-    fn test_dsl_rig_file_wrapper() {
+    fn test_interpreter_wrapper_init() {
         let dsl_source = r#"
             version = 1;
 
             impl TestSchema for TestRig {
-                init {}
+                init {
+                    write("FEFE94E0FD");
+                }
                 fn test_command() {}
                 status {}
             }
@@ -159,60 +186,148 @@ mod tests {
         let rig_file = parser::parse(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
-        let external = MockExternalApi;
 
-        assert!(rig_file.execute_init(&external).is_ok());
-        assert!(rig_file.execute_status(&external).is_ok());
-        let result = rig_file.execute_command("test_command", HashMap::new(), &external);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not found in DSL RigFile")
-        );
-        assert_eq!(rig_file.impl_block.schema, "TestSchema");
-        assert_eq!(rig_file.impl_block.name, "TestRig");
-        assert!(rig_file.impl_block.init.is_some());
-        assert!(rig_file.impl_block.status.is_some());
-        assert_eq!(rig_file.impl_block.commands.len(), 1);
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
+
+        let result = RigWrapper::execute_init(&interpreter, &external);
+        assert!(result.is_ok(), "Init should succeed: {:?}", result);
+
+        // Check that write was called with the expected data
+        let written_data = external.written_data.borrow();
+        assert_eq!(written_data.len(), 1);
+        assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0xFD]);
     }
 
     #[test]
-    fn test_dsl_rig_file_wrapper_complex() {
+    fn test_interpreter_wrapper_command() {
         let dsl_source = r#"
-            version = 2;
-            baudrate = 9600;
+            version = 1;
 
-            impl Transceiver for IC7300 {
-                enum TestEnum {
-                    A = 0,
-                    B = 1,
-                }
+            impl TestSchema for TestRig {
                 init {}
-                fn command1() {}
-                fn command2() {}
+                fn set_freq(int freq) {
+                    write("FEFE94E025{freq:int_lu:4}FD");
+                }
                 status {}
             }
         "#;
 
         let rig_file = parser::parse(dsl_source)
-            .map_err(|e| format!("Failed to parse complex DSL: {e}"))
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
-        let external = MockExternalApi;
 
-        assert!(rig_file.execute_init(&external).is_ok());
-        assert!(rig_file.execute_status(&external).is_ok());
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
 
-        let result = rig_file.execute_command("unknown", HashMap::new(), &external);
+        let mut params = HashMap::new();
+        params.insert("freq".to_string(), "14500000".to_string());
+
+        let result = RigWrapper::execute_command(&interpreter, "set_freq", params, &external);
+        assert!(result.is_ok(), "Command should succeed: {:?}", result);
+
+        // Check that write was called with the expected data
+        let written_data = external.written_data.borrow();
+        assert_eq!(written_data.len(), 1);
+        // FEFE94E025 + freq(14500000 in int_lu:4) + FD
+        let expected = vec![0xFE, 0xFE, 0x94, 0xE0, 0x25, 0xA0, 0x40, 0xDD, 0x00, 0xFD];
+        assert_eq!(written_data[0], expected);
+    }
+
+    #[test]
+    fn test_interpreter_wrapper_status() {
+        let dsl_source = r#"
+            version = 1;
+
+            impl TestSchema for TestRig {
+                init {}
+                fn test_command() {}
+                status {
+                    write("FEFE94E003FD");
+                }
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
+            .unwrap();
+
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
+
+        let result = RigWrapper::execute_status(&interpreter, &external);
+        assert!(result.is_ok(), "Status should succeed: {:?}", result);
+
+        // Check that write was called
+        let written_data = external.written_data.borrow();
+        assert_eq!(written_data.len(), 1);
+        assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0x03, 0xFD]);
+    }
+
+    #[test]
+    fn test_interpreter_wrapper_with_read() {
+        let dsl_source = r#"
+            version = 1;
+
+            impl TestSchema for TestRig {
+                init {
+                    write("FEFE94E0FD");
+                    read("FEFE94E0FBFD");
+                }
+                fn test_command() {}
+                status {}
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
+            .unwrap();
+
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
+
+        // Set up expected read response
+        external.add_read_response(vec![0xFE, 0xFE, 0x94, 0xE0, 0xFB, 0xFD]);
+
+        let result = RigWrapper::execute_init(&interpreter, &external);
+        assert!(
+            result.is_ok(),
+            "Init with read should succeed: {:?}",
+            result
+        );
+
+        // Check that write was called
+        let written_data = external.written_data.borrow();
+        assert_eq!(written_data.len(), 1);
+        assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0xFD]);
+    }
+
+    #[test]
+    fn test_interpreter_wrapper_missing_command() {
+        let dsl_source = r#"
+            version = 1;
+
+            impl TestSchema for TestRig {
+                init {}
+                fn existing_command() {}
+                status {}
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
+            .unwrap();
+
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
+
+        let result = RigWrapper::execute_command(
+            &interpreter,
+            "nonexistent_command",
+            HashMap::new(),
+            &external,
+        );
         assert!(result.is_err());
-
-        assert_eq!(rig_file.impl_block.schema, "Transceiver");
-        assert_eq!(rig_file.impl_block.name, "IC7300");
-        assert!(rig_file.impl_block.init.is_some());
-        assert!(rig_file.impl_block.status.is_some());
-        assert_eq!(rig_file.impl_block.commands.len(), 2);
-        assert_eq!(rig_file.impl_block.enums.len(), 1);
-        assert_eq!(rig_file.settings.settings.len(), 2);
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 }
