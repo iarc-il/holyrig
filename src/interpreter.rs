@@ -103,40 +103,6 @@ pub trait Builtins {
     fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
 }
 
-struct DummyBuiltins;
-
-impl Builtins for DummyBuiltins {
-    fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
-        match name {
-            "read" => {
-                if args.len() != 1 {
-                    return Err(anyhow!(
-                        "read() expects exactly 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let expected = args[0].to_string();
-                env.output.push(format!("READ: {expected}"));
-                Ok(Value::Unit)
-            }
-            "write" => {
-                if args.len() != 1 {
-                    return Err(anyhow!(
-                        "write() expects exactly 1 argument, got {}",
-                        args.len()
-                    ));
-                }
-
-                let output = args[0].to_string();
-                env.output.push(format!("WRITE: {output}"));
-                Ok(Value::Unit)
-            }
-            _ => Err(anyhow!("Unkown function {name}")),
-        }
-    }
-}
-
 pub struct Interpreter {
     rig_file: RigFile,
 }
@@ -501,6 +467,40 @@ mod tests {
     use super::*;
     use crate::parser::{Id, parse};
     use std::collections::BTreeMap;
+
+    struct DummyBuiltins;
+
+    impl Builtins for DummyBuiltins {
+        fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
+            match name {
+                "read" => {
+                    if args.len() != 1 {
+                        return Err(anyhow!(
+                            "read() expects exactly 1 argument, got {}",
+                            args.len()
+                        ));
+                    }
+
+                    let expected = args[0].to_string();
+                    env.output.push(format!("READ: {expected}"));
+                    Ok(Value::Unit)
+                }
+                "write" => {
+                    if args.len() != 1 {
+                        return Err(anyhow!(
+                            "write() expects exactly 1 argument, got {}",
+                            args.len()
+                        ));
+                    }
+
+                    let output = args[0].to_string();
+                    env.output.push(format!("WRITE: {output}"));
+                    Ok(Value::Unit)
+                }
+                _ => Err(anyhow!("Unkown function {name}")),
+            }
+        }
+    }
 
     #[test]
     fn test_basic_expression_evaluation() -> Result<()> {
