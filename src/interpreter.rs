@@ -93,70 +93,51 @@ impl Env {
     }
 }
 
-pub trait BuiltinFunction {
-    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value>;
+pub trait Builtins {
+    fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
 }
 
-pub struct WriteFunction;
+struct DummyBuiltins;
 
-impl BuiltinFunction for WriteFunction {
-    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value> {
-        if args.len() != 1 {
-            return Err(anyhow!(
-                "write() expects exactly 1 argument, got {}",
-                args.len()
-            ));
+impl Builtins for DummyBuiltins {
+    fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
+        match name {
+            "read" => {
+                if args.len() != 1 {
+                    return Err(anyhow!(
+                        "read() expects exactly 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let expected = args[0].to_string();
+                env.output.push(format!("READ: {expected}"));
+                Ok(Value::Unit)
+            }
+            "write" => {
+                if args.len() != 1 {
+                    return Err(anyhow!(
+                        "write() expects exactly 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                let output = args[0].to_string();
+                env.output.push(format!("WRITE: {output}"));
+                Ok(Value::Unit)
+            }
+            _ => Err(anyhow!("Unkown function {name}")),
         }
-
-        let output = args[0].to_string();
-        env.output.push(format!("WRITE: {output}"));
-        Ok(Value::Unit)
-    }
-}
-
-pub struct ReadFunction;
-
-impl BuiltinFunction for ReadFunction {
-    fn call(&self, args: &[Value], env: &mut Env) -> Result<Value> {
-        if args.len() != 1 {
-            return Err(anyhow!(
-                "read() expects exactly 1 argument, got {}",
-                args.len()
-            ));
-        }
-
-        let expected = args[0].to_string();
-        env.output.push(format!("READ: {expected}"));
-        Ok(Value::Unit)
-    }
-}
-
-pub struct FormatFunction;
-
-impl BuiltinFunction for FormatFunction {
-    fn call(&self, args: &[Value], _env: &mut Env) -> Result<Value> {
-        if args.is_empty() {
-            return Err(anyhow!("format() expects at least 1 argument"));
-        }
-
-        let formatted = args[0].to_string();
-        Ok(Value::String(formatted))
     }
 }
 
 pub struct Interpreter {
     rig_file: RigFile,
-    builtins: HashMap<String, Box<dyn BuiltinFunction>>,
 }
 
 impl Interpreter {
     pub fn new(rig_file: RigFile) -> Self {
-        let mut builtins: HashMap<String, Box<dyn BuiltinFunction>> = HashMap::new();
-        builtins.insert("write".to_string(), Box::new(WriteFunction));
-        builtins.insert("read".to_string(), Box::new(ReadFunction));
-        builtins.insert("format".to_string(), Box::new(FormatFunction));
-
-                Interpreter { rig_file, builtins }
+        Self { rig_file }
     }
 
     pub fn create_env(&self) -> Result<Env> {
@@ -174,7 +155,19 @@ impl Interpreter {
         Ok(env)
     }
 
-    pub fn execute_command(&self, command: &Command, args: &[Value], env: &mut Env) -> Result<()> {
+    pub fn execute_command(
+        &self,
+        name: &str,
+        args: &[Value],
+        builtins: &impl Builtins,
+        env: &mut Env,
+    ) -> Result<()> {
+        let command = self
+            .rig_file
+            .impl_block
+            .commands
+            .get(name)
+            .context("Unknown command name")?;
         if args.len() != command.parameters.len() {
             return Err(anyhow!(
                 "Command '{}' expects {} arguments, got {}",
@@ -190,7 +183,7 @@ impl Interpreter {
         }
 
         for statement in &command.statements {
-            self.execute_statement(statement, &mut local_env)?;
+            self.execute_statement(statement, builtins, &mut local_env)?;
         }
 
         env.output.extend(local_env.output);
@@ -198,40 +191,42 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn execute_init(&self, env: &mut Env) -> Result<()> {
+    pub fn execute_init(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
         if let Some(init) = &self.rig_file.impl_block.init {
             for statement in &init.statements {
-                self.execute_statement(statement, env)?;
+                self.execute_statement(statement, builtins, env)?;
             }
         }
         Ok(())
     }
 
-    pub fn execute_status(&self, status: &Status, env: &mut Env) -> Result<()> {
-        for statement in &status.statements {
-            self.execute_statement(statement, env)?;
+    pub fn execute_status(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
+        if let Some(status) = &self.rig_file.impl_block.status {
+            for statement in &status.statements {
+                self.execute_statement(statement, builtins, env)?;
+            }
         }
         Ok(())
     }
 
-    pub fn execute_statement(&self, statement: &Statement, env: &mut Env) -> Result<()> {
+    pub fn execute_statement(
+        &self,
+        statement: &Statement,
+        builtins: &impl Builtins,
+        env: &mut Env,
+    ) -> Result<()> {
         match statement {
             Statement::Assign(id, expr) => {
                 let value = self.evaluate_expression(expr, env)?;
                 env.set(id.to_string(), value);
             }
             Statement::FunctionCall { name, args } => {
-                let arg_values: Result<Vec<_>> = args
+                let arg_values = args
                     .iter()
                     .map(|arg| self.evaluate_expression(arg, env))
-                    .collect();
-                let arg_values = arg_values?;
+                    .collect::<Result<Vec<_>>>()?;
 
-                if let Some(builtin) = self.builtins.get(name) {
-                    builtin.call(&arg_values, env)?;
-                } else {
-                    return Err(anyhow!("Unknown function: {}", name));
-                }
+                let _ = builtins.call(name, &arg_values, env)?;
             }
             Statement::If {
                 condition,
@@ -242,13 +237,13 @@ impl Interpreter {
                 match condition_value {
                     Value::Boolean(true) => {
                         for stmt in then_body {
-                            self.execute_statement(stmt, env)?;
+                            self.execute_statement(stmt, builtins, env)?;
                         }
                     }
                     Value::Boolean(false) => {
                         if let Some(else_stmts) = else_body {
                             for stmt in else_stmts {
-                                self.execute_statement(stmt, env)?;
+                                self.execute_statement(stmt, builtins, env)?;
                             }
                         }
                     }
@@ -545,10 +540,6 @@ impl Interpreter {
                 let format = DataFormat::try_from(format_str)
                     .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
 
-                let value = env
-                    .get(var_name)
-                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
-
                 match value {
                     Value::Integer(i) => {
                         let bytes = format.encode(i as i32, length)?;
@@ -661,7 +652,7 @@ mod tests {
         let mut env = Env::new();
 
         let statement = Statement::Assign(Id::new("x"), Expr::Integer(42));
-        interpreter.execute_statement(&statement, &mut env)?;
+        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
 
         let expr = Expr::Identifier(Id::new("x"));
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
@@ -678,7 +669,7 @@ mod tests {
             name: "write".to_string(),
             args: vec![Expr::String("test".to_string())],
         };
-        interpreter.execute_statement(&statement, &mut env)?;
+        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: test");
@@ -740,7 +731,7 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&statement, &mut env)?;
+        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: condition true");
@@ -799,7 +790,7 @@ mod tests {
         let rig_file = parse(dsl_source).unwrap();
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env().unwrap();
-        interpreter.execute_init(&mut env).unwrap();
+        interpreter.execute_init(&DummyBuiltins, &mut env).unwrap();
 
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
         assert_eq!(env.get("baudrate"), Some(Value::Integer(9600)));
@@ -809,7 +800,6 @@ mod tests {
 
         assert!(env.output.len() == 1);
 
-        let command = &rig_file.impl_block.commands[0];
         let args = vec![
             Value::Integer(14500000),
             Value::EnumVariant {
@@ -818,7 +808,7 @@ mod tests {
                 value: 0,
             },
         ];
-        interpreter.execute_command(command, &args, &mut env)?;
+        interpreter.execute_command("set_freq", &args, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output[0], "WRITE: initialization");
 
@@ -986,7 +976,7 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&nested_if, &mut env)?;
+        interpreter.execute_statement(&nested_if, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 2);
         assert_eq!(env.output[0], "WRITE: nested_true");
@@ -1040,7 +1030,7 @@ mod tests {
             else_body: None,
         };
 
-        let result = interpreter.execute_statement(&if_stmt, &mut env);
+        let result = interpreter.execute_statement(&if_stmt, &DummyBuiltins, &mut env);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("boolean") || error.to_string().contains("condition"));
@@ -1066,9 +1056,8 @@ mod tests {
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
         assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
 
-        let command = &rig_file.impl_block.commands[0];
         let args = vec![Value::Integer(5)];
-        interpreter.execute_command(command, &args, &mut env)?;
+        interpreter.execute_command("test_command", &args, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.get("local_var"), None);
         assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
@@ -1094,9 +1083,8 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = Env::new();
 
-        let command = &rig_file.impl_block.commands[0];
         let args = vec![Value::Integer(10), Value::Boolean(true)];
-        interpreter.execute_command(command, &args, &mut env)?;
+        interpreter.execute_command("test_params", &args, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: executed");
@@ -1307,8 +1295,7 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
-        let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut env);
+        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
         assert!(
             result.is_ok(),
             "Command with qualified identifiers should execute successfully"
@@ -1336,8 +1323,7 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
-        let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut env);
+        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1365,8 +1351,7 @@ mod tests {
 
         env.set("var".to_string(), Value::Integer(42));
 
-        let command = &rig_file.impl_block.commands[0];
-        let result = interpreter.execute_command(command, &[], &mut env);
+        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
 
         assert!(result.is_err());
         let error = result.unwrap_err();

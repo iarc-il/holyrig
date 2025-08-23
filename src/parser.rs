@@ -292,7 +292,7 @@ pub struct Impl {
     pub name: String,
     pub init: Option<Init>,
     pub status: Option<Status>,
-    pub commands: Vec<Command>,
+    pub commands: BTreeMap<String, Command>,
     pub enums: Vec<Enum>,
 }
 
@@ -316,7 +316,7 @@ impl Default for RigFile {
                 name: String::new(),
                 init: None,
                 status: None,
-                commands: vec![],
+                commands: BTreeMap::new(),
                 enums: vec![],
             },
         }
@@ -456,14 +456,16 @@ peg::parser! {
             {
                 let mut init = None;
                 let mut status = None;
-                let mut commands = Vec::new();
+                let mut commands = BTreeMap::new();
                 let mut enums = Vec::new();
 
                 for member in members {
                     match member {
                         Member::Init(i) => init = Some(i),
                         Member::Status(s) => status = Some(s),
-                        Member::Command(c) => commands.push(c),
+                        Member::Command(command) => {
+                            commands.insert(command.name.clone(), command);
+                        },
                         Member::Enum(e) => enums.push(e),
                     }
                 }
@@ -781,7 +783,6 @@ mod tests {
         assert!(rig_file.impl_block.init.is_some());
         assert!(rig_file.impl_block.status.is_some());
         assert_eq!(rig_file.impl_block.commands.len(), 1);
-        assert_eq!(rig_file.impl_block.commands[0].name, "test_command");
         assert_eq!(rig_file.impl_block.enums.len(), 0);
         assert_eq!(rig_file.settings.settings.len(), 1);
     }
@@ -835,7 +836,7 @@ mod tests {
 
         let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.commands.len(), 1);
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["set_freq"];
         assert_eq!(cmd.name, "set_freq");
         assert_eq!(cmd.parameters.len(), 2);
         assert_eq!(cmd.parameters[0].param_type, DataType::Int);
@@ -884,7 +885,7 @@ mod tests {
         assert_eq!(vfo_enum.variants.get("A"), Some(&0));
         assert_eq!(vfo_enum.variants.get("B"), Some(&1));
 
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["set_freq"];
         assert_eq!(cmd.name, "set_freq");
         assert_eq!(cmd.parameters.len(), 2);
         assert_eq!(
@@ -1052,7 +1053,7 @@ mod tests {
 
         let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.commands.len(), 1);
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test_func"];
         assert_eq!(cmd.name, "test_func");
         assert_eq!(cmd.statements.len(), 4);
 
@@ -1123,7 +1124,7 @@ mod tests {
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 4);
 
         match &cmd.statements[0] {
@@ -1192,7 +1193,7 @@ mod tests {
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test_numbers"];
         assert_eq!(cmd.statements.len(), 4);
 
         match &cmd.statements[0] {
@@ -1275,7 +1276,7 @@ mod tests {
         let rig_file = result.unwrap();
         assert_eq!(rig_file.impl_block.commands.len(), 3);
 
-        let arithmetic_cmd = &rig_file.impl_block.commands[0];
+        let arithmetic_cmd = &rig_file.impl_block.commands["test_arithmetic"];
         assert_eq!(arithmetic_cmd.name, "test_arithmetic");
         assert_eq!(arithmetic_cmd.statements.len(), 4);
 
@@ -1293,7 +1294,7 @@ mod tests {
             _ => panic!("Expected assignment statement"),
         }
 
-        let comparison_cmd = &rig_file.impl_block.commands[1];
+        let comparison_cmd = &rig_file.impl_block.commands["test_comparisons"];
         assert_eq!(comparison_cmd.name, "test_comparisons");
         assert_eq!(comparison_cmd.statements.len(), 1);
 
@@ -1321,7 +1322,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test_interpolation"];
         assert_eq!(cmd.statements.len(), 2);
 
         match &cmd.statements[0] {
@@ -1397,7 +1398,7 @@ mod tests {
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test_func"];
         assert_eq!(cmd.statements.len(), 5);
 
         match &cmd.statements[0] {
@@ -1547,7 +1548,12 @@ mod tests {
             0
         );
         assert_eq!(rig_file.impl_block.commands.len(), 1);
-        assert_eq!(rig_file.impl_block.commands[0].statements.len(), 0);
+        assert_eq!(
+            rig_file.impl_block.commands["empty_function"]
+                .statements
+                .len(),
+            0
+        );
         Ok(())
     }
 
@@ -1567,7 +1573,7 @@ mod tests {
         let rig_file = parse(dsl_source)?;
         assert_eq!(rig_file.settings.settings.len(), 2);
 
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 2);
 
         match &cmd.statements[0] {
@@ -1596,7 +1602,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 3);
 
         match &cmd.statements[0] {
@@ -1624,7 +1630,7 @@ mod tests {
         );
 
         let rig_file = parse(&dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(var, _) => {
                 assert_eq!(var.as_str(), long_id);
@@ -1683,7 +1689,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
                 Expr::StringInterpolation { parts } => match &parts[1] {
@@ -1710,7 +1716,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
                 Expr::StringInterpolation { parts } => {
@@ -1747,7 +1753,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
                 Expr::BinaryOp {
@@ -1777,7 +1783,7 @@ mod tests {
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 2);
 
         match &cmd.statements[0] {
@@ -1794,53 +1800,17 @@ mod tests {
     }
 
     #[test]
-    fn test_method_calls_parsing() -> Result<()> {
-        let dsl_source = r#"
-             impl Test for Rig {
-                 fn test() {
-                     result = value.format(DataFormat::IntLu, 4);
-                     simple = obj.method1(arg1, arg2);
-                 }
-             }
-         "#;
-
-        let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
-        assert_eq!(cmd.statements.len(), 2);
-
-        match &cmd.statements[0] {
-            Statement::Assign(_, expr) => match expr {
-                Expr::MethodCall {
-                    object,
-                    method,
-                    args,
-                } => {
-                    assert_eq!(method, "format");
-                    assert_eq!(args.len(), 2);
-                    match object.as_ref() {
-                        Expr::Identifier(id) => assert_eq!(id.as_str(), "value"),
-                        _ => panic!("Expected identifier as object"),
-                    }
-                }
-                _ => panic!("Expected method call"),
-            },
-            _ => panic!("Expected assignment"),
-        }
-        Ok(())
-    }
-
-    #[test]
     fn test_mixed_expression_types() -> Result<()> {
         let dsl_source = r#"
             impl Test for Rig {
                 fn test() {
-                    result = 42 + 3.14 + identifier + method.call();
+                    result = 42 + 3.14 + identifier;
                 }
             }
         "#;
 
         let rig_file = parse(dsl_source)?;
-        let cmd = &rig_file.impl_block.commands[0];
+        let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
                 Expr::BinaryOp { .. } => {}

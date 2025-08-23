@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 
-use crate::{commands::Value, parser::RigFile, rig_api::RigApi};
+use crate::{
+    commands::Value,
+    interpreter::{Builtins, Interpreter, Value as InterpreterValue},
+    rig_api::RigApi,
+};
 
 pub trait ExternalApi {
     fn write(&self, data: &[u8]) -> Result<()>;
@@ -62,7 +66,6 @@ impl RigWrapper for RigApi {
                 .parse_status_response(index, &response)
                 .map_err(|err| anyhow::anyhow!(err))?;
 
-            // Store each value via set_var
             for (name, value) in values {
                 external.set_var(&name, value)?;
             }
@@ -71,35 +74,52 @@ impl RigWrapper for RigApi {
     }
 }
 
-impl RigWrapper for RigFile {
-    fn execute_init(&self, _external: &impl ExternalApi) -> Result<()> {
-        if let Some(_init) = &self.impl_block.init {
-            // TODO
+impl<E: ExternalApi> Builtins for E {
+    fn call(
+        &self,
+        name: &str,
+        args: &[InterpreterValue],
+        _env: &mut crate::Env,
+    ) -> Result<InterpreterValue> {
+        match name {
+            "read" => {
+                todo!()
+            }
+            "write" => {
+                let [InterpreterValue::Bytes(bytes)] = args else {
+                    bail!("Expected one bytes argument in write, got: {args:?}");
+                };
+                self.write(bytes)?;
+                Ok(InterpreterValue::Unit)
+            }
+            "set_var" => {
+                todo!()
+            }
+            _ => Err(anyhow!("Unknown function: {name}")),
         }
-        Ok(())
+    }
+}
+
+impl RigWrapper for Interpreter {
+    fn execute_init(&self, external: &impl ExternalApi) -> Result<()> {
+        let mut env = self.create_env()?;
+        Interpreter::execute_init(self, external, &mut env)
     }
 
     fn execute_command(
         &self,
-        command_name: &str,
-        _params: HashMap<String, String>,
-        _external: &impl ExternalApi,
+        name: &str,
+        params: HashMap<String, String>,
+        external: &impl ExternalApi,
     ) -> Result<HashMap<String, Value>> {
-        if !self.impl_block.commands.is_empty() {
-            // TODO
-        }
-
-        Err(anyhow::anyhow!(
-            "Command '{}' not found in DSL RigFile (DSL parsing not yet complete)",
-            command_name
-        ))
+        let mut env = self.create_env()?;
+        Interpreter::execute_command(self, name, &[], external, &mut env)?;
+        Ok(HashMap::new())
     }
 
-    fn execute_status(&self, _external: &impl ExternalApi) -> Result<()> {
-        if let Some(_status) = &self.impl_block.status {
-            // TODO
-        }
-        Ok(())
+    fn execute_status(&self, external: &impl ExternalApi) -> Result<()> {
+        let mut env = self.create_env()?;
+        Interpreter::execute_status(self, external, &mut env)
     }
 }
 
