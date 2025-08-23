@@ -1,15 +1,15 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::data_format::DataFormat;
-use crate::parser::{BinaryOp, Command, Expr, InterpolationPart, RigFile, Statement, Status};
+use crate::parser::{BinaryOp, Expr, InterpolationPart, RigFile, Statement};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Integer(i64),
     Float(f64),
-    String(String),
+    Bytes(Vec<u8>),
     Boolean(bool),
     EnumVariant {
         enum_name: String,
@@ -24,7 +24,13 @@ impl fmt::Display for Value {
         match self {
             Value::Integer(i) => write!(f, "{i}"),
             Value::Float(fl) => write!(f, "{fl}"),
-            Value::String(s) => write!(f, "{s}"),
+            Value::Bytes(b) => {
+                if let Ok(string) = String::from_utf8(b.clone()) {
+                    write!(f, "{string}")
+                } else {
+                    write!(f, "{b:?}")
+                }
+            }
             Value::Boolean(b) => write!(f, "{b}"),
             Value::EnumVariant {
                 enum_name,
@@ -263,7 +269,7 @@ impl Interpreter {
         match expr {
             Expr::Integer(i) => Ok(Value::Integer(*i)),
             Expr::Float(f) => Ok(Value::Float(*f)),
-            Expr::String(s) => Ok(Value::String(s.clone())),
+            Expr::String(s) => Ok(Value::Bytes(s.as_bytes().to_vec())),
             Expr::Identifier(id) => env
                 .get(id.as_str())
                 .ok_or_else(|| anyhow!("Undefined variable: {}", id.as_str())),
@@ -358,8 +364,12 @@ impl Interpreter {
             (Value::Float(a), Value::Integer(b)) => {
                 Self::apply_binary_op(&Value::Float(*a), op, &Value::Float(*b as f64))
             }
-            (Value::String(a), Value::String(b)) => match op {
-                BinaryOp::Add => Ok(Value::String(format!("{a}{b}"))),
+            (Value::Bytes(a), Value::Bytes(b)) => match op {
+                BinaryOp::Add => {
+                    let mut result = a.clone();
+                    result.extend_from_slice(b);
+                    Ok(Value::Bytes(result))
+                }
                 BinaryOp::Equal => Ok(Value::Boolean(a == b)),
                 BinaryOp::NotEqual => Ok(Value::Boolean(a != b)),
                 _ => Err(anyhow!("Invalid operation {:?} for strings", op)),
@@ -404,12 +414,7 @@ impl Interpreter {
             }
         }
 
-        let hex_string = result
-            .iter()
-            .map(|b| format!("{b:02X}"))
-            .collect::<String>();
-
-        Ok(Value::String(hex_string))
+        Ok(Value::Bytes(result))
     }
 
     fn interpolate_parsed_variable(
@@ -424,29 +429,20 @@ impl Interpreter {
             .ok_or_else(|| anyhow!("Undefined variable: {}", name))?;
 
         match format {
-            None => {
-                // {name:length} - use default format (int_lu) with specified length
-                match value {
-                    Value::Integer(i) => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(i as i32, length)?;
-                        Ok(bytes)
-                    }
-                    Value::String(s) => {
-                        let mut bytes = s.as_bytes().to_vec();
-                        bytes.resize(length, 0);
-                        Ok(bytes)
-                    }
-                    Value::EnumVariant { value, .. } => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(value as i32, length)?;
-                        Ok(bytes)
-                    }
-                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+            None => match value {
+                Value::Integer(i) => {
+                    let format = DataFormat::IntLu;
+                    let bytes = format.encode(i as i32, length)?;
+                    Ok(bytes)
                 }
-            }
+                Value::EnumVariant { value, .. } => {
+                    let format = DataFormat::IntLu;
+                    let bytes = format.encode(value as i32, length)?;
+                    Ok(bytes)
+                }
+                _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
+            },
             Some(format_str) => {
-                // {name:format} or {name:format:length} - use specified format
                 let format = DataFormat::try_from(format_str)
                     .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
 
@@ -454,106 +450,6 @@ impl Interpreter {
                     Value::Integer(i) => {
                         let bytes = format.encode(i as i32, length)?;
                         Ok(bytes)
-                    }
-                    Value::String(s) => {
-                        if format == DataFormat::Text {
-                            let bytes = format.encode(s.parse::<i32>().unwrap_or(0), length)?;
-                            Ok(bytes)
-                        } else {
-                            let mut bytes = s.as_bytes().to_vec();
-                            bytes.resize(length, 0);
-                            Ok(bytes)
-                        }
-                    }
-                    Value::EnumVariant { value, .. } => {
-                        let bytes = format.encode(value as i32, length)?;
-                        Ok(bytes)
-                    }
-                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
-                }
-            }
-        }
-    }
-
-    /// Old interpolate_variable method - keeping for reference
-    fn _old_interpolate_variable(&self, var_spec: &str, env: &mut Env) -> Result<Vec<u8>> {
-        let parts: Vec<&str> = var_spec.split(':').collect();
-
-        match parts.len() {
-            1 => {
-                let var_name = parts[0];
-                let value = env
-                    .get(var_name)
-                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
-
-                match value {
-                    Value::Integer(i) => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(i as i32, 4)?;
-                        Ok(bytes)
-                    }
-                    Value::String(s) => Ok(s.as_bytes().to_vec()),
-                    Value::EnumVariant { value, .. } => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(value as i32, 1)?;
-                        Ok(bytes)
-                    }
-                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
-                }
-            }
-            2 => {
-                let var_name = parts[0];
-                let length = parts[1]
-                    .parse::<usize>()
-                    .map_err(|_| anyhow!("Invalid length: {}", parts[1]))?;
-
-                let value = env
-                    .get(var_name)
-                    .ok_or_else(|| anyhow!("Undefined variable: {}", var_name))?;
-
-                match value {
-                    Value::Integer(i) => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(i as i32, length)?;
-                        Ok(bytes)
-                    }
-                    Value::String(s) => {
-                        let mut bytes = s.as_bytes().to_vec();
-                        bytes.resize(length, 0);
-                        Ok(bytes)
-                    }
-                    Value::EnumVariant { value, .. } => {
-                        let format = DataFormat::IntLu;
-                        let bytes = format.encode(value as i32, length)?;
-                        Ok(bytes)
-                    }
-                    _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
-                }
-            }
-            3 => {
-                let var_name = parts[0];
-                let format_str = parts[1];
-                let length = parts[2]
-                    .parse::<usize>()
-                    .map_err(|_| anyhow!("Invalid length: {}", parts[2]))?;
-
-                let format = DataFormat::try_from(format_str)
-                    .map_err(|_| anyhow!("Invalid format: {}", format_str))?;
-
-                match value {
-                    Value::Integer(i) => {
-                        let bytes = format.encode(i as i32, length)?;
-                        Ok(bytes)
-                    }
-                    Value::String(s) => {
-                        if format == DataFormat::Text {
-                            let bytes = format.encode(s.parse::<i32>().unwrap_or(0), length)?;
-                            Ok(bytes)
-                        } else {
-                            let mut bytes = s.as_bytes().to_vec();
-                            bytes.resize(length, 0);
-                            Ok(bytes)
-                        }
                     }
                     Value::EnumVariant { value, .. } => {
                         let bytes = format.encode(value as i32, length)?;
@@ -601,7 +497,7 @@ impl Default for Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{parse, Id};
+    use crate::parser::{Id, parse};
     use std::collections::BTreeMap;
 
     #[test]
@@ -619,7 +515,7 @@ mod tests {
 
         let expr = Expr::String("hello".to_string());
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
-        assert_eq!(result, Value::String("hello".to_string()));
+        assert_eq!(result, Value::Bytes("hello".as_bytes().to_vec()));
         Ok(())
     }
 
@@ -682,7 +578,14 @@ mod tests {
         let mut env = Env::new();
 
         env.set("freq".to_string(), Value::Integer(14500000));
-        env.set("vfo".to_string(), Value::String("A".to_string()));
+        env.set(
+            "vfo".to_string(),
+            Value::EnumVariant {
+                enum_name: "Vfo".to_string(),
+                variant_name: "A".to_string(),
+                value: 1,
+            },
+        );
 
         let expr = Expr::StringInterpolation {
             parts: vec![
@@ -703,8 +606,15 @@ mod tests {
         };
 
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
-        // FEFE94E0 (literal hex) + 25 (literal hex) + 41 (vfo="A" as ASCII) + A040DD00 (freq=14500000 in int_lu:4) + FD (literal hex)
-        assert_eq!(result, Value::String("FEFE94E02541A040DD00FD".to_string()));
+        assert_eq!(
+            result,
+            Value::Bytes(
+                [
+                    0xFE, 0xFE, 0x94, 0xE0, 0x25, 0x01, 0xA0, 0x40, 0xDD, 0x00, 0xFD
+                ]
+                .to_vec()
+            )
+        );
         Ok(())
     }
 
@@ -813,7 +723,7 @@ mod tests {
         assert_eq!(env.output[0], "WRITE: initialization");
 
         let last_output = env.output.last().unwrap();
-        assert!(last_output.contains("WRITE: FEFE94E02500A040DD00FD"));
+        assert!(last_output.contains("WRITE: [254, 254, 148, 224, 37, 0, 160, 64, 221, 0, 253]"));
         Ok(())
     }
 
@@ -1125,7 +1035,7 @@ mod tests {
             let result = interpreter.evaluate_expression(&expr, &mut env);
 
             match result {
-                Ok(Value::String(_)) => {}
+                Ok(Value::Bytes(_)) => {}
                 Ok(_) => {
                     panic!("Expected string result for format {}", format);
                 }
