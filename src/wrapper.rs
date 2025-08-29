@@ -93,7 +93,23 @@ impl<E: ExternalApi> Builtins for E {
                 Ok(InterpreterValue::Unit)
             }
             "set_var" => {
-                todo!()
+                let [InterpreterValue::String(var), value] = args else {
+                    bail!("Expected one bytes argument in write, got: {args:?}");
+                };
+
+                let value = match value {
+                    InterpreterValue::Integer(int) => Value::Int(*int),
+                    InterpreterValue::Boolean(bool) => Value::Bool(*bool),
+                    InterpreterValue::EnumVariant {
+                        enum_name: _,
+                        variant_name,
+                        value: _,
+                    } => Value::Enum(variant_name.clone()),
+                    other => todo!("{:?}", other),
+                };
+
+                self.set_var(var, value)?;
+                Ok(InterpreterValue::Unit)
             }
             "read" => {
                 bail!("Function read is not supported in this context, use call_no_eval");
