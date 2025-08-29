@@ -236,21 +236,23 @@ impl RigWrapper for Interpreter {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, collections::BTreeMap};
+
     use super::*;
     use crate::parser;
 
     struct MockExternalApi {
-        pub written_data: std::cell::RefCell<Vec<Vec<u8>>>,
-        pub read_responses: std::cell::RefCell<Vec<Vec<u8>>>,
-        pub set_vars: std::cell::RefCell<Vec<(String, Value)>>,
+        pub written_data: RefCell<Vec<Vec<u8>>>,
+        pub read_responses: RefCell<Vec<Vec<u8>>>,
+        pub set_vars: RefCell<BTreeMap<String, Value>>,
     }
 
     impl MockExternalApi {
         fn new() -> Self {
             Self {
-                written_data: std::cell::RefCell::new(Vec::new()),
-                read_responses: std::cell::RefCell::new(Vec::new()),
-                set_vars: std::cell::RefCell::new(Vec::new()),
+                written_data: RefCell::new(Vec::new()),
+                read_responses: RefCell::new(Vec::new()),
+                set_vars: RefCell::new(BTreeMap::new()),
             }
         }
 
@@ -275,7 +277,7 @@ mod tests {
         }
 
         fn set_var(&self, var: &str, value: Value) -> Result<()> {
-            self.set_vars.borrow_mut().push((var.to_string(), value));
+            self.set_vars.borrow_mut().insert(var.to_string(), value);
             Ok(())
         }
     }
@@ -373,6 +375,40 @@ mod tests {
         let written_data = external.written_data.borrow();
         assert_eq!(written_data.len(), 1);
         assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0x03, 0xFD]);
+    }
+
+    #[test]
+    fn test_parse_function_with_template() -> Result<()> {
+        let dsl_source = r#"
+            version = 1;
+
+            impl TestSchema for TestRig {
+                init {}
+                fn test_command() {}
+                status {
+                    write("FEFE94E025FD");
+                    read("FEFE94E0.25.{freq:bcd_lu:4}.FD");
+                    set_var(s"freq", freq);
+                }
+            }
+        "#;
+
+        let rig_file = parser::parse(dsl_source)
+            .map_err(|e| format!("Failed to parse DSL: {e}"))
+            .unwrap();
+
+        let interpreter = Interpreter::new(rig_file);
+        let external = MockExternalApi::new();
+
+        external.add_read_response(vec![
+            0xFE, 0xFE, 0x94, 0xE0, 0x25, 0x12, 0x34, 0x56, 0x78, 0xFD,
+        ]);
+
+        RigWrapper::execute_status(&interpreter, &external)?;
+
+        let var = external.set_vars.borrow().get("freq").cloned();
+        assert_eq!(var, Some(Value::Int(78563412)));
+        Ok(())
     }
 
     #[test]
