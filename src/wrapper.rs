@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
+    Env,
     commands::Value,
+    data_format::DataFormat,
     interpreter::{Builtins, Interpreter, Value as InterpreterValue},
+    parser::{Expr, InterpolationPart},
     rig_api::RigApi,
 };
 
@@ -79,12 +82,9 @@ impl<E: ExternalApi> Builtins for E {
         &self,
         name: &str,
         args: &[InterpreterValue],
-        _env: &mut crate::Env,
+        _env: &mut Env,
     ) -> Result<InterpreterValue> {
         match name {
-            "read" => {
-                todo!()
-            }
             "write" => {
                 let [InterpreterValue::Bytes(bytes)] = args else {
                     bail!("Expected one bytes argument in write, got: {args:?}");
@@ -95,9 +95,101 @@ impl<E: ExternalApi> Builtins for E {
             "set_var" => {
                 todo!()
             }
+            "read" => {
+                bail!("Function read is not supported in this context, use call_no_eval");
+            }
             _ => Err(anyhow!("Unknown function: {name}")),
         }
     }
+
+    fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<InterpreterValue> {
+        if name == "read" {
+            let [Expr::StringInterpolation { parts }] = args else {
+                bail!("Expected template string in parse, got: {args:?}");
+            };
+
+            let expected_length = calculate_template_length(parts);
+            let response = self.read(expected_length)?;
+
+            parse_response_with_template(parts, &response, env)?;
+
+            Ok(InterpreterValue::Unit)
+        } else {
+            bail!("Unknown function {name} in this context");
+        }
+    }
+}
+
+fn calculate_template_length(parts: &[InterpolationPart]) -> usize {
+    parts
+        .iter()
+        .map(|part| match part {
+            InterpolationPart::Literal(bytes) => bytes.len(),
+            InterpolationPart::Variable { length, .. } => *length,
+        })
+        .sum()
+}
+
+fn parse_response_with_template(
+    parts: &[InterpolationPart],
+    response: &[u8],
+    env: &mut Env,
+) -> Result<()> {
+    let mut offset = 0;
+
+    for part in parts {
+        match part {
+            InterpolationPart::Literal(expected_bytes) => {
+                if offset + expected_bytes.len() > response.len() {
+                    bail!(
+                        "Response too short: expected {} bytes at offset {}",
+                        expected_bytes.len(),
+                        offset
+                    );
+                }
+
+                let actual = &response[offset..offset + expected_bytes.len()];
+                if actual != expected_bytes {
+                    bail!(
+                        "Response doesn't match template at offset {}: expected {:?}, got {:?}",
+                        offset,
+                        expected_bytes,
+                        actual
+                    );
+                }
+                offset += expected_bytes.len();
+            }
+            InterpolationPart::Variable {
+                name,
+                format,
+                length,
+            } => {
+                if offset + length > response.len() {
+                    bail!(
+                        "Response too short: expected {} bytes at offset {}",
+                        length,
+                        offset
+                    );
+                }
+
+                let bytes = &response[offset..offset + length];
+                let format_str = format.as_deref().unwrap_or("int_lu");
+                let data_format = DataFormat::try_from(format_str)
+                    .context(format!("Invalid format: {}", format_str))?;
+                let value = data_format.decode(bytes).context(format!(
+                    "Failed to decode {} bytes using format {}",
+                    length, format_str
+                ))?;
+
+                if name != "_" {
+                    env.set(name.clone(), InterpreterValue::Integer(value as i64));
+                }
+                offset += length;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 impl RigWrapper for Interpreter {

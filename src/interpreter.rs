@@ -101,6 +101,7 @@ impl Env {
 
 pub trait Builtins {
     fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
+    fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value>;
 }
 
 pub struct Interpreter {
@@ -193,12 +194,16 @@ impl Interpreter {
                 env.set(id.to_string(), value);
             }
             Statement::FunctionCall { name, args } => {
-                let arg_values = args
-                    .iter()
-                    .map(|arg| self.evaluate_expression(arg, env))
-                    .collect::<Result<Vec<_>>>()?;
+                if name == "read" {
+                    let _ = builtins.call_no_eval(name, args, env)?;
+                } else {
+                    let arg_values = args
+                        .iter()
+                        .map(|arg| self.evaluate_expression(arg, env))
+                        .collect::<Result<Vec<_>>>()?;
 
-                let _ = builtins.call(name, &arg_values, env)?;
+                    let _ = builtins.call(name, &arg_values, env)?;
+                }
             }
             Statement::If {
                 condition,
@@ -473,18 +478,6 @@ mod tests {
     impl Builtins for DummyBuiltins {
         fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
             match name {
-                "read" => {
-                    if args.len() != 1 {
-                        return Err(anyhow!(
-                            "read() expects exactly 1 argument, got {}",
-                            args.len()
-                        ));
-                    }
-
-                    let expected = args[0].to_string();
-                    env.output.push(format!("READ: {expected}"));
-                    Ok(Value::Unit)
-                }
                 "write" => {
                     if args.len() != 1 {
                         return Err(anyhow!(
@@ -498,6 +491,21 @@ mod tests {
                     Ok(Value::Unit)
                 }
                 _ => Err(anyhow!("Unkown function {name}")),
+            }
+        }
+        fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
+            if name == "read" {
+                if args.len() != 1 {
+                    return Err(anyhow!(
+                        "read() expects exactly 1 argument, got {}",
+                        args.len()
+                    ));
+                }
+
+                env.output.push(format!("READ: {:?}", args[0]));
+                Ok(Value::Unit)
+            } else {
+                bail!("Function {name} is unsupported in this context");
             }
         }
     }
