@@ -88,7 +88,6 @@ impl ParseError {
         expected: &[String],
         found: &Option<String>,
     ) -> String {
-        // Pattern recognition for common errors
         if let Some(found_token) = found {
             if found_token.contains("ParenOpen")
                 && expected
@@ -108,7 +107,6 @@ impl ParseError {
             }
         }
 
-        // Provide context-aware expected messages
         let simplified_expected: Vec<String> = expected
             .iter()
             .filter_map(|e| {
@@ -143,7 +141,7 @@ impl ParseError {
         if !simplified_expected.is_empty() {
             format!("Expected {}", simplified_expected.join(" or "))
         } else {
-            "Unexpected syntax".to_string()
+            format!("Unexpected syntax, Expected tokens: {expected:?}")
         }
     }
 }
