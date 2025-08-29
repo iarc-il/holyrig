@@ -504,8 +504,14 @@ peg::parser! {
                     let parts = parse_string_interpolation(content)?;
                     Ok(Expr::StringInterpolation { parts })
                 } else {
-                    let bytes = content
+                    let bytes: Vec<_> = content
                         .as_bytes()
+                        .iter()
+                        .filter(|byte| char::from(**byte) != '.')
+                        .copied()
+                        .collect();
+
+                    let bytes = bytes
                         .chunks(2)
                         .map(|chunk| {
                             Ok(u8::from_str_radix(std::str::from_utf8(chunk)?, 16)?)
