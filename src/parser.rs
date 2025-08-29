@@ -769,6 +769,8 @@ pub fn create_semantic_error(
 
 #[cfg(test)]
 mod tests {
+    use anyhow::bail;
+
     use super::*;
 
     #[test]
@@ -1233,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_operations() {
+    fn test_binary_operations() -> Result<()> {
         let dsl_source = r#"
             impl Test for Rig {
                 fn test_arithmetic() {
@@ -1244,25 +1246,22 @@ mod tests {
                 }
                 fn test_comparisons() {
                     if a == b {
-                        write("equal");
+                        write("AA");
                     } else if a > b {
-                        write("greater");
+                        write("BB");
                     } else if a <= b {
-                        write("less or equal");
+                        write("CC");
                     }
                 }
                 fn test_logical() {
                     if a && b || c {
-                        write("logical");
+                        write("DD");
                     }
                 }
             }
         "#;
 
-        let result = parse(dsl_source);
-        assert!(result.is_ok());
-
-        let rig_file = result.unwrap();
+        let rig_file = parse(dsl_source)?;
         assert_eq!(rig_file.impl_block.commands.len(), 3);
 
         let arithmetic_cmd = &rig_file.impl_block.commands["test_arithmetic"];
@@ -1277,10 +1276,10 @@ mod tests {
                         op: BinaryOp::Multiply,
                         ..
                     } => {}
-                    _ => panic!("Expected binary operation (multiplication)"),
+                    _ => bail!("Expected binary operation (multiplication)"),
                 }
             }
-            _ => panic!("Expected assignment statement"),
+            _ => bail!("Expected assignment statement"),
         }
 
         let comparison_cmd = &rig_file.impl_block.commands["test_comparisons"];
@@ -1293,10 +1292,11 @@ mod tests {
                     op: BinaryOp::Equal,
                     ..
                 } => {}
-                _ => panic!("Expected equality comparison"),
+                _ => bail!("Expected equality comparison"),
             },
-            _ => panic!("Expected if statement"),
+            _ => bail!("Expected if statement"),
         }
+        Ok(())
     }
 
     #[test]

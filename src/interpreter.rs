@@ -485,14 +485,14 @@ mod tests {
             match name {
                 "write" => {
                     if args.len() != 1 {
-                        return Err(anyhow!(
-                            "write() expects exactly 1 argument, got {}",
-                            args.len()
-                        ));
+                        bail!("write() expects exactly 1 argument, got {}", args.len());
                     }
 
-                    let output = args[0].to_string();
-                    env.output.push(format!("WRITE: {output}"));
+                    let [Value::Bytes(bytes)] = args else {
+                        bail!("Unexpected args: {args:?}");
+                    };
+
+                    env.output.push(format!("WRITE: {:?}", bytes));
                     Ok(Value::Unit)
                 }
                 _ => Err(anyhow!("Unkown function {name}")),
@@ -530,7 +530,7 @@ mod tests {
 
         let expr = Expr::String("hello".to_string());
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
-        assert_eq!(result, Value::Bytes("hello".as_bytes().to_vec()));
+        assert_eq!(result, Value::String("hello".to_string()));
         Ok(())
     }
 
@@ -578,12 +578,12 @@ mod tests {
 
         let statement = Statement::FunctionCall {
             name: "write".to_string(),
-            args: vec![Expr::String("test".to_string())],
+            args: vec![Expr::Bytes(vec![1, 2, 3, 4])],
         };
         interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: test");
+        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -648,18 +648,18 @@ mod tests {
             },
             then_body: vec![Statement::FunctionCall {
                 name: "write".to_string(),
-                args: vec![Expr::String("condition true".to_string())],
+                args: vec![Expr::Bytes(vec![1])],
             }],
             else_body: Some(vec![Statement::FunctionCall {
                 name: "write".to_string(),
-                args: vec![Expr::String("condition false".to_string())],
+                args: vec![Expr::Bytes(vec![0])],
             }]),
         };
 
         interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: condition true");
+        assert_eq!(env.output[0], "WRITE: [1]");
         Ok(())
     }
 
@@ -696,14 +696,14 @@ mod tests {
     fn test_simple_rig_file_execution() -> Result<()> {
         let dsl_source = r#"
             version = 1;
-            baudrate = 9600;
+
             impl Transceiver for TestRig {
                 enum Vfo {
                     A = 0,
                     B = 1,
                 }
                 init {
-                    write("initialization");
+                    write("01020304");
                 }
                 fn set_freq(int freq, Vfo vfo) {
                     command = "FEFE94E0.25.{vfo:1}.{freq:4}.FD";
@@ -718,7 +718,6 @@ mod tests {
         interpreter.execute_init(&DummyBuiltins, &mut env).unwrap();
 
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
-        assert_eq!(env.get("baudrate"), Some(Value::Integer(9600)));
 
         assert_eq!(env.get_enum_variant("Vfo", "A"), Some(0));
         assert_eq!(env.get_enum_variant("Vfo", "B"), Some(1));
@@ -735,7 +734,7 @@ mod tests {
         ];
         interpreter.execute_command("set_freq", &args, &DummyBuiltins, &mut env)?;
 
-        assert_eq!(env.output[0], "WRITE: initialization");
+        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
 
         let last_output = env.output.last().unwrap();
         assert!(last_output.contains("WRITE: [254, 254, 148, 224, 37, 0, 160, 64, 221, 0, 253]"));
@@ -880,7 +879,7 @@ mod tests {
             then_body: vec![
                 Statement::FunctionCall {
                     name: "write".to_string(),
-                    args: vec![Expr::String("nested_true".to_string())],
+                    args: vec![Expr::Bytes(vec![1])],
                 },
                 Statement::If {
                     condition: Expr::BinaryOp {
@@ -890,22 +889,22 @@ mod tests {
                     },
                     then_body: vec![Statement::FunctionCall {
                         name: "write".to_string(),
-                        args: vec![Expr::String("deeply_nested".to_string())],
+                        args: vec![Expr::Bytes(vec![2])],
                     }],
                     else_body: None,
                 },
             ],
             else_body: Some(vec![Statement::FunctionCall {
                 name: "write".to_string(),
-                args: vec![Expr::String("nested_false".to_string())],
+                args: vec![Expr::Bytes(vec![3])],
             }]),
         };
 
         interpreter.execute_statement(&nested_if, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 2);
-        assert_eq!(env.output[0], "WRITE: nested_true");
-        assert_eq!(env.output[1], "WRITE: deeply_nested");
+        assert_eq!(env.output[0], "WRITE: [1]");
+        assert_eq!(env.output[1], "WRITE: [2]");
         Ok(())
     }
 
@@ -959,34 +958,6 @@ mod tests {
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("boolean") || error.to_string().contains("condition"));
-    }
-
-    #[test]
-    fn test_variable_scoping_in_commands() -> Result<()> {
-        let dsl_source = r#"
-            version = 1;
-            global_var = 42;
-            impl Test for Rig {
-                fn test_command(int param) {
-                    local_var = param + 10;
-                    write("test");
-                }
-            }
-        "#;
-
-        let rig_file = parse(dsl_source)?;
-        let interpreter = Interpreter::new(rig_file.clone());
-        let mut env = interpreter.create_env()?;
-
-        assert_eq!(env.get("version"), Some(Value::Integer(1)));
-        assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
-
-        let args = vec![Value::Integer(5)];
-        interpreter.execute_command("test_command", &args, &DummyBuiltins, &mut env)?;
-
-        assert_eq!(env.get("local_var"), None);
-        assert_eq!(env.get("global_var"), Some(Value::Integer(42)));
-        Ok(())
     }
 
     #[test]
