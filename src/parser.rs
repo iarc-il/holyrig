@@ -19,6 +19,8 @@ pub enum Token<'source> {
     #[regex(r"0x[a-fA-F0-9]+", |lex| lex.slice())]
     HexNumber(&'source str),
     #[regex("\"[^\"]*\"", |lex| lex.slice())]
+    Bytes(&'source str),
+    #[regex("s\"[^\"]*\"", |lex| lex.slice())]
     Str(&'source str),
     #[token(":")]
     Colon,
@@ -201,6 +203,7 @@ pub enum Expr {
     Integer(i64),
     Float(f64),
     String(String),
+    Bytes(Vec<u8>),
     Identifier(Id),
     QualifiedIdentifier(Id, Id),
     BinaryOp {
@@ -494,15 +497,26 @@ peg::parser! {
             / float:float() {
                 Expr::Float(float)
             }
-            / [Token::Str(s)] {?
+            / [Token::Bytes(s)] {?
                 let content = &s[1..s.len()-1];
 
                 if content.contains('{') && content.contains('}') {
                     let parts = parse_string_interpolation(content)?;
                     Ok(Expr::StringInterpolation { parts })
                 } else {
-                    Ok(Expr::String(content.to_string()))
+                    let bytes = content
+                        .as_bytes()
+                        .chunks(2)
+                        .map(|chunk| {
+                            Ok(u8::from_str_radix(std::str::from_utf8(chunk)?, 16)?)
+                        })
+                        .collect::<Result<Vec<_>>>()
+                        .map_err(|err| "Parsing bytes literal failed")?;
+                    Ok(Expr::Bytes(bytes))
                 }
+            }
+            / [Token::Str(s)] {
+                Expr::String(s[2..s.len()-1].to_string())
             }
             / [Token::Id(scope)] [Token::DoubleColon] [Token::Id(id)] {
                 Expr::QualifiedIdentifier(scope.into(), id.into())
@@ -640,7 +654,7 @@ fn parse_string_interpolation(template: &str) -> Result<Vec<InterpolationPart>, 
     string_interpolation::parse_interpolation(&tokens).map_err(|_| "Parser failed")
 }
 
-pub fn parse_atomic_expr(expr: &str) -> Result<Expr, &'static str> {
+pub fn parse_atomic_expr(expr: &str) -> Result<Expr, &str> {
     let tokens: Vec<_> = Token::lexer(expr)
         .collect::<Result<_, _>>()
         .map_err(|_| "Lexer failed")?;

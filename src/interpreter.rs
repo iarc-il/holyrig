@@ -240,6 +240,7 @@ impl Interpreter {
         match expr {
             Expr::Integer(i) => Ok(Value::Integer(*i)),
             Expr::Float(f) => Ok(Value::Float(*f)),
+            Expr::Bytes(bytes) => Ok(Value::Bytes(bytes.clone())),
             Expr::String(s) => Ok(Value::Bytes(s.as_bytes().to_vec())),
             Expr::Identifier(id) => env
                 .get(id.as_str())
@@ -427,7 +428,7 @@ impl Interpreter {
         let mut evaluated_args = args
             .iter()
             .map(|(key, value)| {
-                let parsed = parse_atomic_expr(value).map_err(|err| anyhow!(err))?;
+                let parsed = parse_atomic_expr(value).map_err(|err| anyhow!(err.to_string()))?;
                 let value = self.evaluate_expression(&parsed, env)?;
                 Ok((key.clone(), value))
             })
