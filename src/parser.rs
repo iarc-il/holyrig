@@ -834,9 +834,9 @@ mod tests {
         let dsl_source = r#"
             impl Test for Rig {
                 fn set_freq(int freq, bool enabled) {
-                    write("test");
-                    read("response");
-                    command = "test_command";
+                    write(s"test");
+                    read(s"response");
+                    command = s"test_command";
                 }
             }
         "#;
@@ -1050,9 +1050,9 @@ mod tests {
         let dsl_source = r#"
             impl Test for Rig {
                 fn test_func() {
-                    write("test");
-                    read("response");
-                    command = "test_command";
+                    write(s"test");
+                    read(s"response");
+                    command = s"test_command";
                 }
             }
         "#;
@@ -1104,7 +1104,7 @@ mod tests {
             impl Test for Rig {
                 fn test() {
                     x = 42;
-                    y = "hello";
+                    y = s"hello";
                     z = identifier;
                     w = a + b;
                 }
@@ -1374,9 +1374,9 @@ mod tests {
         let dsl_source = r#"
             impl Test for Rig {
                 fn test_func() {
-                    write("data");
-                    read("response");
-                    send_command("AT", "OK");
+                    write(s"data");
+                    read("AABBCC.DD");
+                    send_command(s"AT", s"OK");
                     delay(100);
                     custom_func();
                 }

@@ -970,7 +970,7 @@ mod tests {
                     } else {
                         result = a;
                     }
-                    write("executed");
+                    write("01020304");
                 }
             }
         "#;
@@ -983,7 +983,7 @@ mod tests {
         interpreter.execute_command("test_params", &args, &DummyBuiltins, &mut env)?;
 
         assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: executed");
+        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -1117,7 +1117,7 @@ mod tests {
                 fn test() {
                     x = TestEnum::A;
                     y = TestEnum::B;
-                    write("test");
+                    write("00");
                 }
             }
         "#;
@@ -1133,7 +1133,7 @@ mod tests {
         );
 
         assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: test");
+        assert_eq!(env.output[0], "WRITE: [0]");
         Ok(())
     }
 

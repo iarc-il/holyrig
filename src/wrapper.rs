@@ -120,15 +120,23 @@ impl<E: ExternalApi> Builtins for E {
 
     fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<InterpreterValue> {
         if name == "read" {
-            let [Expr::StringInterpolation { parts }] = args else {
-                bail!("Expected template string in parse, got: {args:?}");
+            match args {
+                [Expr::StringInterpolation { parts }] => {
+                    let expected_length = calculate_template_length(parts);
+                    let response = self.read(expected_length)?;
+
+                    parse_response_with_template(parts, &response, env)?;
+                }
+                [Expr::Bytes(bytes)] => {
+                    let response = self.read(bytes.len())?;
+                    if &response != bytes {
+                        bail!("Got invalid response: {response:?}");
+                    }
+                }
+                _ => {
+                    bail!("Expected template string in parse, got: {args:?}");
+                }
             };
-
-            let expected_length = calculate_template_length(parts);
-            let response = self.read(expected_length)?;
-
-            parse_response_with_template(parts, &response, env)?;
-
             Ok(InterpreterValue::Unit)
         } else {
             bail!("Unknown function {name} in this context");
@@ -412,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn test_interpreter_wrapper_with_read() {
+    fn test_interpreter_wrapper_with_read() -> Result<()> {
         let dsl_source = r#"
             version = 1;
 
@@ -433,20 +441,14 @@ mod tests {
         let interpreter = Interpreter::new(rig_file);
         let external = MockExternalApi::new();
 
-        // Set up expected read response
         external.add_read_response(vec![0xFE, 0xFE, 0x94, 0xE0, 0xFB, 0xFD]);
 
-        let result = RigWrapper::execute_init(&interpreter, &external);
-        assert!(
-            result.is_ok(),
-            "Init with read should succeed: {:?}",
-            result
-        );
+        RigWrapper::execute_init(&interpreter, &external)?;
 
-        // Check that write was called
         let written_data = external.written_data.borrow();
         assert_eq!(written_data.len(), 1);
         assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0xFD]);
+        Ok(())
     }
 
     #[test]
@@ -475,6 +477,6 @@ mod tests {
             &external,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
+        assert!(result.unwrap_err().to_string().contains("Unknown command"));
     }
 }
