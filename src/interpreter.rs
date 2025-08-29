@@ -10,6 +10,7 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     Bytes(Vec<u8>),
+    String(String),
     Boolean(bool),
     EnumVariant {
         enum_name: String,
@@ -30,6 +31,9 @@ impl fmt::Display for Value {
                 } else {
                     write!(f, "{b:?}")
                 }
+            }
+            Value::String(string) => {
+                write!(f, "{string}")
             }
             Value::Boolean(b) => write!(f, "{b}"),
             Value::EnumVariant {
@@ -241,7 +245,7 @@ impl Interpreter {
             Expr::Integer(i) => Ok(Value::Integer(*i)),
             Expr::Float(f) => Ok(Value::Float(*f)),
             Expr::Bytes(bytes) => Ok(Value::Bytes(bytes.clone())),
-            Expr::String(s) => Ok(Value::Bytes(s.as_bytes().to_vec())),
+            Expr::String(string) => Ok(Value::String(string.clone())),
             Expr::Identifier(id) => env
                 .get(id.as_str())
                 .ok_or_else(|| anyhow!("Undefined variable: {}", id.as_str())),
