@@ -102,56 +102,30 @@ impl DeviceExternalApi {
 }
 
 impl ExternalApi for DeviceExternalApi {
-    fn write(&self, data: &[u8]) -> Result<()> {
-        let (tx, rx): (
-            std::sync::mpsc::Sender<Result<()>>,
-            std::sync::mpsc::Receiver<Result<()>>,
-        ) = std::sync::mpsc::channel();
-        let command_tx = self.command_tx.clone();
-        let data = data.to_vec();
-
-        tokio::spawn(async move {
-            let result = command_tx
-                .send(DeviceCommand::Write { data })
-                .await
-                .context("Failed to send write command to device");
-            let _ = tx.send(result);
-        });
-
-        match rx.recv() {
-            Ok(inner_result) => inner_result,
-            Err(_) => Err(anyhow!("Channel closed")),
-        }
+    async fn write(&self, data: &[u8]) -> Result<()> {
+        self.command_tx
+            .send(DeviceCommand::Write {
+                data: data.to_vec(),
+            })
+            .await
+            .context("Failed to send write command to device")
     }
 
-    fn read(&self, length: usize) -> Result<Vec<u8>> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let command_tx = self.command_tx.clone();
+    async fn read(&self, length: usize) -> Result<Vec<u8>> {
+        let (read_tx, mut read_rx) = mpsc::channel(1);
 
-        tokio::spawn(async move {
-            let (read_tx, mut read_rx) = mpsc::channel(1);
-            let result = async {
-                command_tx
-                    .send(DeviceCommand::ReadExact {
-                        length,
-                        response_tx: read_tx,
-                    })
-                    .await
-                    .context("Failed to send read command to device")?;
+        self.command_tx
+            .send(DeviceCommand::ReadExact {
+                length,
+                response_tx: read_tx,
+            })
+            .await
+            .context("Failed to send read command to device")?;
 
-                read_rx
-                    .recv()
-                    .await
-                    .ok_or_else(|| anyhow!("Device disconnected"))?
-            }
-            .await;
-            let _ = tx.send(result);
-        });
-
-        match rx.recv() {
-            Ok(inner_result) => inner_result,
-            Err(_) => Err(anyhow!("Channel closed")),
-        }
+        read_rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow!("Device disconnected"))?
     }
 
     fn set_var(&self, var: &str, value: Value) -> Result<()> {
@@ -342,7 +316,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
     async fn execute_status_commands(device: &Device<W>) -> Result<HashMap<String, Value>> {
         let external_api = DeviceExternalApi::new(device.command_tx.clone());
         external_api.clear_status_values();
-        device.rig_wrapper.execute_status(&external_api)?;
+        device.rig_wrapper.execute_status(&external_api).await?;
         Ok(external_api.get_status_values())
     }
 
@@ -452,6 +426,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
         device
             .rig_wrapper
             .execute_command(command_name, params, &external_api)
+            .await
     }
 
     pub async fn initialize_device(&self, device_id: usize) -> Result<()> {
@@ -461,6 +436,6 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
             .ok_or_else(|| anyhow!("Device not found: {device_id}"))?;
 
         let external_api = DeviceExternalApi::new(device.command_tx.clone());
-        device.rig_wrapper.execute_init(&external_api)
+        device.rig_wrapper.execute_init(&external_api).await
     }
 }

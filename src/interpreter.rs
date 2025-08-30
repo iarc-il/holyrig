@@ -103,9 +103,10 @@ impl Env {
     }
 }
 
-pub trait Builtins {
-    fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
-    fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value>;
+#[allow(async_fn_in_trait)]
+pub trait Builtins: Send + Sync {
+    async fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
+    async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value>;
 }
 
 pub struct Interpreter {
@@ -132,7 +133,7 @@ impl Interpreter {
         Ok(env)
     }
 
-    pub fn execute_command(
+    pub async fn execute_command(
         &self,
         name: &str,
         args: &[Value],
@@ -160,7 +161,8 @@ impl Interpreter {
         }
 
         for statement in &command.statements {
-            self.execute_statement(statement, builtins, &mut local_env)?;
+            self.execute_statement(statement, builtins, &mut local_env)
+                .await?;
         }
 
         env.output.extend(local_env.output);
@@ -168,25 +170,25 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn execute_init(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
+    pub async fn execute_init(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
         if let Some(init) = &self.rig_file.impl_block.init {
             for statement in &init.statements {
-                self.execute_statement(statement, builtins, env)?;
+                self.execute_statement(statement, builtins, env).await?;
             }
         }
         Ok(())
     }
 
-    pub fn execute_status(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
+    pub async fn execute_status(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
         if let Some(status) = &self.rig_file.impl_block.status {
             for statement in &status.statements {
-                self.execute_statement(statement, builtins, env)?;
+                self.execute_statement(statement, builtins, env).await?;
             }
         }
         Ok(())
     }
 
-    pub fn execute_statement(
+    async fn execute_statement(
         &self,
         statement: &Statement,
         builtins: &impl Builtins,
@@ -199,14 +201,14 @@ impl Interpreter {
             }
             Statement::FunctionCall { name, args } => {
                 if name == "read" {
-                    let _ = builtins.call_no_eval(name, args, env)?;
+                    let _ = builtins.call_no_eval(name, args, env).await?;
                 } else {
                     let arg_values = args
                         .iter()
                         .map(|arg| self.evaluate_expression(arg, env))
                         .collect::<Result<Vec<_>>>()?;
 
-                    let _ = builtins.call(name, &arg_values, env)?;
+                    let _ = builtins.call(name, &arg_values, env).await?;
                 }
             }
             Statement::If {
@@ -218,13 +220,13 @@ impl Interpreter {
                 match condition_value {
                     Value::Boolean(true) => {
                         for stmt in then_body {
-                            self.execute_statement(stmt, builtins, env)?;
+                            Box::pin(self.execute_statement(stmt, builtins, env)).await?;
                         }
                     }
                     Value::Boolean(false) => {
                         if let Some(else_stmts) = else_body {
                             for stmt in else_stmts {
-                                self.execute_statement(stmt, builtins, env)?;
+                                Box::pin(self.execute_statement(stmt, builtins, env)).await?;
                             }
                         }
                     }
@@ -481,7 +483,7 @@ mod tests {
     struct DummyBuiltins;
 
     impl Builtins for DummyBuiltins {
-        fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
+        async fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
             match name {
                 "write" => {
                     if args.len() != 1 {
@@ -498,7 +500,7 @@ mod tests {
                 _ => Err(anyhow!("Unkown function {name}")),
             }
         }
-        fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
+        async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
             if name == "read" {
                 if args.len() != 1 {
                     return Err(anyhow!(
@@ -557,13 +559,15 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_variable_assignment_and_lookup() -> Result<()> {
+    #[tokio::test]
+    async fn test_variable_assignment_and_lookup() -> Result<()> {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
         let statement = Statement::Assign(Id::new("x"), Expr::Integer(42));
-        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .await?;
 
         let expr = Expr::Identifier(Id::new("x"));
         let result = interpreter.evaluate_expression(&expr, &mut env)?;
@@ -571,8 +575,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_function_call() -> Result<()> {
+    #[tokio::test]
+    async fn test_function_call() -> Result<()> {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
@@ -580,7 +584,9 @@ mod tests {
             name: "write".to_string(),
             args: vec![Expr::Bytes(vec![1, 2, 3, 4])],
         };
-        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .await?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
@@ -633,8 +639,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_if_statement() -> Result<()> {
+    #[tokio::test]
+    async fn test_if_statement() -> Result<()> {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
@@ -656,7 +662,9 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&statement, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .await?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: [1]");
@@ -692,8 +700,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_simple_rig_file_execution() -> Result<()> {
+    #[tokio::test]
+    async fn test_simple_rig_file_execution() -> Result<()> {
         let dsl_source = r#"
             version = 1;
 
@@ -715,7 +723,10 @@ mod tests {
         let rig_file = parse(dsl_source).unwrap();
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env().unwrap();
-        interpreter.execute_init(&DummyBuiltins, &mut env).unwrap();
+        interpreter
+            .execute_init(&DummyBuiltins, &mut env)
+            .await
+            .unwrap();
 
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
 
@@ -732,7 +743,9 @@ mod tests {
                 value: 0,
             },
         ];
-        interpreter.execute_command("set_freq", &args, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_command("set_freq", &args, &DummyBuiltins, &mut env)
+            .await?;
 
         assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
 
@@ -865,8 +878,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_nested_if_statements() -> Result<()> {
+    #[tokio::test]
+    async fn test_nested_if_statements() -> Result<()> {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
@@ -900,7 +913,9 @@ mod tests {
             }]),
         };
 
-        interpreter.execute_statement(&nested_if, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_statement(&nested_if, &DummyBuiltins, &mut env)
+            .await?;
 
         assert_eq!(env.output.len(), 2);
         assert_eq!(env.output[0], "WRITE: [1]");
@@ -940,8 +955,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_if_with_non_boolean_condition_error() {
+    #[tokio::test]
+    async fn test_if_with_non_boolean_condition_error() {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
@@ -954,14 +969,16 @@ mod tests {
             else_body: None,
         };
 
-        let result = interpreter.execute_statement(&if_stmt, &DummyBuiltins, &mut env);
+        let result = interpreter
+            .execute_statement(&if_stmt, &DummyBuiltins, &mut env)
+            .await;
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("boolean") || error.to_string().contains("condition"));
     }
 
-    #[test]
-    fn test_parameter_passing_to_functions() -> Result<()> {
+    #[tokio::test]
+    async fn test_parameter_passing_to_functions() -> Result<()> {
         let dsl_source = r#"
             impl Test for Rig {
                 fn test_params(int a, bool b) {
@@ -980,7 +997,9 @@ mod tests {
         let mut env = Env::new();
 
         let args = vec![Value::Integer(10), Value::Boolean(true)];
-        interpreter.execute_command("test_params", &args, &DummyBuiltins, &mut env)?;
+        interpreter
+            .execute_command("test_params", &args, &DummyBuiltins, &mut env)
+            .await?;
 
         assert_eq!(env.output.len(), 1);
         assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
@@ -1105,8 +1124,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_qualified_identifier_enum_access() -> Result<()> {
+    #[tokio::test]
+    async fn test_qualified_identifier_enum_access() -> Result<()> {
         let dsl_source = r#"
             version = 1;
             impl Test for Rig {
@@ -1126,7 +1145,9 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
-        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
+        let result = interpreter
+            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .await;
         assert!(
             result.is_ok(),
             "Command with qualified identifiers should execute successfully"
@@ -1137,8 +1158,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_undefined_enum_access() -> Result<()> {
+    #[tokio::test]
+    async fn test_undefined_enum_access() -> Result<()> {
         let dsl_source = r#"
             impl Test for Rig {
                 enum TestEnum {
@@ -1154,7 +1175,9 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
-        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
+        let result = interpreter
+            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .await;
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1162,8 +1185,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_string_interpolation_invalid_format() -> Result<()> {
+    #[tokio::test]
+    async fn test_string_interpolation_invalid_format() -> Result<()> {
         use crate::interpreter::{Interpreter, Value};
 
         let dsl_source = r#"
@@ -1182,7 +1205,9 @@ mod tests {
 
         env.set("var".to_string(), Value::Integer(42));
 
-        let result = interpreter.execute_command("test", &[], &DummyBuiltins, &mut env);
+        let result = interpreter
+            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .await;
 
         assert!(result.is_err());
         let error = result.unwrap_err();
