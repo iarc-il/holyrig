@@ -109,6 +109,7 @@ pub trait Builtins: Send + Sync {
     async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value>;
 }
 
+#[derive(Clone)]
 pub struct Interpreter {
     rig_file: RigFile,
 }

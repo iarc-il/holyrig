@@ -7,24 +7,22 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use holyrig::{gui, rig_api, rig_file, schema, serial, udp_server};
+use holyrig::{Interpreter, gui, parser, schema, serial, udp_server};
 
 use gui::GuiMessage;
-use rig_api::RigApi;
-use rig_file::RigFile;
 use serial::manager::DeviceManager;
 
 fn load_rig_files<P: AsRef<Path>>(
     dir_path: P,
-    schema: &Schema,
-) -> Result<Arc<HashMap<String, RigApi>>> {
+    _schema: &Schema,
+) -> Result<Arc<HashMap<String, Interpreter>>> {
     let mut rigs = HashMap::new();
 
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
         let path = entry.path();
 
-        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
+        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("rig") {
             continue;
         }
 
@@ -34,17 +32,9 @@ fn load_rig_files<P: AsRef<Path>>(
             .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?
             .to_string();
 
-        let content = fs::read_to_string(&path)?;
-        let rig_file: RigFile = toml::from_str(&content)?;
-
-        match RigApi::try_from((rig_file, schema.clone())) {
-            Ok(rig_api) => {
-                rigs.insert(file_name, rig_api);
-            }
-            Err(err) => {
-                eprintln!("Failed to load rig file {}: {}", path.display(), err);
-            }
-        }
+        let content = std::fs::read_to_string(path)?;
+        let rig_file = parser::parse(&content)?;
+        rigs.insert(file_name, Interpreter::new(rig_file));
     }
 
     Ok(Arc::new(rigs))
@@ -66,7 +56,7 @@ async fn main() -> Result<()> {
     let rigs = load_rig_files("./rigs", &schema)?;
 
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
-    let mut device_manager: DeviceManager<RigApi> =
+    let mut device_manager: DeviceManager<Interpreter> =
         DeviceManager::new(rigs.clone(), base_dirs.clone());
 
     let gui_command_sender = device_manager.sender();
