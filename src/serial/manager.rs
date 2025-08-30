@@ -383,6 +383,11 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
         tokio::spawn(async move {
             let device_id = id;
 
+            device_tx
+                .send(DeviceMessage::Connected { device_id })
+                .await
+                .unwrap();
+
             if let Err(err) = serial_device.run(command_rx).await {
                 device_tx
                     .send(DeviceMessage::Error {
@@ -397,10 +402,6 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
                 .await
                 .unwrap();
         });
-
-        self.device_tx
-            .send(DeviceMessage::Connected { device_id })
-            .await?;
 
         Ok(())
     }
