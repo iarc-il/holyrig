@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::data_format::DataFormat;
-use crate::parser::{BinaryOp, Expr, InterpolationPart, RigFile, Statement, parse_atomic_expr};
+use crate::parser::{
+    BinaryOp, DataType, Expr, Id, InterpolationPart, RigFile, Statement, parse_atomic_expr,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -432,15 +434,6 @@ impl Interpreter {
         args: HashMap<String, String>,
         env: &mut Env,
     ) -> Result<Vec<Value>> {
-        let mut evaluated_args = args
-            .iter()
-            .map(|(key, value)| {
-                let parsed = parse_atomic_expr(value).map_err(|err| anyhow!(err.to_string()))?;
-                let value = self.evaluate_expression(&parsed, env)?;
-                Ok((key.clone(), value))
-            })
-            .collect::<Result<HashMap<_, _>>>()?;
-
         let params = &self
             .rig_file
             .impl_block
@@ -449,12 +442,31 @@ impl Interpreter {
             .context("Unknown command")?
             .parameters;
 
+        let mut evaluated_args = args
+            .iter()
+            .map(|(key, value)| {
+                let param_type = &params
+                    .iter()
+                    .find(|param| &param.name == key)
+                    .context(format!("Unknown param: {key} in command {name}"))?
+                    .param_type;
+
+                let parsed = if let DataType::Enum(enum_name) = param_type {
+                    Expr::QualifiedIdentifier(Id::new(enum_name), Id::new(value))
+                } else {
+                    parse_atomic_expr(value).map_err(|err| anyhow!(err.to_string()))?
+                };
+                Ok((key.clone(), self.evaluate_expression(&parsed, env)?))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
         let result = params
             .iter()
             .map(|param| {
-                let value = evaluated_args
-                    .remove(&param.name)
-                    .context(format!("Missing parameter {}", param.name))?;
+                let value = evaluated_args.remove(&param.name).context(format!(
+                    "Missing parameter {} in command {name}",
+                    param.name
+                ))?;
                 Ok(value)
             })
             .collect::<Result<_>>()?;
