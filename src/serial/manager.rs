@@ -335,25 +335,25 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
             loop {
                 sleep(Duration::from_millis(poll_interval as u64)).await;
 
-                if let Ok(values) = Self::execute_status_commands(&device_clone).await {
-                    let changed_values: HashMap<String, Value> = values
-                        .iter()
-                        .filter(|(name, value)| {
-                            previous_values
-                                .get(*name)
-                                .map(|prev_value| prev_value != *value)
-                                .unwrap_or(true)
-                        })
-                        .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect();
-                    if !changed_values.is_empty() {
-                        let _ = manager_tx.send(ManagerMessage::StatusUpdate {
-                            device_id,
-                            values: changed_values,
-                        });
-                    }
-                    previous_values = values;
+                let values = Self::execute_status_commands(&device_clone).await.unwrap();
+                let changed_values: HashMap<String, Value> = values
+                    .iter()
+                    .filter(|(name, value)| {
+                        previous_values
+                            .get(*name)
+                            .map(|prev_value| prev_value != *value)
+                            .unwrap_or(true)
+                    })
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+
+                if !changed_values.is_empty() {
+                    let _ = manager_tx.send(ManagerMessage::StatusUpdate {
+                        device_id,
+                        values: changed_values,
+                    });
                 }
+                previous_values = values;
             }
         });
 
