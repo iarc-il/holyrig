@@ -1,0 +1,47 @@
+version = 1
+
+schema Transceiver {
+    enum Vfo {
+        Current,
+        A,
+        B,
+        Unknown,
+    }
+
+    enum Mode {
+        CWU,
+        CWL,
+        USB,
+        LSB,
+        DIGIU,
+        DIGIL,
+        AM,
+        FM,
+    }
+
+    fn set_freq(int freq, Vfo target);
+    fn clear_rit();
+    fn cw_pitch(int pitch);
+    fn set_split(bool split);
+    fn vfo_equal();
+    fn vfo_swap();
+    fn set_vfo(Vfo rx, Vfo tx);
+    fn set_rit(bool rit);
+    fn set_xit(bool xit);
+    fn transmit(bool tx);
+    fn set_mode(Mode mode);
+
+    // fn rit_offset(int offset);
+
+    status {
+        Mode mode;
+        int freq_a;
+        int freq_b;
+        Vfo vfo;
+        int cw_pitch;
+        bool transmit;
+        // bool split;
+        bool rit;
+        bool xit;
+    }
+}
