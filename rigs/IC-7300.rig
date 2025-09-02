@@ -1,4 +1,5 @@
 version = 1;
+
 impl Transceiver for IC7300 {
     enum Vfo {
         A = 0,
@@ -108,16 +109,16 @@ impl Transceiver for IC7300 {
         set_var(s"freq_a", freq_a);
 
         write("FEFE94E0.2501.FD");
-        read("FEFE94E02501FD.FEFEE094.2501.{freq_a:bcd_lu:5}.FD");
+        read("FEFE94E02501FD.FEFEE094.2501.{freq_b:bcd_lu:5}.FD");
         set_var(s"freq_b", freq_b);
 
         write("FEFE94E0.04.FD");
-        read("FEFE94E004FD.FEFEE094.04.{mode:1}.00FD");
+        read("FEFE94E004FD.FEFEE094.04.{mode:2}.FD");
         set_var(s"mode", mode);
 
-        write("FEFE94E0.1409.FD");
-        read("FEFE94E01409FD.FEFEE094.1409.{pitch:bcd_bu:2}.FD");
-        set_var(s"pitch", (pitch * 2.362205) + 300);
+        // write("FEFE94E0.1409.FD");
+        // read("FEFE94E01409FD.FEFEE094.1409.{pitch:bcd_bu:2}.FD");
+        // set_var(s"cw_pitch", (pitch * 2.362205) + 300);
 
         write("FEFE94E0.1C00.FD");
         read("FEFE94E01C00FD.FEFEE094.1C00.{transmit:1}.FD");
