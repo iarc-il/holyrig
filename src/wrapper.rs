@@ -135,6 +135,7 @@ impl<E: ExternalApi> Builtins for E {
                 [Expr::StringInterpolation { parts }] => {
                     let expected_length = calculate_template_length(parts);
                     let response = self.read(expected_length).await?;
+                    println!("Read: {response:?}");
 
                     parse_response_with_template(parts, &response, env)?;
                 }

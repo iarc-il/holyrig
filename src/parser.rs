@@ -24,6 +24,8 @@ pub enum Token<'source> {
     Str(&'source str),
     #[token(":")]
     Colon,
+    #[token("schema")]
+    Schema,
     #[token("impl")]
     Impl,
     #[token("for")]
@@ -256,6 +258,15 @@ pub enum DataType {
     Int,
     Bool,
     Enum(String),
+    Float,
+    Bytes,
+    String,
+}
+
+impl DataType {
+    pub fn is_numeric(&self) -> bool {
+        *self == Self::Int || *self == Self::Float
+    }
 }
 
 #[derive(Debug, Clone)]
