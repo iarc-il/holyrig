@@ -13,10 +13,6 @@ name = "holyrig"
 path = "src/main.rs"
 
 [[bin]]
-name = "omnirig2holyrig"
-path = "src/bin/omnirig2holyrig.rs"
-
-[[bin]]
 name = "parser"
 path = "src/bin/parser.rs"
 
