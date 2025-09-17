@@ -1,23 +1,69 @@
-use anyhow::Result;
+use std::path::PathBuf;
 
-use holyrig::parse_and_validate_with_schema;
+use anyhow::Result;
+use argh::FromArgs;
+
+use holyrig::{parse_and_validate_with_schema, parse_schema, parser::parse_rig_file};
+
+#[derive(FromArgs)]
+/// Command line tool for validating rig files and schema files
+struct Args {
+    #[argh(option)]
+    /// rig file to validate
+    rig: Option<PathBuf>,
+    #[argh(option)]
+    /// schema file to validate
+    schema: Option<PathBuf>,
+}
 
 fn main() -> Result<()> {
-    println!("Reading rig file");
-    let rig_content = std::fs::read_to_string("rigs/IC-7300.rig")?;
-    println!("Reading schema");
-    let schema_content = std::fs::read_to_string("schema/transceiver.schema")?;
+    let args: Args = argh::from_env();
 
-    match parse_and_validate_with_schema(&rig_content, &schema_content) {
-        Ok(rig_file) => {
-            println!("Successfully parsed IC7300.rig");
-            println!(" - Schema: {}", rig_file.impl_block.schema);
-            println!(" - Name: {}", rig_file.impl_block.name);
-        }
-        Err(errors) => {
-            for err in errors {
-                println!("{err}");
+    let rig = if let Some(rig) = args.rig {
+        Some(std::fs::read_to_string(rig)?)
+    } else {
+        None
+    };
+
+    let schema = if let Some(schema) = args.schema {
+        Some(std::fs::read_to_string(schema)?)
+    } else {
+        None
+    };
+
+    match (rig, schema) {
+        (Some(rig), Some(schema)) => match parse_and_validate_with_schema(&rig, &schema) {
+            Ok(rig_file) => {
+                println!("Successfully parsed schema and rig!");
+                println!(" - Schema: {}", rig_file.impl_block.schema);
+                println!(" - Name: {}", rig_file.impl_block.name);
             }
+            Err(errors) => {
+                for err in errors {
+                    eprintln!("{err}");
+                }
+            }
+        },
+        (None, Some(schema)) => match parse_schema(&schema) {
+            Ok(schema) => {
+                println!("Successfully parsed schema \"{}\"!", schema.name);
+            }
+            Err(err) => {
+                eprintln!("{err}");
+            }
+        },
+        (Some(rig), None) => match parse_rig_file(&rig) {
+            Ok(rig) => {
+                println!("Successfully parsed rig!");
+                println!(" - Schema: {}", rig.impl_block.schema);
+                println!(" - Name: {}", rig.impl_block.name);
+            }
+            Err(err) => {
+                eprintln!("{err}");
+            }
+        },
+        (None, None) => {
+            eprintln!("You must provide rig file, schema or both!");
         }
     }
 
