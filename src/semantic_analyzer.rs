@@ -464,7 +464,7 @@ impl SemanticAnalyzer {
         }
 
         for statement in &command.statements {
-            if let Err(stmt_errors) = self.validate_statement(statement, &local_context) {
+            if let Err(stmt_errors) = self.validate_statement(statement, &mut local_context) {
                 errors.extend(stmt_errors);
             }
         }
@@ -473,7 +473,7 @@ impl SemanticAnalyzer {
     fn validate_statement(
         &self,
         statement: &Statement,
-        context: &AnalysisContext,
+        context: &mut AnalysisContext,
     ) -> Result<(), Vec<SemanticError>> {
         let mut errors = Vec::new();
 
@@ -542,7 +542,7 @@ impl SemanticAnalyzer {
         &self,
         name: &str,
         args: &[Expr],
-        context: &AnalysisContext,
+        context: &mut AnalysisContext,
         errors: &mut Vec<SemanticError>,
     ) {
         if !self.builtin_functions.contains(name) {
@@ -593,14 +593,25 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                match self.expr_to_type(&args[0], context) {
-                    Ok(_) => {
-                        if let Expr::StringInterpolation { parts } = &args[0] {
-                            self.validate_string_interpolation(parts, context, errors);
+                match &args[0] {
+                    Expr::Bytes(_) => {},
+                    Expr::StringInterpolation { parts } => {
+                        for part in parts {
+                            if let InterpolationPart::Variable { name, .. } = part {
+                                context.register_variable(name, DataType::Int);
+                            }
                         }
-                    }
-                    Err(expr_errors) => {
-                        errors.extend(expr_errors);
+                    },
+                    _ => {
+                        errors.push(SemanticError {
+                            position: None,
+                            error_type: SemanticErrorType::InvalidFunctionArgumentType {
+                                function_name: "read".into(),
+                                arg_index: 0,
+                                expected: "Bytes or StringInterpolation".into(),
+                                found: format!("{:?}", args[0]),
+                            },
+                        });
                     }
                 }
             }
