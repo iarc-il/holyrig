@@ -277,6 +277,9 @@ impl Interpreter {
             Expr::StringInterpolation { parts } => {
                 self.process_parsed_string_interpolation(parts, env)
             }
+            Expr::Cast { expr, target_type } => {
+                todo!()
+            }
         }
     }
 

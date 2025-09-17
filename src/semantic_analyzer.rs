@@ -800,6 +800,7 @@ impl SemanticAnalyzer {
                 self.validate_string_interpolation(parts, context, &mut errors);
                 DataType::Bytes
             }
+            Expr::Cast { expr, target_type } => todo!(),
         };
 
         if errors.is_empty() {

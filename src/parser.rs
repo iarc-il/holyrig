@@ -94,6 +94,8 @@ pub enum Token<'source> {
     NewLine,
     #[regex(r"//[^\n]*\n")]
     Comment,
+    #[token("as")]
+    As,
 }
 
 #[derive(Logos, Debug, Copy, Clone)]
@@ -215,6 +217,10 @@ pub enum Expr {
     },
     StringInterpolation {
         parts: Vec<InterpolationPart>,
+    },
+    Cast {
+        expr: Box<Expr>,
+        target_type: DataType,
     },
 }
 
@@ -379,12 +385,13 @@ peg::parser! {
                 })
             }
 
+        rule type_spec() -> DataType
+            = [Token::Int] { DataType::Int }
+            / [Token::Bool] { DataType::Bool }
+            / [Token::Id(data_type)] { DataType::Enum(data_type.to_string()) }
+
         rule parameter() -> Parameter
-            = param_type:(
-                [Token::Int] { DataType::Int } /
-                [Token::Bool] { DataType::Bool } /
-                [Token::Id(data_type)] { DataType::Enum(data_type.to_string()) }
-            ) [Token::Id(name)] {
+            = param_type:type_spec() [Token::Id(name)] {
                 Parameter {
                     param_type,
                     name: name.to_string(),
@@ -568,8 +575,11 @@ peg::parser! {
                 Expr::binary_op(a, op, b)
             }
             --
-            a:(@) op:([Token::Multiply] / [Token::Divide] / [Token::Modulo]) b:@ {
-                Expr::binary_op(a, op, b)
+            a:(@) [Token::As] target_type:type_spec() {
+                Expr::Cast {
+                    expr: Box::new(a),
+                    target_type,
+                }
             }
             --
             [Token::ParenOpen] expr:expr() [Token::ParenClose] { expr }
