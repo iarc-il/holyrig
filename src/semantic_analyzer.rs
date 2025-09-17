@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use crate::SchemaFile;
 use crate::parser::{BinaryOp, DataType, Expr, InterpolationPart, RigFile, Statement};
 use crate::parser_errors::{ErrorLevel, ParseError, ParseErrorType, SourcePosition};
-use crate::SchemaFile;
 
 #[derive(Debug, Clone)]
 pub struct SemanticError {
@@ -94,6 +94,15 @@ pub enum SemanticErrorType {
     InvalidDataFormat {
         format: String,
         context: String,
+    },
+    InvalidStatusVariable {
+        name: String,
+        context: String,
+    },
+    StatusVariableTypeMismatch {
+        name: String,
+        expected: DataType,
+        found: DataType,
     },
 }
 
@@ -246,6 +255,19 @@ impl fmt::Display for SemanticError {
             SemanticErrorType::InvalidDataFormat { format, context } => {
                 write!(f, "Invalid data format '{format}' in {context}")
             }
+            SemanticErrorType::InvalidStatusVariable { name, context } => {
+                write!(f, "Invalid status variable '{name}' in {context}")
+            }
+            SemanticErrorType::StatusVariableTypeMismatch {
+                name,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Status variable '{name}' type mismatch: expected {expected:?}, found {found:?}"
+                )
+            }
         }
     }
 }
@@ -280,6 +302,7 @@ impl SemanticAnalyzer {
         self.validate_enums(rig_file, &mut errors, &mut context);
         self.validate_settings(rig_file, &mut errors, &mut context);
         self.validate_impl_block(rig_file, &mut errors, &mut context);
+        self.validate_status_block(rig_file, &mut errors, &mut context);
 
         if errors.is_empty() {
             Ok(())
@@ -344,7 +367,7 @@ impl SemanticAnalyzer {
         context: &mut AnalysisContext,
     ) {
         for (id, expr) in &rig_file.settings.settings {
-            match self.expr_to_type(expr, context) {
+            match self.infer_expression_type(expr, context) {
                 Ok(expr_type) => {
                     context.register_variable(id.as_str(), expr_type);
                 }
@@ -479,7 +502,7 @@ impl SemanticAnalyzer {
 
         match statement {
             Statement::Assign(_id, expr) => {
-                match self.expr_to_type(expr, context) {
+                match self.infer_expression_type(expr, context) {
                     Ok(_expr_type) => {
                         // Assignment is valid - in a real implementation we might want to
                         // track the variable type for future use
@@ -497,7 +520,7 @@ impl SemanticAnalyzer {
                 then_body,
                 else_body,
             } => {
-                match self.expr_to_type(condition, context) {
+                match self.infer_expression_type(condition, context) {
                     Ok(condition_type) => {
                         if condition_type != DataType::Bool {
                             errors.push(SemanticError {
@@ -569,7 +592,7 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                match self.expr_to_type(&args[0], context) {
+                match self.infer_expression_type(&args[0], context) {
                     Ok(_) => {
                         if let Expr::StringInterpolation { parts } = &args[0] {
                             self.validate_string_interpolation(parts, context, errors);
@@ -594,14 +617,14 @@ impl SemanticAnalyzer {
                 }
 
                 match &args[0] {
-                    Expr::Bytes(_) => {},
+                    Expr::Bytes(_) => {}
                     Expr::StringInterpolation { parts } => {
                         for part in parts {
                             if let InterpolationPart::Variable { name, .. } = part {
                                 context.register_variable(name, DataType::Int);
                             }
                         }
-                    },
+                    }
                     _ => {
                         errors.push(SemanticError {
                             position: None,
@@ -628,11 +651,11 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                if let Err(expr_errors) = self.expr_to_type(&args[0], context) {
+                if let Err(expr_errors) = self.infer_expression_type(&args[0], context) {
                     errors.extend(expr_errors);
                 }
 
-                if let Err(expr_errors) = self.expr_to_type(&args[1], context) {
+                if let Err(expr_errors) = self.infer_expression_type(&args[1], context) {
                     errors.extend(expr_errors);
                 }
             }
@@ -649,7 +672,7 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                if let Err(expr_errors) = self.expr_to_type(&args[0], context) {
+                if let Err(expr_errors) = self.infer_expression_type(&args[0], context) {
                     errors.extend(expr_errors);
                 }
             }
@@ -685,7 +708,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn expr_to_type(
+    fn infer_expression_type(
         &self,
         expr: &Expr,
         context: &AnalysisContext,
@@ -736,7 +759,7 @@ impl SemanticAnalyzer {
                 }
             }
             Expr::BinaryOp { left, op, right } => {
-                let left_type = match self.expr_to_type(left, context) {
+                let left_type = match self.infer_expression_type(left, context) {
                     Ok(t) => t,
                     Err(expr_errors) => {
                         errors.extend(expr_errors);
@@ -745,7 +768,7 @@ impl SemanticAnalyzer {
                     }
                 };
 
-                let right_type = match self.expr_to_type(right, context) {
+                let right_type = match self.infer_expression_type(right, context) {
                     Ok(t) => t,
                     Err(expr_errors) => {
                         errors.extend(expr_errors);
@@ -888,6 +911,72 @@ impl SemanticAnalyzer {
         // Additional validation for string interpolation format specifiers
         // This could check if format specifiers like "bcd_lu:5" are valid
         let _ = (rig_file, errors, context); // Placeholder
+    }
+
+    fn validate_status_block(
+        &self,
+        rig_file: &RigFile,
+        errors: &mut Vec<SemanticError>,
+        context: &mut AnalysisContext,
+    ) {
+        if let Some(status) = &rig_file.impl_block.status {
+            for statement in &status.statements {
+                if let Statement::FunctionCall { name, args } = statement
+                    && name == "set_var"
+                {
+                    if args.len() != 2 {
+                        errors.push(SemanticError {
+                            position: None,
+                            error_type: SemanticErrorType::InvalidFunctionArguments {
+                                function_name: "set_var".to_string(),
+                                expected: 2,
+                                found: args.len(),
+                            },
+                        });
+                        continue;
+                    }
+
+                    let var_name = match &args[0] {
+                        Expr::String(name) => name,
+                        _ => {
+                            errors.push(SemanticError {
+                                position: None,
+                                error_type: SemanticErrorType::InvalidFunctionArgumentType {
+                                    function_name: "set_var".to_string(),
+                                    arg_index: 0,
+                                    expected: "string literal".to_string(),
+                                    found: "non-string expression".to_string(),
+                                },
+                            });
+                            continue;
+                        }
+                    };
+
+                    if let Some(expected_type) = self.schema.status.get(var_name) {
+                        if let Ok(found_type) = self.infer_expression_type(&args[1], context)
+                            && &found_type != expected_type
+                        {
+                            errors.push(SemanticError {
+                                position: None,
+                                error_type: SemanticErrorType::StatusVariableTypeMismatch {
+                                    name: var_name.clone(),
+                                    expected: expected_type.clone(),
+                                    found: found_type,
+                                },
+                            });
+                        }
+                    } else {
+                        errors.push(SemanticError {
+                            position: None,
+                            error_type: SemanticErrorType::InvalidStatusVariable {
+                                name: var_name.clone(),
+                                context: "status block".to_string(),
+                            },
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
