@@ -319,7 +319,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 
@@ -349,7 +349,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 
@@ -384,7 +384,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 
@@ -416,7 +416,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 
@@ -449,7 +449,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 
@@ -478,7 +478,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parser::parse(dsl_source)
+        let rig_file = parser::parse_rig_file(dsl_source)
             .map_err(|e| format!("Failed to parse DSL: {e}"))
             .unwrap();
 

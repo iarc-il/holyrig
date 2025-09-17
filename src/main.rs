@@ -33,7 +33,7 @@ fn load_rig_files<P: AsRef<Path>>(
             .to_string();
 
         let content = std::fs::read_to_string(path)?;
-        let rig_file = parser::parse(&content)?;
+        let rig_file = parser::parse_rig_file(&content)?;
         rigs.insert(file_name, Interpreter::new(rig_file));
     }
 

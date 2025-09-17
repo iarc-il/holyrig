@@ -490,7 +490,7 @@ impl Default for Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{Id, parse};
+    use crate::parser::{Id, parse_rig_file};
     use std::collections::BTreeMap;
 
     struct DummyBuiltins;
@@ -733,7 +733,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source).unwrap();
+        let rig_file = parse_rig_file(dsl_source).unwrap();
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env().unwrap();
         interpreter
@@ -1005,7 +1005,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = Env::new();
 
@@ -1154,7 +1154,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
@@ -1184,7 +1184,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
@@ -1211,7 +1211,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
 
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;

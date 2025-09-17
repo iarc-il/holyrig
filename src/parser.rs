@@ -678,7 +678,7 @@ pub fn parse_atomic_expr(expr: &str) -> Result<Expr, &str> {
     rig::atomic_expr(&tokens).map_err(|_| "Parsing atomic expr failed")
 }
 
-pub fn parse(source: &str) -> Result<RigFile, ParseError> {
+pub fn parse_rig_file(source: &str) -> Result<RigFile, ParseError> {
     parse_with_level(source, ErrorLevel::Normal)
 }
 
@@ -795,7 +795,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -825,7 +825,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -852,7 +852,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -893,7 +893,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
 
         assert_eq!(rig_file.impl_block.schema, "Transceiver");
         assert_eq!(rig_file.impl_block.name, "IC7300");
@@ -919,7 +919,7 @@ mod tests {
     #[test]
     fn test_parse_invalid_dsl() {
         let invalid_dsl = "invalid syntax here";
-        let result = parse(invalid_dsl);
+        let result = parse_rig_file(invalid_dsl);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(matches!(
@@ -933,7 +933,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_string() {
-        let result = parse("");
+        let result = parse_rig_file("");
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(matches!(
@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn test_tokenization_error_messages() {
         let invalid_chars = "impl Test for Rig { \x00 }";
-        let result = parse(invalid_chars);
+        let result = parse_rig_file(invalid_chars);
         assert!(result.is_err());
         let error = result.unwrap_err();
         if let ParseErrorType::Tokenization { message, .. } = error.error_type.as_ref() {
@@ -959,7 +959,7 @@ mod tests {
     #[test]
     fn test_syntax_error_messages() {
         let missing_brace = "impl Test for Rig {";
-        let result = parse(missing_brace);
+        let result = parse_rig_file(missing_brace);
         assert!(result.is_err());
         let error = result.unwrap_err();
         if let ParseErrorType::Syntax { .. } = error.error_type.as_ref() {
@@ -1002,7 +1002,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1025,7 +1025,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1042,7 +1042,7 @@ mod tests {
         let ic7300_content =
             std::fs::read_to_string("rigs/IC7300.rig").expect("Failed to read IC7300.rig");
 
-        let result = parse(&ic7300_content);
+        let result = parse_rig_file(&ic7300_content);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1068,7 +1068,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1122,7 +1122,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1191,7 +1191,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1272,7 +1272,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         assert_eq!(rig_file.impl_block.commands.len(), 3);
 
         let arithmetic_cmd = &rig_file.impl_block.commands["test_arithmetic"];
@@ -1321,7 +1321,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test_interpolation"];
         assert_eq!(cmd.statements.len(), 2);
 
@@ -1394,7 +1394,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
 
         let rig_file = result.unwrap();
@@ -1456,7 +1456,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_err());
         let error = result.unwrap_err();
         println!("Error:\n{error}");
@@ -1474,7 +1474,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_err());
         let error = result.unwrap_err();
         println!("Error:\n{error}");
@@ -1490,7 +1490,7 @@ mod tests {
              }
          "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_err());
         let error = result.unwrap_err();
         println!("Error:\n{error}");
@@ -1505,7 +1505,7 @@ mod tests {
              }
          "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_err());
         let error = result.unwrap_err();
         println!("Error:\n{error}");
@@ -1518,7 +1518,7 @@ mod tests {
             // Missing impl block
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_err());
         let error = result.unwrap_err();
         println!("Error:\n{error}");
@@ -1539,7 +1539,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         assert_eq!(rig_file.impl_block.enums.len(), 1);
         assert_eq!(rig_file.impl_block.enums[0].variants.len(), 0);
         assert!(rig_file.impl_block.init.is_some());
@@ -1570,7 +1570,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         assert_eq!(rig_file.settings.settings.len(), 2);
 
         let cmd = &rig_file.impl_block.commands["test"];
@@ -1601,7 +1601,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 3);
 
@@ -1629,7 +1629,7 @@ mod tests {
             long_id
         );
 
-        let rig_file = parse(&dsl_source)?;
+        let rig_file = parse_rig_file(&dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(var, _) => {
@@ -1658,7 +1658,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         assert_eq!(rig_file.impl_block.enums.len(), 1);
         assert_eq!(rig_file.impl_block.commands.len(), 1);
         Ok(())
@@ -1674,7 +1674,7 @@ mod tests {
             }
         "#;
 
-        let result = parse(dsl_source);
+        let result = parse_rig_file(dsl_source);
         assert!(result.is_ok());
     }
 
@@ -1688,7 +1688,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
@@ -1715,7 +1715,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
@@ -1752,7 +1752,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {
@@ -1782,7 +1782,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         assert_eq!(cmd.statements.len(), 2);
 
@@ -1809,7 +1809,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(dsl_source)?;
+        let rig_file = parse_rig_file(dsl_source)?;
         let cmd = &rig_file.impl_block.commands["test"];
         match &cmd.statements[0] {
             Statement::Assign(_, expr) => match expr {

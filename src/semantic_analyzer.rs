@@ -968,9 +968,9 @@ pub fn parse_and_validate_with_schema(
     use crate::schema_parser::parse_schema;
 
     let schema = parse_schema(schema_source).map_err(|x| vec![x])?;
-    use crate::parser::parse;
+    use crate::parser::parse_rig_file;
 
-    let rig_file = parse(rig_source).map_err(|x| vec![x])?;
+    let rig_file = parse_rig_file(rig_source).map_err(|x| vec![x])?;
 
     let analyzer = SemanticAnalyzer::new(schema.clone());
     analyzer
@@ -984,7 +984,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::{parser::parse, schema_parser::SchemaParameter};
+    use crate::{parser::parse_rig_file, schema_parser::SchemaParameter};
 
     fn create_test_schema() -> SchemaFile {
         let mut schema = SchemaFile {
@@ -1029,7 +1029,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(rig_file_source).unwrap();
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
         let result = analyzer.analyze(&rig_file);
 
         assert!(result.is_err());
@@ -1053,7 +1053,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(rig_file_source).unwrap();
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
         let result = analyzer.analyze(&rig_file);
 
         assert!(result.is_err());
@@ -1077,7 +1077,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(rig_file_source).unwrap();
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
         let result = analyzer.analyze(&rig_file);
 
         assert!(result.is_err());
@@ -1106,7 +1106,7 @@ mod tests {
             }
         "#;
 
-        let rig_file = parse(rig_file_source).unwrap();
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
         let result = analyzer.analyze(&rig_file);
 
         assert!(result.is_ok());
