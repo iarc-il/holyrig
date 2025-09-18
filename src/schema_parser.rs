@@ -312,12 +312,12 @@ schema Test {
     #[test]
     fn test_parse_command_without_params() {
         let schema_source = r#"
-version = 1
+        version = 1;
 
-schema Test {
-    fn simple_command();
-}
-"#;
+        schema Test {
+            fn simple_command();
+        }
+        "#;
 
         let result = parse_schema(schema_source);
         assert!(result.is_ok());

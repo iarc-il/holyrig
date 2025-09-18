@@ -104,6 +104,10 @@ pub enum SemanticErrorType {
         expected: DataType,
         found: DataType,
     },
+    InvalidCast {
+        from_type: DataType,
+        to_type: DataType,
+    },
 }
 
 impl fmt::Display for SemanticError {
@@ -267,6 +271,9 @@ impl fmt::Display for SemanticError {
                     f,
                     "Status variable '{name}' type mismatch: expected {expected:?}, found {found:?}"
                 )
+            }
+            SemanticErrorType::InvalidCast { from_type, to_type } => {
+                write!(f, "Invalid cast from {from_type:?} to {to_type:?}")
             }
         }
     }
@@ -800,7 +807,19 @@ impl SemanticAnalyzer {
                 self.validate_string_interpolation(parts, context, &mut errors);
                 DataType::Bytes
             }
-            Expr::Cast { expr, target_type } => todo!(),
+            Expr::Cast { expr, target_type } => {
+                let expr_type = self.infer_expression_type(expr, context)?;
+                if !self.validate_cast(&expr_type, target_type) {
+                    errors.push(SemanticError {
+                        position: None,
+                        error_type: SemanticErrorType::InvalidCast {
+                            from_type: expr_type,
+                            to_type: target_type.clone(),
+                        },
+                    });
+                }
+                target_type.clone()
+            }
         };
 
         if errors.is_empty() {
@@ -978,6 +997,18 @@ impl SemanticAnalyzer {
                 }
             }
         }
+    }
+
+    fn validate_cast(&self, from_type: &DataType, to_type: &DataType) -> bool {
+        matches!(
+            (from_type, to_type),
+            (DataType::Int, DataType::Float)
+                | (DataType::Float, DataType::Int)
+                | (DataType::Bool, DataType::Int)
+                | (DataType::Int, DataType::Bool)
+                | (DataType::Int, DataType::Enum(_))
+                | (DataType::Enum(_), DataType::Int)
+        )
     }
 }
 
@@ -1200,5 +1231,64 @@ mod tests {
         let result = analyzer.analyze(&rig_file);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_casts() {
+        let schema = create_test_schema();
+        let analyzer = SemanticAnalyzer::new(schema);
+
+        let rig_file_source = r#"
+            impl transceiver for TestRig {
+                enum Vfo {
+                    A = 0,
+                    B = 1,
+                }
+
+                fn set_freq(int freq, Vfo target) {
+                    write("AABBCCDD");
+                    x = freq as float;
+                    w = target as int;
+                    w = true as int;
+                    w = 0 as Vfo;
+                }
+            }
+        "#;
+
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
+        analyzer.analyze(&rig_file).unwrap();
+    }
+
+    #[test]
+    fn test_invalid_casts() {
+        let schema = create_test_schema();
+        let analyzer = SemanticAnalyzer::new(schema);
+
+        let rig_file_source = r#"
+            impl transceiver for TestRig {
+                enum Vfo {
+                    A = 0,
+                    B = 1,
+                }
+
+                fn set_freq(int freq, Vfo target) {
+                    x = "AABBCC" as float;
+                    w = target as float;
+                    w = s"invalid" as Vfo;
+                }
+            }
+        "#;
+
+        let rig_file = parse_rig_file(rig_file_source).unwrap();
+        let result = analyzer.analyze(&rig_file);
+
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 3);
+        assert!(
+            errors
+                .iter()
+                .all(|e| matches!(&e.error_type, SemanticErrorType::InvalidCast { .. }))
+        );
     }
 }
