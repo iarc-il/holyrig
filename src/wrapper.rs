@@ -5,9 +5,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::{
     Env,
     data_format::DataFormat,
-    interpreter::{Builtins, Interpreter, Value as InterpreterValue},
+    interpreter::{Builtins, Interpreter, Value},
     parser::{Expr, InterpolationPart},
-    serial::manager::Value,
 };
 
 pub trait ExternalApi: Send + Sync {
@@ -34,39 +33,22 @@ pub trait RigWrapper: Send + Sync {
 }
 
 impl<E: ExternalApi> Builtins for E {
-    async fn call(
-        &self,
-        name: &str,
-        args: &[InterpreterValue],
-        _env: &mut Env,
-    ) -> Result<InterpreterValue> {
+    async fn call(&self, name: &str, args: &[Value], _env: &mut Env) -> Result<Value> {
         match name {
             "write" => {
-                let [InterpreterValue::Bytes(bytes)] = args else {
+                let [Value::Bytes(bytes)] = args else {
                     bail!("Expected one bytes argument in write, got: {args:?}");
                 };
                 self.write(bytes).await?;
-                Ok(InterpreterValue::Unit)
+                Ok(Value::Unit)
             }
             "set_var" => {
-                let [InterpreterValue::String(var), value] = args else {
-                    bail!("Expected one bytes argument in write, got: {args:?}");
+                let [Value::String(var), value] = args else {
+                    bail!("Expected string and value arguments in set_var, got: {args:?}");
                 };
 
-                let value = match value {
-                    InterpreterValue::Integer(int) => Value::Int(*int),
-                    InterpreterValue::Boolean(bool) => Value::Bool(*bool),
-                    InterpreterValue::EnumVariant {
-                        enum_name: _,
-                        variant_name,
-                        value: _,
-                    } => Value::Enum(variant_name.clone()),
-                    InterpreterValue::Float(float) => Value::Int(*float as i64),
-                    other => todo!("{:?}", other),
-                };
-
-                self.set_var(var, value)?;
-                Ok(InterpreterValue::Unit)
+                self.set_var(var, value.clone())?;
+                Ok(Value::Unit)
             }
             "read" => {
                 bail!("Function read is not supported in this context, use call_no_eval");
@@ -75,12 +57,7 @@ impl<E: ExternalApi> Builtins for E {
         }
     }
 
-    async fn call_no_eval(
-        &self,
-        name: &str,
-        args: &[Expr],
-        env: &mut Env,
-    ) -> Result<InterpreterValue> {
+    async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
         if name == "read" {
             match args {
                 [Expr::StringInterpolation { parts }] => {
@@ -99,7 +76,7 @@ impl<E: ExternalApi> Builtins for E {
                     bail!("Expected template string in parse, got: {args:?}");
                 }
             };
-            Ok(InterpreterValue::Unit)
+            Ok(Value::Unit)
         } else {
             bail!("Unknown function {name} in this context");
         }
@@ -168,7 +145,7 @@ fn parse_response_with_template(
                 ))?;
 
                 if name != "_" {
-                    env.set(name.clone(), InterpreterValue::Integer(value as i64));
+                    env.set(name.clone(), Value::Integer(value as i64));
                 }
                 offset += length;
             }
@@ -380,7 +357,7 @@ mod tests {
         RigWrapper::execute_status(&interpreter, &external).await?;
 
         let var = external.set_vars.read().unwrap().get("freq").cloned();
-        assert_eq!(var, Some(Value::Int(78563412)));
+        assert_eq!(var, Some(Value::Integer(78563412)));
         Ok(())
     }
 

@@ -6,18 +6,12 @@ use tokio::time::{Duration, sleep};
 use xdg::BaseDirectories;
 
 use crate::gui::GuiMessage;
+use crate::interpreter::Value;
 use crate::rig::{RigSettings, Settings};
 use crate::serial::device::{DeviceCommand, DeviceMessage, SerialDevice};
 use crate::wrapper::{ExternalApi, RigWrapper};
 
 const RIGS_FILE: &str = "rigs.toml";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Value {
-    Int(i64),
-    Bool(bool),
-    Enum(String),
-}
 
 #[derive(Debug, Clone)]
 pub enum CommandResponse {
