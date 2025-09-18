@@ -1,20 +1,22 @@
 use anyhow::Result;
 use eframe::egui;
-use schema::Schema;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use holyrig::{Interpreter, gui, parser, schema, serial, udp_server};
+use holyrig::{
+    gui, parse_and_validate_with_schema, parse_schema, serial, udp_server,
+    Interpreter, SchemaFile,
+};
 
 use gui::GuiMessage;
 use serial::manager::DeviceManager;
 
 fn load_rig_files<P: AsRef<Path>>(
     dir_path: P,
-    _schema: &Schema,
+    schema: &SchemaFile,
 ) -> Result<Arc<HashMap<String, Interpreter>>> {
     let mut rigs = HashMap::new();
 
@@ -33,20 +35,20 @@ fn load_rig_files<P: AsRef<Path>>(
             .to_string();
 
         let content = std::fs::read_to_string(path)?;
-        let rig_file = parser::parse_rig_file(&content)?;
+        let rig_file = parse_and_validate_with_schema(&content, schema).unwrap();
         rigs.insert(file_name, Interpreter::new(rig_file));
     }
 
     Ok(Arc::new(rigs))
 }
 
-fn load_schema_file(base_dirs: &xdg::BaseDirectories) -> Result<schema::Schema> {
+fn load_schema_file(base_dirs: &xdg::BaseDirectories) -> Result<SchemaFile> {
     let schema_path = if cfg!(debug_assertions) {
         std::path::PathBuf::from("./schema/transceiver.toml")
     } else {
         base_dirs.place_config_file("schema.toml")?
     };
-    schema::Schema::load(schema_path).map_err(|err| anyhow::anyhow!("Failed to load schema: {err}"))
+    Ok(parse_schema(&std::fs::read_to_string(schema_path)?)?)
 }
 
 #[tokio::main]

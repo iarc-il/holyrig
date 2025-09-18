@@ -1084,14 +1084,9 @@ pub fn semantic_errors_to_parse_errors(
 
 pub fn parse_and_validate_with_schema(
     rig_source: &str,
-    schema_source: &str,
+    schema: &SchemaFile,
 ) -> Result<RigFile, Vec<ParseError>> {
-    use crate::schema_parser::parse_schema;
-
-    let schema = parse_schema(schema_source).map_err(|x| vec![x])?;
-    use crate::parser::parse_rig_file;
-
-    let rig_file = parse_rig_file(rig_source).map_err(|x| vec![x])?;
+    let rig_file = crate::parser::parse_rig_file(rig_source).map_err(|x| vec![x])?;
 
     let analyzer = SemanticAnalyzer::new(schema.clone());
     analyzer

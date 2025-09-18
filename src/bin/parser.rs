@@ -32,18 +32,21 @@ fn main() -> Result<()> {
     };
 
     match (rig, schema) {
-        (Some(rig), Some(schema)) => match parse_and_validate_with_schema(&rig, &schema) {
-            Ok(rig_file) => {
-                println!("Successfully parsed schema and rig!");
-                println!(" - Schema: {}", rig_file.impl_block.schema);
-                println!(" - Name: {}", rig_file.impl_block.name);
-            }
-            Err(errors) => {
-                for err in errors {
-                    eprintln!("{err}");
+        (Some(rig), Some(schema)) => {
+            let schema = parse_schema(&schema)?;
+            match parse_and_validate_with_schema(&rig, &schema) {
+                Ok(rig_file) => {
+                    println!("Successfully parsed schema and rig!");
+                    println!(" - Schema: {}", rig_file.impl_block.schema);
+                    println!(" - Name: {}", rig_file.impl_block.name);
+                }
+                Err(errors) => {
+                    for err in errors {
+                        eprintln!("{err}");
+                    }
                 }
             }
-        },
+        }
         (None, Some(schema)) => match parse_schema(&schema) {
             Ok(schema) => {
                 println!("Successfully parsed schema \"{}\"!", schema.name);
