@@ -61,6 +61,7 @@ impl<E: ExternalApi> Builtins for E {
                         variant_name,
                         value: _,
                     } => Value::Enum(variant_name.clone()),
+                    InterpreterValue::Float(float) => Value::Int(*float as i64),
                     other => todo!("{:?}", other),
                 };
 
