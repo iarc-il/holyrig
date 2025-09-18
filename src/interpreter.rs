@@ -97,6 +97,22 @@ impl Env {
             })
     }
 
+    pub fn get_enum_variant_by_value(&self, enum_name: &str, value: u32) -> Option<String> {
+        self.enums
+            .get(enum_name)
+            .and_then(|variants| {
+                variants
+                    .iter()
+                    .find(|(_, v)| **v == value)
+                    .map(|(name, _)| name.clone())
+            })
+            .or_else(|| {
+                self.parent
+                    .as_ref()
+                    .and_then(|parent| parent.get_enum_variant_by_value(enum_name, value))
+            })
+    }
+
     pub fn register_enum(&mut self, enum_def: &crate::parser::Enum) {
         self.enums.insert(
             enum_def.name.clone(),
@@ -278,7 +294,8 @@ impl Interpreter {
                 self.process_parsed_string_interpolation(parts, env)
             }
             Expr::Cast { expr, target_type } => {
-                todo!()
+                let value = self.evaluate_expression(expr, env)?;
+                self.apply_cast(&value, target_type, env)
             }
         }
     }
@@ -428,6 +445,32 @@ impl Interpreter {
                     _ => Err(anyhow!("Cannot interpolate value type: {:?}", value)),
                 }
             }
+        }
+    }
+
+    fn apply_cast(&self, value: &Value, target_type: &DataType, env: &mut Env) -> Result<Value> {
+        match (value, target_type) {
+            (Value::Integer(i), DataType::Float) => Ok(Value::Float(*i as f64)),
+            (Value::Integer(i), DataType::Bool) => Ok(Value::Boolean(*i != 0)),
+            (Value::Integer(i), DataType::Enum(enum_name)) => {
+                if let Some(variant_name) = env.get_enum_variant_by_value(enum_name, *i as u32) {
+                    Ok(Value::EnumVariant {
+                        enum_name: enum_name.clone(),
+                        variant_name,
+                        value: *i as u32,
+                    })
+                } else {
+                    Err(anyhow!("Invalid enum value: {} for enum {}", i, enum_name))
+                }
+            }
+            (Value::Float(f), DataType::Int) => Ok(Value::Integer(*f as i64)),
+            (Value::Boolean(b), DataType::Int) => Ok(Value::Integer(if *b { 1 } else { 0 })),
+            (Value::EnumVariant { value, .. }, DataType::Int) => Ok(Value::Integer(*value as i64)),
+            _ => Err(anyhow!(
+                "Invalid cast from {:?} to {:?}",
+                value,
+                target_type
+            )),
         }
     }
 
