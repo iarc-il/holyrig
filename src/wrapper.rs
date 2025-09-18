@@ -4,11 +4,10 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     Env,
-    commands::Value,
     data_format::DataFormat,
     interpreter::{Builtins, Interpreter, Value as InterpreterValue},
     parser::{Expr, InterpolationPart},
-    rig_api::RigApi,
+    serial::manager::Value,
 };
 
 pub trait ExternalApi: Send + Sync {
@@ -32,55 +31,6 @@ pub trait RigWrapper: Send + Sync {
         &self,
         external: &impl ExternalApi,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
-}
-
-impl RigWrapper for RigApi {
-    async fn execute_init(&self, external: &impl ExternalApi) -> Result<()> {
-        for (index, data) in self.build_init_commands()?.into_iter().enumerate() {
-            let expected_length = self.get_init_response_length(index)?.unwrap();
-
-            external.write(&data).await?;
-            let response = external.read(expected_length).await?;
-            self.validate_init_response(index, &response)?;
-        }
-        Ok(())
-    }
-
-    async fn execute_command(
-        &self,
-        command_name: &str,
-        params: HashMap<String, String>,
-        external: &impl ExternalApi,
-    ) -> Result<HashMap<String, Value>> {
-        let params = self.parse_param_values(command_name, params)?;
-        let data = self.build_command(command_name, &params)?;
-        let expected_length = self.get_command_response_length(command_name)?.unwrap();
-
-        external.write(&data).await?;
-        let response = external.read(expected_length).await?;
-        self.parse_command_response(command_name, &response)
-            .map_err(|err| anyhow::anyhow!(err))
-    }
-
-    async fn execute_status(&self, external: &impl ExternalApi) -> Result<()> {
-        let status_commands = self.get_status_commands()?;
-
-        for (index, data) in status_commands.into_iter().enumerate() {
-            let expected_length = self.get_status_response_length(index)?.unwrap();
-
-            external.write(&data).await?;
-            let response = external.read(expected_length).await?;
-
-            let values = self
-                .parse_status_response(index, &response)
-                .map_err(|err| anyhow::anyhow!(err))?;
-
-            for (name, value) in values {
-                external.set_var(&name, value)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<E: ExternalApi> Builtins for E {
@@ -135,7 +85,6 @@ impl<E: ExternalApi> Builtins for E {
                 [Expr::StringInterpolation { parts }] => {
                     let expected_length = calculate_template_length(parts);
                     let response = self.read(expected_length).await?;
-                    println!("Read: {response:?}");
 
                     parse_response_with_template(parts, &response, env)?;
                 }

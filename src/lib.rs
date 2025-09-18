@@ -1,13 +1,9 @@
-pub mod commands;
 pub mod data_format;
 pub mod gui;
 pub mod interpreter;
 pub mod parser;
 pub mod parser_errors;
 pub mod rig;
-pub mod rig_api;
-pub mod rig_file;
-pub mod schema;
 pub mod schema_parser;
 pub mod semantic_analyzer;
 pub mod serial;

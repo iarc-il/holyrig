@@ -7,8 +7,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use holyrig::{
-    gui, parse_and_validate_with_schema, parse_schema, serial, udp_server,
-    Interpreter, SchemaFile,
+    Interpreter, SchemaFile, gui, parse_and_validate_with_schema, parse_schema, serial, udp_server,
 };
 
 use gui::GuiMessage;
@@ -44,7 +43,7 @@ fn load_rig_files<P: AsRef<Path>>(
 
 fn load_schema_file(base_dirs: &xdg::BaseDirectories) -> Result<SchemaFile> {
     let schema_path = if cfg!(debug_assertions) {
-        std::path::PathBuf::from("./schema/transceiver.toml")
+        std::path::PathBuf::from("schema/transceiver.schema")
     } else {
         base_dirs.place_config_file("schema.toml")?
     };
