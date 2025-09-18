@@ -114,7 +114,7 @@ impl Transceiver for IC7300 {
 
         write("FEFE94E0.04.FD");
         read("FEFE94E004FD.FEFEE094.04.{mode:2}.FD");
-        set_var(s"mode", mode);
+        set_var(s"mode", mode as Mode);
 
         // write("FEFE94E0.1409.FD");
         // read("FEFE94E01409FD.FEFEE094.1409.{pitch:bcd_bu:2}.FD");
@@ -122,15 +122,15 @@ impl Transceiver for IC7300 {
 
         write("FEFE94E0.1C00.FD");
         read("FEFE94E01C00FD.FEFEE094.1C00.{transmit:1}.FD");
-        set_var(s"transmit", transmit);
+        set_var(s"transmit", transmit as bool);
 
         write("FEFE94E0.2101.FD");
         read("FEFE94E02101FD.FEFEE094.2101.{rit:1}.FD");
-        set_var(s"rit", rit);
+        set_var(s"rit", rit as bool);
 
         write("FEFE94E0.2102.FD");
         read("FEFE94E02102FD.FEFEE094.2102.{xit:1}.FD");
-        set_var(s"xit", xit);
+        set_var(s"xit", xit as bool);
 
         // Missing duplicated status 6 and 7 from the original file
     }
