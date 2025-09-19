@@ -7,7 +7,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use holyrig::{
-    Interpreter, SchemaFile, gui, parse_and_validate_with_schema, parse_schema, serial, udp_server,
+    Interpreter, SchemaFile, gui, parse_and_validate_with_schema, parse_schema, rigctld, serial,
+    udp_server,
 };
 
 use gui::GuiMessage;
@@ -62,13 +63,23 @@ async fn main() -> Result<()> {
 
     let gui_command_sender = device_manager.sender();
     let udp_command_sender = device_manager.sender();
+    let rigctld_command_sender = device_manager.sender();
     let udp_message_receiver = device_manager.receiver();
+    let rigctld_message_receiver = device_manager.receiver();
 
     tokio::spawn(async move { device_manager.run(gui_sender).await });
 
     tokio::spawn(async move {
         if let Err(err) = udp_server::run_server(udp_command_sender, udp_message_receiver).await {
             eprintln!("UDP server error: {err}");
+        }
+    });
+
+    tokio::spawn(async move {
+        if let Err(err) =
+            rigctld::run_server(rigctld_command_sender, rigctld_message_receiver).await
+        {
+            eprintln!("Rigctld server error: {err}");
         }
     });
 

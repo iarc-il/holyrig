@@ -4,6 +4,7 @@ pub mod interpreter;
 pub mod parser;
 pub mod parser_errors;
 pub mod rig;
+pub mod rigctld;
 pub mod schema_parser;
 pub mod semantic_analyzer;
 pub mod serial;
