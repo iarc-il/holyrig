@@ -55,7 +55,6 @@ impl fmt::Display for Value {
 pub struct Env {
     variables: HashMap<String, Value>,
     parent: Option<Box<Env>>,
-    pub output: Vec<String>,
     enums: HashMap<String, HashMap<String, u32>>,
 }
 
@@ -68,7 +67,6 @@ impl Env {
         Env {
             variables: HashMap::new(),
             parent: Some(Box::new(parent)),
-            output: Vec::new(),
             enums: HashMap::new(),
         }
     }
@@ -648,42 +646,34 @@ fn parse_response_with_template(
 mod tests {
     use super::*;
     use crate::parser::{Id, parse_rig_file};
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, sync::RwLock};
 
-    struct DummyBuiltins;
+    struct DummyExternalApi {
+        output: RwLock<Vec<String>>,
+    }
 
-    impl Builtins for DummyBuiltins {
-        async fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value> {
-            match name {
-                "write" => {
-                    if args.len() != 1 {
-                        bail!("write() expects exactly 1 argument, got {}", args.len());
-                    }
-
-                    let [Value::Bytes(bytes)] = args else {
-                        bail!("Unexpected args: {args:?}");
-                    };
-
-                    env.output.push(format!("WRITE: {:?}", bytes));
-                    Ok(Value::Unit)
-                }
-                _ => Err(anyhow!("Unkown function {name}")),
+    impl DummyExternalApi {
+        fn new() -> Self {
+            Self {
+                output: RwLock::new(vec![]),
             }
         }
-        async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
-            if name == "read" {
-                if args.len() != 1 {
-                    return Err(anyhow!(
-                        "read() expects exactly 1 argument, got {}",
-                        args.len()
-                    ));
-                }
+    }
 
-                env.output.push(format!("READ: {:?}", args[0]));
-                Ok(Value::Unit)
-            } else {
-                bail!("Function {name} is unsupported in this context");
-            }
+    impl ExternalApi for DummyExternalApi {
+        async fn write(&self, data: &[u8]) -> Result<()> {
+            self.output
+                .write()
+                .unwrap()
+                .push(format!("WRITE: {:?}", data));
+            Ok(())
+        }
+        async fn read(&self, size: usize) -> Result<Vec<u8>> {
+            self.output.write().unwrap().push(format!("READ: {size}"));
+            Ok(vec![])
+        }
+        fn set_var(&self, _var: &str, _value: Value) -> Result<()> {
+            Ok(())
         }
     }
 
@@ -736,7 +726,7 @@ mod tests {
 
         let statement = Statement::Assign(Id::new("x"), Expr::Integer(42));
         interpreter
-            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .execute_statement(&statement, &DummyExternalApi::new(), &mut env)
             .await?;
 
         let expr = Expr::Identifier(Id::new("x"));
@@ -754,12 +744,13 @@ mod tests {
             name: "write".to_string(),
             args: vec![Expr::Bytes(vec![1, 2, 3, 4])],
         };
+        let api = DummyExternalApi::new();
         interpreter
-            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .execute_statement(&statement, &api, &mut env)
             .await?;
 
-        assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read().unwrap().len(), 1);
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -832,12 +823,13 @@ mod tests {
             }]),
         };
 
+        let api = DummyExternalApi::new();
         interpreter
-            .execute_statement(&statement, &DummyBuiltins, &mut env)
+            .execute_statement(&statement, &api, &mut env)
             .await?;
 
-        assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: [1]");
+        assert_eq!(api.output.read().unwrap().len(), 1);
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1]");
         Ok(())
     }
 
@@ -893,17 +885,15 @@ mod tests {
         let rig_file = parse_rig_file(dsl_source).unwrap();
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env().unwrap();
-        interpreter
-            .execute_init(&DummyBuiltins, &mut env)
-            .await
-            .unwrap();
+        let api = DummyExternalApi::new();
+        interpreter.execute_init(&api, &mut env).await.unwrap();
 
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
 
         assert_eq!(env.get_enum_variant("Vfo", "A"), Some(0));
         assert_eq!(env.get_enum_variant("Vfo", "B"), Some(1));
 
-        assert!(env.output.len() == 1);
+        assert!(api.output.read().unwrap().len() == 1);
 
         let args = vec![
             Value::Integer(14500000),
@@ -914,12 +904,12 @@ mod tests {
             },
         ];
         interpreter
-            .execute_command("set_freq", &args, &DummyBuiltins, &mut env)
+            .execute_command("set_freq", &args, &api, &mut env)
             .await?;
 
-        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
 
-        let last_output = env.output.last().unwrap();
+        let last_output = api.output.read().unwrap().last().unwrap().clone();
         assert!(last_output.contains("WRITE: [254, 254, 148, 224, 37, 0, 160, 64, 221, 0, 253]"));
         Ok(())
     }
@@ -1083,13 +1073,14 @@ mod tests {
             }]),
         };
 
+        let api = DummyExternalApi::new();
         interpreter
-            .execute_statement(&nested_if, &DummyBuiltins, &mut env)
+            .execute_statement(&nested_if, &api, &mut env)
             .await?;
 
-        assert_eq!(env.output.len(), 2);
-        assert_eq!(env.output[0], "WRITE: [1]");
-        assert_eq!(env.output[1], "WRITE: [2]");
+        assert_eq!(api.output.read().unwrap().len(), 2);
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1]");
+        assert_eq!(api.output.read().unwrap()[1], "WRITE: [2]");
         Ok(())
     }
 
@@ -1140,7 +1131,7 @@ mod tests {
         };
 
         let result = interpreter
-            .execute_statement(&if_stmt, &DummyBuiltins, &mut env)
+            .execute_statement(&if_stmt, &DummyExternalApi::new(), &mut env)
             .await;
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1167,12 +1158,13 @@ mod tests {
         let mut env = Env::new();
 
         let args = vec![Value::Integer(10), Value::Boolean(true)];
+        let api = DummyExternalApi::new();
         interpreter
-            .execute_command("test_params", &args, &DummyBuiltins, &mut env)
+            .execute_command("test_params", &args, &api, &mut env)
             .await?;
 
-        assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read().unwrap().len(), 1);
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -1315,16 +1307,17 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env()?;
 
+        let api = DummyExternalApi::new();
         let result = interpreter
-            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .execute_command("test", &[], &api, &mut env)
             .await;
         assert!(
             result.is_ok(),
             "Command with qualified identifiers should execute successfully"
         );
 
-        assert_eq!(env.output.len(), 1);
-        assert_eq!(env.output[0], "WRITE: [0]");
+        assert_eq!(api.output.read().unwrap().len(), 1);
+        assert_eq!(api.output.read().unwrap()[0], "WRITE: [0]");
         Ok(())
     }
 
@@ -1346,7 +1339,7 @@ mod tests {
         let mut env = interpreter.create_env()?;
 
         let result = interpreter
-            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .execute_command("test", &[], &DummyExternalApi::new(), &mut env)
             .await;
 
         assert!(result.is_err());
@@ -1376,7 +1369,7 @@ mod tests {
         env.set("var".to_string(), Value::Integer(42));
 
         let result = interpreter
-            .execute_command("test", &[], &DummyBuiltins, &mut env)
+            .execute_command("test", &[], &DummyExternalApi::new(), &mut env)
             .await;
 
         assert!(result.is_err());

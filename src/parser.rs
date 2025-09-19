@@ -1050,7 +1050,7 @@ mod tests {
     #[test]
     fn test_parse_real_ic7300_file() {
         let ic7300_content =
-            std::fs::read_to_string("rigs/IC7300.rig").expect("Failed to read IC7300.rig");
+            std::fs::read_to_string("rigs/IC-7300.rig").expect("Failed to read IC7300.rig");
 
         let result = parse_rig_file(&ic7300_content);
         assert!(result.is_ok());

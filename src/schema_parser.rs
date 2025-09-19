@@ -244,25 +244,25 @@ mod tests {
     #[test]
     fn test_parse_basic_schema() -> Result<()> {
         let schema_source = r#"
-version = 1
+        version = 1;
 
-schema Transceiver {
-    enum Vfo {
-        A,
-        B,
-        Unknown,
-    }
+        schema Transceiver {
+            enum Vfo {
+                A,
+                B,
+                Unknown,
+            }
 
-    fn set_freq(int freq, Vfo target);
-    fn clear_rit();
+            fn set_freq(int freq, Vfo target);
+            fn clear_rit();
 
-    status {
-        int freq_a;
-        bool transmit;
-        Vfo vfo;
-    }
-}
-"#;
+            status {
+                int freq_a;
+                bool transmit;
+                Vfo vfo;
+            }
+        }
+        "#;
 
         let schema = parse_schema(schema_source)?;
 
@@ -291,15 +291,15 @@ schema Transceiver {
     #[test]
     fn test_parse_enum_only() {
         let schema_source = r#"
-version = 1
+        version = 1;
 
-schema Test {
-    enum Mode {
-        USB,
-        LSB,
-    }
-}
-"#;
+        schema Test {
+            enum Mode {
+                USB,
+                LSB,
+            }
+        }
+        "#;
 
         let result = parse_schema(schema_source);
         assert!(result.is_ok());

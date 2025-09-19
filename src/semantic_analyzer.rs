@@ -1105,7 +1105,7 @@ mod tests {
     fn create_test_schema() -> SchemaFile {
         let mut schema = SchemaFile {
             version: 1,
-            name: "transceiver".to_string(),
+            name: "Transceiver".to_string(),
             enums: BTreeMap::new(),
             commands: BTreeMap::new(),
             status: BTreeMap::new(),
@@ -1139,8 +1139,8 @@ mod tests {
 
         let rig_file_source = r#"
             impl Transceiver for TestRig {
-                fn test_cmd(int param) {
-                    undefined_var = 42;
+                fn set_freq(int freq, Vfo target) {
+                    a = undefined_var + 1;
                 }
             }
         "#;
@@ -1163,7 +1163,7 @@ mod tests {
 
         let rig_file_source = r#"
             impl Transceiver for TestRig {
-                fn test_cmd(int param) {
+                fn set_freq(int freq, Vfo target) {
                     unknown_function();
                 }
             }
@@ -1188,7 +1188,7 @@ mod tests {
         let rig_file_source = r#"
             impl Transceiver for TestRig {
                 fn unknown_command(int param) {
-                    write("test");
+                    write(s"test");
                 }
             }
         "#;
@@ -1234,7 +1234,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new(schema);
 
         let rig_file_source = r#"
-            impl transceiver for TestRig {
+            impl Transceiver for TestRig {
                 enum Vfo {
                     A = 0,
                     B = 1,
@@ -1244,7 +1244,7 @@ mod tests {
                     write("AABBCCDD");
                     x = freq as float;
                     w = target as int;
-                    w = true as int;
+                    w = (1 == 1) as int;
                     w = 0 as Vfo;
                 }
             }
@@ -1260,7 +1260,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new(schema);
 
         let rig_file_source = r#"
-            impl transceiver for TestRig {
+            impl Transceiver for TestRig {
                 enum Vfo {
                     A = 0,
                     B = 1,
