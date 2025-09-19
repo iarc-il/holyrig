@@ -149,7 +149,7 @@ impl Interpreter {
         &self,
         name: &str,
         args: &[Value],
-        builtins: &impl ExternalApi,
+        api: &impl ExternalApi,
         env: &mut Env,
     ) -> Result<()> {
         let command = self
@@ -173,26 +173,26 @@ impl Interpreter {
         }
 
         for statement in &command.statements {
-            self.execute_statement(statement, builtins, &mut local_env)
+            self.execute_statement(statement, api, &mut local_env)
                 .await?;
         }
 
         Ok(())
     }
 
-    pub async fn execute_init(&self, builtins: &impl ExternalApi, env: &mut Env) -> Result<()> {
+    pub async fn execute_init(&self, api: &impl ExternalApi, env: &mut Env) -> Result<()> {
         if let Some(init) = &self.rig_file.impl_block.init {
             for statement in &init.statements {
-                self.execute_statement(statement, builtins, env).await?;
+                self.execute_statement(statement, api, env).await?;
             }
         }
         Ok(())
     }
 
-    pub async fn execute_status(&self, builtins: &impl ExternalApi, env: &mut Env) -> Result<()> {
+    pub async fn execute_status(&self, api: &impl ExternalApi, env: &mut Env) -> Result<()> {
         if let Some(status) = &self.rig_file.impl_block.status {
             for statement in &status.statements {
-                self.execute_statement(statement, builtins, env).await?;
+                self.execute_statement(statement, api, env).await?;
             }
         }
         Ok(())
@@ -202,7 +202,7 @@ impl Interpreter {
         &self,
         name: &str,
         args: &[Expr],
-        builtins: &impl ExternalApi,
+        api: &impl ExternalApi,
         env: &mut Env,
     ) -> Result<()> {
         match name {
@@ -217,12 +217,12 @@ impl Interpreter {
                             })
                             .sum();
 
-                        let response = builtins.read(expected_length).await?;
+                        let response = api.read(expected_length).await?;
 
                         parse_response_with_template(parts, &response, env)?;
                     }
                     [Expr::Bytes(bytes)] => {
-                        let response = builtins.read(bytes.len()).await?;
+                        let response = api.read(bytes.len()).await?;
                         if &response != bytes {
                             bail!("Got invalid response: {response:?}");
                         }
@@ -242,7 +242,7 @@ impl Interpreter {
                 let [Value::Bytes(bytes)] = &args[..] else {
                     bail!("Expected one bytes argument in write, got: {args:?}");
                 };
-                builtins.write(bytes).await?;
+                api.write(bytes).await?;
                 Ok(())
             }
             "set_var" => {
@@ -255,7 +255,7 @@ impl Interpreter {
                     bail!("Expected string and value arguments in set_var, got: {args:?}");
                 };
 
-                builtins.set_var(var, value.clone())?;
+                api.set_var(var, value.clone())?;
                 Ok(())
             }
             _ => Err(anyhow!("Unknown function: {name}")),
@@ -265,7 +265,7 @@ impl Interpreter {
     async fn execute_statement(
         &self,
         statement: &Statement,
-        builtins: &impl ExternalApi,
+        api: &impl ExternalApi,
         env: &mut Env,
     ) -> Result<()> {
         match statement {
@@ -274,8 +274,7 @@ impl Interpreter {
                 env.set(id.to_string(), value);
             }
             Statement::FunctionCall { name, args } => {
-                self.execute_function_call(name, args, builtins, env)
-                    .await?
+                self.execute_function_call(name, args, api, env).await?
             }
             Statement::If {
                 condition,
@@ -286,13 +285,13 @@ impl Interpreter {
                 match condition_value {
                     Value::Boolean(true) => {
                         for stmt in then_body {
-                            Box::pin(self.execute_statement(stmt, builtins, env)).await?;
+                            Box::pin(self.execute_statement(stmt, api, env)).await?;
                         }
                     }
                     Value::Boolean(false) => {
                         if let Some(else_stmts) = else_body {
                             for stmt in else_stmts {
-                                Box::pin(self.execute_statement(stmt, builtins, env)).await?;
+                                Box::pin(self.execute_statement(stmt, api, env)).await?;
                             }
                         }
                     }
