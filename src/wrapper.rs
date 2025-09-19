@@ -52,7 +52,9 @@ impl RigWrapper for Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, sync::RwLock};
+    use std::collections::BTreeMap;
+
+    use parking_lot::RwLock;
 
     use super::*;
     use crate::parser;
@@ -73,18 +75,18 @@ mod tests {
         }
 
         fn add_read_response(&self, data: Vec<u8>) {
-            self.read_responses.write().unwrap().push(data);
+            self.read_responses.write().push(data);
         }
     }
 
     impl ExternalApi for MockExternalApi {
         async fn write(&self, data: &[u8]) -> Result<()> {
-            self.written_data.write().unwrap().push(data.to_vec());
+            self.written_data.write().push(data.to_vec());
             Ok(())
         }
 
         async fn read(&self, size: usize) -> Result<Vec<u8>> {
-            let mut responses = self.read_responses.write().unwrap();
+            let mut responses = self.read_responses.write();
             if responses.is_empty() {
                 Ok(vec![0; size])
             } else {
@@ -93,10 +95,7 @@ mod tests {
         }
 
         fn set_var(&self, var: &str, value: Value) -> Result<()> {
-            self.set_vars
-                .write()
-                .unwrap()
-                .insert(var.to_string(), value);
+            self.set_vars.write().insert(var.to_string(), value);
             Ok(())
         }
     }
@@ -126,7 +125,7 @@ mod tests {
         assert!(result.is_ok(), "Init should succeed: {:?}", result);
 
         // Check that write was called with the expected data
-        let written_data = external.written_data.read().unwrap();
+        let written_data = external.written_data.read();
         assert_eq!(written_data.len(), 1);
         assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0xFD]);
     }
@@ -159,7 +158,7 @@ mod tests {
         assert!(result.is_ok(), "Command should succeed: {:?}", result);
 
         // Check that write was called with the expected data
-        let written_data = external.written_data.read().unwrap();
+        let written_data = external.written_data.read();
         assert_eq!(written_data.len(), 1);
         // FEFE94E025 + freq(14500000 in int_lu:4) + FD
         let expected = vec![0xFE, 0xFE, 0x94, 0xE0, 0x25, 0xA0, 0x40, 0xDD, 0x00, 0xFD];
@@ -191,7 +190,7 @@ mod tests {
         assert!(result.is_ok(), "Status should succeed: {:?}", result);
 
         // Check that write was called
-        let written_data = external.written_data.read().unwrap();
+        let written_data = external.written_data.read();
         assert_eq!(written_data.len(), 1);
         assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0x03, 0xFD]);
     }
@@ -225,7 +224,7 @@ mod tests {
 
         RigWrapper::execute_status(&interpreter, &external).await?;
 
-        let var = external.set_vars.read().unwrap().get("freq").cloned();
+        let var = external.set_vars.read().get("freq").cloned();
         assert_eq!(var, Some(Value::Integer(78563412)));
         Ok(())
     }
@@ -256,7 +255,7 @@ mod tests {
 
         RigWrapper::execute_init(&interpreter, &external).await?;
 
-        let written_data = external.written_data.read().unwrap();
+        let written_data = external.written_data.read();
         assert_eq!(written_data.len(), 1);
         assert_eq!(written_data[0], vec![0xFE, 0xFE, 0x94, 0xE0, 0xFD]);
         Ok(())

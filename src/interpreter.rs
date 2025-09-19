@@ -643,9 +643,11 @@ fn parse_response_with_template(
 
 #[cfg(test)]
 mod tests {
+    use parking_lot::RwLock;
+
     use super::*;
     use crate::parser::{Id, parse_rig_file};
-    use std::{collections::BTreeMap, sync::RwLock};
+    use std::collections::BTreeMap;
 
     struct DummyExternalApi {
         output: RwLock<Vec<String>>,
@@ -661,14 +663,11 @@ mod tests {
 
     impl ExternalApi for DummyExternalApi {
         async fn write(&self, data: &[u8]) -> Result<()> {
-            self.output
-                .write()
-                .unwrap()
-                .push(format!("WRITE: {:?}", data));
+            self.output.write().push(format!("WRITE: {:?}", data));
             Ok(())
         }
         async fn read(&self, size: usize) -> Result<Vec<u8>> {
-            self.output.write().unwrap().push(format!("READ: {size}"));
+            self.output.write().push(format!("READ: {size}"));
             Ok(vec![])
         }
         fn set_var(&self, _var: &str, _value: Value) -> Result<()> {
@@ -748,8 +747,8 @@ mod tests {
             .execute_statement(&statement, &api, &mut env)
             .await?;
 
-        assert_eq!(api.output.read().unwrap().len(), 1);
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read().len(), 1);
+        assert_eq!(api.output.read()[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -827,8 +826,8 @@ mod tests {
             .execute_statement(&statement, &api, &mut env)
             .await?;
 
-        assert_eq!(api.output.read().unwrap().len(), 1);
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1]");
+        assert_eq!(api.output.read().len(), 1);
+        assert_eq!(api.output.read()[0], "WRITE: [1]");
         Ok(())
     }
 
@@ -892,7 +891,7 @@ mod tests {
         assert_eq!(env.get_enum_variant("Vfo", "A"), Some(0));
         assert_eq!(env.get_enum_variant("Vfo", "B"), Some(1));
 
-        assert!(api.output.read().unwrap().len() == 1);
+        assert!(api.output.read().len() == 1);
 
         let args = vec![
             Value::Integer(14500000),
@@ -906,9 +905,9 @@ mod tests {
             .execute_command("set_freq", &args, &api, &mut env)
             .await?;
 
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read()[0], "WRITE: [1, 2, 3, 4]");
 
-        let last_output = api.output.read().unwrap().last().unwrap().clone();
+        let last_output = api.output.read().last().unwrap().clone();
         assert!(last_output.contains("WRITE: [254, 254, 148, 224, 37, 0, 160, 64, 221, 0, 253]"));
         Ok(())
     }
@@ -1077,9 +1076,9 @@ mod tests {
             .execute_statement(&nested_if, &api, &mut env)
             .await?;
 
-        assert_eq!(api.output.read().unwrap().len(), 2);
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1]");
-        assert_eq!(api.output.read().unwrap()[1], "WRITE: [2]");
+        assert_eq!(api.output.read().len(), 2);
+        assert_eq!(api.output.read()[0], "WRITE: [1]");
+        assert_eq!(api.output.read()[1], "WRITE: [2]");
         Ok(())
     }
 
@@ -1162,8 +1161,8 @@ mod tests {
             .execute_command("test_params", &args, &api, &mut env)
             .await?;
 
-        assert_eq!(api.output.read().unwrap().len(), 1);
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [1, 2, 3, 4]");
+        assert_eq!(api.output.read().len(), 1);
+        assert_eq!(api.output.read()[0], "WRITE: [1, 2, 3, 4]");
         Ok(())
     }
 
@@ -1315,8 +1314,8 @@ mod tests {
             "Command with qualified identifiers should execute successfully"
         );
 
-        assert_eq!(api.output.read().unwrap().len(), 1);
-        assert_eq!(api.output.read().unwrap()[0], "WRITE: [0]");
+        assert_eq!(api.output.read().len(), 1);
+        assert_eq!(api.output.read()[0], "WRITE: [0]");
         Ok(())
     }
 
