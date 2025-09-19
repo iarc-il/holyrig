@@ -1381,6 +1381,7 @@ dependencies = [
  "egui",
  "egui_dock",
  "logos",
+ "parking_lot",
  "peg",
  "serde",
  "tokio",
