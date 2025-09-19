@@ -1,5 +1,5 @@
 use crate::Value;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -39,24 +39,25 @@ fn parse_rigctl_command(line: &str) -> Result<RigctlCommand> {
 
     let args = chars.as_str().trim();
 
-    match command_char {
-        'F' => Ok(RigctlCommand::SetFreq(args.parse()?)),
-        'f' => Ok(RigctlCommand::GetFreq),
-        'M' => Ok(RigctlCommand::SetMode(args.to_string())),
-        'm' => Ok(RigctlCommand::GetMode),
-        'V' => Ok(RigctlCommand::SetVfo(args.to_string())),
-        'v' => Ok(RigctlCommand::GetVfo),
-        'T' => Ok(RigctlCommand::SetPtt(args.parse()?)),
-        't' => Ok(RigctlCommand::GetPtt),
-        'S' => Ok(RigctlCommand::SetSplit(args.parse()?)),
-        's' => Ok(RigctlCommand::GetSplit),
-        'J' => Ok(RigctlCommand::SetRit(args.parse()?)),
-        'j' => Ok(RigctlCommand::GetRit),
-        'Z' => Ok(RigctlCommand::SetXit(args.parse()?)),
-        'z' => Ok(RigctlCommand::GetXit),
-        'q' => Ok(RigctlCommand::Quit),
-        _ => Err(anyhow::anyhow!("Unknown command: {}", command_char)),
-    }
+    let command = match command_char {
+        'F' => RigctlCommand::SetFreq(args.parse()?),
+        'f' => RigctlCommand::GetFreq,
+        'M' => RigctlCommand::SetMode(args.to_string()),
+        'm' => RigctlCommand::GetMode,
+        'V' => RigctlCommand::SetVfo(args.to_string()),
+        'v' => RigctlCommand::GetVfo,
+        'T' => RigctlCommand::SetPtt(args.parse()?),
+        't' => RigctlCommand::GetPtt,
+        'S' => RigctlCommand::SetSplit(args.parse()?),
+        's' => RigctlCommand::GetSplit,
+        'J' => RigctlCommand::SetRit(args.parse()?),
+        'j' => RigctlCommand::GetRit,
+        'Z' => RigctlCommand::SetXit(args.parse()?),
+        'z' => RigctlCommand::GetXit,
+        'q' => RigctlCommand::Quit,
+        _ => bail!("Unknown command: {}", command_char),
+    };
+    Ok(command)
 }
 
 struct DeviceStatus {
@@ -96,20 +97,21 @@ async fn handle_client(
 
     loop {
         line.clear();
-        if reader.read_line(&mut line).await.unwrap() == 0 {
+        if reader.read_line(&mut line).await? == 0 {
             break;
         }
 
         match parse_rigctl_command(&line) {
             Ok(RigctlCommand::Quit) => break,
-            Ok(cmd) => {
-                let (command_name, params) = match cmd {
-                    RigctlCommand::SetFreq(freq) => ("set_freq", {
-                        let mut p = HashMap::new();
-                        p.insert("freq".to_string(), freq.to_string());
-                        p.insert("target".to_string(), "Current".to_string());
-                        p
-                    }),
+            Ok(command) => {
+                let (command_name, params) = match command {
+                    RigctlCommand::SetFreq(freq) => (
+                        "set_freq",
+                        HashMap::from([
+                            ("freq".to_string(), freq.to_string()),
+                            ("target".to_string(), "Current".to_string()),
+                        ]),
+                    ),
                     RigctlCommand::GetFreq => {
                         let freq = {
                             let device_status = device_status.read();
@@ -119,37 +121,24 @@ async fn handle_client(
                                 device_status.freq_b
                             }
                         };
-                        writer
-                            .write_all(format!("{}\n", freq).as_bytes())
-                            .await
-                            .unwrap();
+                        writer.write_all(format!("{}\n", freq).as_bytes()).await?;
                         continue;
                     }
-                    RigctlCommand::SetMode(mode) => ("set_mode", {
-                        let mut p = HashMap::new();
-                        p.insert("mode".to_string(), mode);
-                        p
-                    }),
+                    RigctlCommand::SetMode(mode) => {
+                        ("set_mode", HashMap::from([("mode".to_string(), mode)]))
+                    }
                     RigctlCommand::GetMode => {
                         let mode = { device_status.read().mode.clone() };
-                        writer
-                            .write_all(format!("{} 0\n", mode).as_bytes())
-                            .await
-                            .unwrap();
+                        writer.write_all(format!("{} 0\n", mode).as_bytes()).await?;
                         continue;
                     }
-                    RigctlCommand::SetVfo(vfo) => ("set_vfo", {
-                        let mut p = HashMap::new();
-                        p.insert("rx".to_string(), vfo.clone());
-                        p.insert("tx".to_string(), vfo);
-                        p
-                    }),
+                    RigctlCommand::SetVfo(vfo) => (
+                        "set_vfo",
+                        HashMap::from([("rx".to_string(), vfo.clone()), ("tx".to_string(), vfo)]),
+                    ),
                     RigctlCommand::GetVfo => {
                         let vfo = { device_status.read().vfo.clone() };
-                        writer
-                            .write_all(format!("VFO{}\n", vfo).as_bytes())
-                            .await
-                            .unwrap();
+                        writer.write_all(format!("VFO{}\n", vfo).as_bytes()).await?;
                         continue;
                     }
                     RigctlCommand::SetPtt(ptt) => (
@@ -160,44 +149,40 @@ async fn handle_client(
                         let transmit = { device_status.read().transmit };
                         writer
                             .write_all(format!("{}\n", transmit as i32).as_bytes())
-                            .await
-                            .unwrap();
+                            .await?;
                         continue;
                     }
-                    RigctlCommand::SetSplit(split) => ("set_split", {
-                        let mut p = HashMap::new();
-                        p.insert("split".to_string(), split.to_string());
-                        p
-                    }),
+                    RigctlCommand::SetSplit(split) => (
+                        "set_split",
+                        HashMap::from([("split".to_string(), split.to_string())]),
+                    ),
                     RigctlCommand::GetSplit => {
                         // Split status not available
-                        writer.write_all(b"0\n").await.unwrap();
+                        writer.write_all(b"0\n").await?;
                         continue;
                     }
                     RigctlCommand::SetRit(_offset) => {
                         // RIT offset not supported
-                        writer.write_all(b"RPRT -1\n").await.unwrap();
+                        writer.write_all(b"RPRT -1\n").await?;
                         continue;
                     }
                     RigctlCommand::GetRit => {
                         let rit = { device_status.read().rit };
                         writer
                             .write_all(format!("{}\n", rit as i32).as_bytes())
-                            .await
-                            .unwrap();
+                            .await?;
                         continue;
                     }
                     RigctlCommand::SetXit(_offset) => {
                         // XIT offset not supported
-                        writer.write_all(b"RPRT -1\n").await.unwrap();
+                        writer.write_all(b"RPRT -1\n").await?;
                         continue;
                     }
                     RigctlCommand::GetXit => {
                         let xit = { device_status.read().xit };
                         writer
                             .write_all(format!("{}\n", xit as i32).as_bytes())
-                            .await
-                            .unwrap();
+                            .await?;
                         continue;
                     }
                     RigctlCommand::Quit => unreachable!(),
@@ -215,11 +200,11 @@ async fn handle_client(
                     break;
                 }
 
-                writer.write_all(b"RPRT 0\n").await.unwrap();
+                writer.write_all(b"RPRT 0\n").await?;
             }
             Err(e) => {
                 eprintln!("Error parsing command from {}: {}", addr, e);
-                writer.write_all(b"RPRT 1\n").await.unwrap();
+                writer.write_all(b"RPRT 1\n").await?;
             }
         }
     }
