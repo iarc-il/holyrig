@@ -6,6 +6,7 @@ use crate::data_format::DataFormat;
 use crate::parser::{
     BinaryOp, DataType, Expr, Id, InterpolationPart, RigFile, Statement, parse_atomic_expr,
 };
+use crate::wrapper::ExternalApi;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -121,12 +122,6 @@ impl Env {
     }
 }
 
-#[allow(async_fn_in_trait)]
-pub trait Builtins: Send + Sync {
-    async fn call(&self, name: &str, args: &[Value], env: &mut Env) -> Result<Value>;
-    async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value>;
-}
-
 #[derive(Clone)]
 pub struct Interpreter {
     rig_file: RigFile,
@@ -156,7 +151,7 @@ impl Interpreter {
         &self,
         name: &str,
         args: &[Value],
-        builtins: &impl Builtins,
+        builtins: &impl ExternalApi,
         env: &mut Env,
     ) -> Result<()> {
         let command = self
@@ -184,12 +179,10 @@ impl Interpreter {
                 .await?;
         }
 
-        env.output.extend(local_env.output);
-
         Ok(())
     }
 
-    pub async fn execute_init(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
+    pub async fn execute_init(&self, builtins: &impl ExternalApi, env: &mut Env) -> Result<()> {
         if let Some(init) = &self.rig_file.impl_block.init {
             for statement in &init.statements {
                 self.execute_statement(statement, builtins, env).await?;
@@ -198,7 +191,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub async fn execute_status(&self, builtins: &impl Builtins, env: &mut Env) -> Result<()> {
+    pub async fn execute_status(&self, builtins: &impl ExternalApi, env: &mut Env) -> Result<()> {
         if let Some(status) = &self.rig_file.impl_block.status {
             for statement in &status.statements {
                 self.execute_statement(statement, builtins, env).await?;
@@ -207,10 +200,74 @@ impl Interpreter {
         Ok(())
     }
 
+    async fn execute_function_call(
+        &self,
+        name: &str,
+        args: &[Expr],
+        builtins: &impl ExternalApi,
+        env: &mut Env,
+    ) -> Result<()> {
+        match name {
+            "read" => {
+                match args {
+                    [Expr::StringInterpolation { parts }] => {
+                        let expected_length = parts
+                            .iter()
+                            .map(|part| match part {
+                                InterpolationPart::Literal(bytes) => bytes.len(),
+                                InterpolationPart::Variable { length, .. } => *length,
+                            })
+                            .sum();
+
+                        let response = builtins.read(expected_length).await?;
+
+                        parse_response_with_template(parts, &response, env)?;
+                    }
+                    [Expr::Bytes(bytes)] => {
+                        let response = builtins.read(bytes.len()).await?;
+                        if &response != bytes {
+                            bail!("Got invalid response: {response:?}");
+                        }
+                    }
+                    _ => {
+                        bail!("Expected template string in parse, got: {args:?}");
+                    }
+                };
+                Ok(())
+            }
+            "write" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.evaluate_expression(arg, env))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let [Value::Bytes(bytes)] = &args[..] else {
+                    bail!("Expected one bytes argument in write, got: {args:?}");
+                };
+                builtins.write(bytes).await?;
+                Ok(())
+            }
+            "set_var" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.evaluate_expression(arg, env))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let [Value::String(var), value] = &args[..] else {
+                    bail!("Expected string and value arguments in set_var, got: {args:?}");
+                };
+
+                builtins.set_var(var, value.clone())?;
+                Ok(())
+            }
+            _ => Err(anyhow!("Unknown function: {name}")),
+        }
+    }
+
     async fn execute_statement(
         &self,
         statement: &Statement,
-        builtins: &impl Builtins,
+        builtins: &impl ExternalApi,
         env: &mut Env,
     ) -> Result<()> {
         match statement {
@@ -219,16 +276,8 @@ impl Interpreter {
                 env.set(id.to_string(), value);
             }
             Statement::FunctionCall { name, args } => {
-                if name == "read" {
-                    let _ = builtins.call_no_eval(name, args, env).await?;
-                } else {
-                    let arg_values = args
-                        .iter()
-                        .map(|arg| self.evaluate_expression(arg, env))
-                        .collect::<Result<Vec<_>>>()?;
-
-                    let _ = builtins.call(name, &arg_values, env).await?;
-                }
+                self.execute_function_call(name, args, builtins, env)
+                    .await?
             }
             Statement::If {
                 condition,
@@ -531,6 +580,68 @@ impl Default for Interpreter {
     fn default() -> Self {
         Self::new(Default::default())
     }
+}
+
+fn parse_response_with_template(
+    parts: &[InterpolationPart],
+    response: &[u8],
+    env: &mut Env,
+) -> Result<()> {
+    let mut offset = 0;
+
+    for part in parts {
+        match part {
+            InterpolationPart::Literal(expected_bytes) => {
+                if offset + expected_bytes.len() > response.len() {
+                    bail!(
+                        "Response too short: expected {} bytes at offset {}",
+                        expected_bytes.len(),
+                        offset
+                    );
+                }
+
+                let actual = &response[offset..offset + expected_bytes.len()];
+                if actual != expected_bytes {
+                    bail!(
+                        "Response doesn't match template at offset {}: expected {:?}, got {:?}",
+                        offset,
+                        expected_bytes,
+                        actual
+                    );
+                }
+                offset += expected_bytes.len();
+            }
+            InterpolationPart::Variable {
+                name,
+                format,
+                length,
+            } => {
+                if offset + length > response.len() {
+                    bail!(
+                        "Response too short: expected {} bytes at offset {}",
+                        length,
+                        offset
+                    );
+                }
+
+                let bytes = &response[offset..offset + length];
+                let format_str = format.as_deref().unwrap_or("int_lu");
+                let data_format = DataFormat::try_from(format_str)
+                    .context(format!("Invalid format: {}", format_str))?;
+                let value = data_format.decode(bytes).context(format!(
+                    "Failed to decode {} bytes using format {}",
+                    length, format_str
+                ))?;
+
+                if name != "_" {
+                    env.set(name.clone(), Value::Integer(value as i64));
+                }
+                offset += length;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

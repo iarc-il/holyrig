@@ -1,158 +1,27 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::Result;
 
-use crate::{
-    Env,
-    data_format::DataFormat,
-    interpreter::{Builtins, Interpreter, Value},
-    parser::{Expr, InterpolationPart},
-};
+use crate::interpreter::{Interpreter, Value};
 
 pub trait ExternalApi: Send + Sync {
-    fn write(&self, data: &[u8]) -> impl std::future::Future<Output = Result<()>> + Send;
-    fn read(&self, size: usize) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    fn write(&self, data: &[u8]) -> impl Future<Output = Result<()>> + Send;
+    fn read(&self, size: usize) -> impl Future<Output = Result<Vec<u8>>> + Send;
     fn set_var(&self, var: &str, value: Value) -> Result<()>;
 }
 
 pub trait RigWrapper: Send + Sync {
-    fn execute_init(
-        &self,
-        external: &impl ExternalApi,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn execute_init(&self, external: &impl ExternalApi) -> impl Future<Output = Result<()>> + Send;
     fn execute_command(
         &self,
         command_name: &str,
         params: HashMap<String, String>,
         external: &impl ExternalApi,
-    ) -> impl std::future::Future<Output = Result<HashMap<String, Value>>> + Send;
+    ) -> impl Future<Output = Result<HashMap<String, Value>>> + Send;
     fn execute_status(
         &self,
         external: &impl ExternalApi,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-}
-
-impl<E: ExternalApi> Builtins for E {
-    async fn call(&self, name: &str, args: &[Value], _env: &mut Env) -> Result<Value> {
-        match name {
-            "write" => {
-                let [Value::Bytes(bytes)] = args else {
-                    bail!("Expected one bytes argument in write, got: {args:?}");
-                };
-                self.write(bytes).await?;
-                Ok(Value::Unit)
-            }
-            "set_var" => {
-                let [Value::String(var), value] = args else {
-                    bail!("Expected string and value arguments in set_var, got: {args:?}");
-                };
-
-                self.set_var(var, value.clone())?;
-                Ok(Value::Unit)
-            }
-            "read" => {
-                bail!("Function read is not supported in this context, use call_no_eval");
-            }
-            _ => Err(anyhow!("Unknown function: {name}")),
-        }
-    }
-
-    async fn call_no_eval(&self, name: &str, args: &[Expr], env: &mut Env) -> Result<Value> {
-        if name == "read" {
-            match args {
-                [Expr::StringInterpolation { parts }] => {
-                    let expected_length = calculate_template_length(parts);
-                    let response = self.read(expected_length).await?;
-
-                    parse_response_with_template(parts, &response, env)?;
-                }
-                [Expr::Bytes(bytes)] => {
-                    let response = self.read(bytes.len()).await?;
-                    if &response != bytes {
-                        bail!("Got invalid response: {response:?}");
-                    }
-                }
-                _ => {
-                    bail!("Expected template string in parse, got: {args:?}");
-                }
-            };
-            Ok(Value::Unit)
-        } else {
-            bail!("Unknown function {name} in this context");
-        }
-    }
-}
-
-fn calculate_template_length(parts: &[InterpolationPart]) -> usize {
-    parts
-        .iter()
-        .map(|part| match part {
-            InterpolationPart::Literal(bytes) => bytes.len(),
-            InterpolationPart::Variable { length, .. } => *length,
-        })
-        .sum()
-}
-
-fn parse_response_with_template(
-    parts: &[InterpolationPart],
-    response: &[u8],
-    env: &mut Env,
-) -> Result<()> {
-    let mut offset = 0;
-
-    for part in parts {
-        match part {
-            InterpolationPart::Literal(expected_bytes) => {
-                if offset + expected_bytes.len() > response.len() {
-                    bail!(
-                        "Response too short: expected {} bytes at offset {}",
-                        expected_bytes.len(),
-                        offset
-                    );
-                }
-
-                let actual = &response[offset..offset + expected_bytes.len()];
-                if actual != expected_bytes {
-                    bail!(
-                        "Response doesn't match template at offset {}: expected {:?}, got {:?}",
-                        offset,
-                        expected_bytes,
-                        actual
-                    );
-                }
-                offset += expected_bytes.len();
-            }
-            InterpolationPart::Variable {
-                name,
-                format,
-                length,
-            } => {
-                if offset + length > response.len() {
-                    bail!(
-                        "Response too short: expected {} bytes at offset {}",
-                        length,
-                        offset
-                    );
-                }
-
-                let bytes = &response[offset..offset + length];
-                let format_str = format.as_deref().unwrap_or("int_lu");
-                let data_format = DataFormat::try_from(format_str)
-                    .context(format!("Invalid format: {}", format_str))?;
-                let value = data_format.decode(bytes).context(format!(
-                    "Failed to decode {} bytes using format {}",
-                    length, format_str
-                ))?;
-
-                if name != "_" {
-                    env.set(name.clone(), Value::Integer(value as i64));
-                }
-                offset += length;
-            }
-        }
-    }
-
-    Ok(())
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 impl RigWrapper for Interpreter {
