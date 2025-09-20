@@ -14,6 +14,10 @@ use crate::serial::manager::ManagerMessage;
 
 #[derive(Debug)]
 enum RigctlCommand {
+    GetPowerstat,
+    CheckVfo,
+    DumpState,
+
     SetFreq(f64),
     GetFreq,
     SetMode(String),
@@ -55,6 +59,12 @@ fn parse_rigctl_command(line: &str) -> Result<RigctlCommand> {
         'Z' => RigctlCommand::SetXit(args.parse()?),
         'z' => RigctlCommand::GetXit,
         'q' => RigctlCommand::Quit,
+        '\\' => match line[1..].trim() {
+            "get_powerstat" => RigctlCommand::GetPowerstat,
+            "chk_vfo" => RigctlCommand::CheckVfo,
+            "dump_state" => RigctlCommand::DumpState,
+            _ => bail!("Unknown command: {line}"),
+        },
         _ => bail!("Unknown command: {}", command_char),
     };
     Ok(command)
@@ -185,6 +195,73 @@ async fn handle_client(
                             .await?;
                         continue;
                     }
+                    RigctlCommand::GetPowerstat => {
+                        writer.write_all(b"1\n").await?;
+                        continue;
+                    }
+                    RigctlCommand::CheckVfo => {
+                        writer.write_all(b"1\n").await?;
+                        continue;
+                    }
+                    RigctlCommand::DumpState => {
+                        let dump_state_output: [&[u8]; _] = [
+                            // Protocol version
+                            b"1\n",
+                            // Always zero
+                            b"0\n",
+                            // Model id, currently 7300
+                            b"7073\n",
+                            // RX frequency list, currently empty
+                            b"0 0 0 0 0 0 0\n",
+                            // TX frequency list, currently empty
+                            b"0 0 0 0 0 0 0\n",
+                            // Tuning steps, currently empty
+                            b"0 0\n",
+                            // Filters, currently empty
+                            b"0 0\n",
+                            // Max rit
+                            b"9999\n",
+                            // Max xit
+                            b"9999\n",
+                            // Max ifshift
+                            b"0\n",
+                            // Announces?
+                            b"0\n",
+                            // Preamp
+                            b"1 2\n ",
+                            // Attenuator
+                            b"20\n ",
+                            // Some getter and setter functions
+                            b"0xfc00c90133fe\n",
+                            b"0xfc00c90133fe\n",
+                            b"0xc7fff74677f3f\n",
+                            b"0xc7f7000677f3f\n",
+                            b"0x35\n",
+                            b"0x35\n",
+                            // Other parameters
+                            b"vfo_ops=0x81f\n",
+                            b"ptt_type=0x1\n",
+                            b"targetable_vfo=0x3\n",
+                            b"has_set_vfo=1\n",
+                            b"has_get_vfo=0\n",
+                            b"has_set_freq=1\n",
+                            b"has_get_freq=1\n",
+                            b"has_set_conf=1\n",
+                            b"has_get_conf=1\n",
+                            b"has_power2mW=1\n",
+                            b"has_mW2power=1\n",
+                            b"timeout=1000\n",
+                            b"rig_model=3073\n",
+                            b"rigctld_version=Hamlib 4.5.5 Apr 05 11:43:08Z 2023 SHA=6eecd3\n",
+                            b"agc_levels=0=OFF 1=FAST 2=MEDIUM 3=SLOW\n",
+                            b"ctcss_list= 60.0 67.0 69.3 71.9 74.4 77.0 79.7 82.5 85.4 88.5 91.5 94.8 97.4 100.0 103.5 107.2 110.9 114.8 118.8 120.0 123.0 127.3 131.8 136.5 141.3 146.2 151.4 156.7 159.8 162.2 165.5 167.9 171.3 173.8 177.3 179.9 183.5 186.2 189.9 192.8 196.6 199.5 203.5 206.5 210.7 218.1 225.7 229.1 233.6 241.8 250.3 254.1\n",
+                            b"done\n",
+                        ];
+                        for line in dump_state_output {
+                            writer.write_all(line).await?;
+                        }
+                        continue;
+                    },
                     RigctlCommand::Quit => unreachable!(),
                 };
 
