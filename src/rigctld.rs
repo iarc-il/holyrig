@@ -1,5 +1,5 @@
 use crate::Value;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -19,15 +19,15 @@ enum RigctlCommand {
     DumpState,
 
     SetFreq(f64),
-    GetFreq,
+    GetFreq(String),
     SetMode(String),
-    GetMode,
+    GetMode(String),
     SetVfo(String),
     GetVfo,
     SetPtt(bool),
     GetPtt,
     SetSplit(bool),
-    GetSplit,
+    GetSplit(String),
     SetRit(i32),
     GetRit,
     SetXit(i32),
@@ -36,27 +36,25 @@ enum RigctlCommand {
 }
 
 fn parse_rigctl_command(line: &str) -> Result<RigctlCommand> {
-    let mut chars = line.chars();
-    let command_char = chars
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Empty command"))?;
+    let mut params = line.split(' ');
+    let command = params.next().context("Missing command name")?;
 
-    let args = chars.as_str().trim();
+    let first_arg = params.next();
 
-    let command = match command_char {
-        'F' => RigctlCommand::SetFreq(args.parse()?),
-        'f' => RigctlCommand::GetFreq,
-        'M' => RigctlCommand::SetMode(args.to_string()),
-        'm' => RigctlCommand::GetMode,
-        'V' => RigctlCommand::SetVfo(args.to_string()),
+    let command = match command.chars().next().context("Empty command")? {
+        'F' => RigctlCommand::SetFreq(first_arg.context("Missing freq")?.parse()?),
+        'f' => RigctlCommand::GetFreq(first_arg.context("Missing VFO")?.to_string()),
+        'M' => RigctlCommand::SetMode(first_arg.context("Missing mode")?.to_string()),
+        'm' => RigctlCommand::GetMode(first_arg.context("Missing VFO")?.to_string()),
+        'V' => RigctlCommand::SetVfo(first_arg.context("Missing VFO")?.to_string()),
         'v' => RigctlCommand::GetVfo,
-        'T' => RigctlCommand::SetPtt(args.parse()?),
+        'T' => RigctlCommand::SetPtt(first_arg.context("Missing PTT")?.parse()?),
         't' => RigctlCommand::GetPtt,
-        'S' => RigctlCommand::SetSplit(args.parse()?),
-        's' => RigctlCommand::GetSplit,
-        'J' => RigctlCommand::SetRit(args.parse()?),
+        'S' => RigctlCommand::SetSplit(first_arg.context("Missing split")?.parse()?),
+        's' => RigctlCommand::GetSplit(first_arg.context("Missing VFO")?.to_string()),
+        'J' => RigctlCommand::SetRit(first_arg.context("Missing rit")?.parse()?),
         'j' => RigctlCommand::GetRit,
-        'Z' => RigctlCommand::SetXit(args.parse()?),
+        'Z' => RigctlCommand::SetXit(first_arg.context("Missing xit")?.parse()?),
         'z' => RigctlCommand::GetXit,
         'q' => RigctlCommand::Quit,
         '\\' => match line[1..].trim() {
@@ -65,7 +63,7 @@ fn parse_rigctl_command(line: &str) -> Result<RigctlCommand> {
             "dump_state" => RigctlCommand::DumpState,
             _ => bail!("Unknown command: {line}"),
         },
-        _ => bail!("Unknown command: {}", command_char),
+        _ => bail!("Unknown command: {command}"),
     };
     Ok(command)
 }
@@ -122,13 +120,15 @@ async fn handle_client(
                             ("target".to_string(), "Current".to_string()),
                         ]),
                     ),
-                    RigctlCommand::GetFreq => {
+                    RigctlCommand::GetFreq(vfo) => {
                         let freq = {
                             let device_status = device_status.read();
-                            if device_status.vfo == "A" {
-                                device_status.freq_a
-                            } else {
-                                device_status.freq_b
+                            match vfo.as_str().trim() {
+                                "VFOA" => device_status.freq_a,
+                                "VFOB" => device_status.freq_b,
+                                _ => {
+                                    bail!("Unknown vfo: {vfo}");
+                                }
                             }
                         };
                         writer.write_all(format!("{}\n", freq).as_bytes()).await?;
@@ -137,7 +137,7 @@ async fn handle_client(
                     RigctlCommand::SetMode(mode) => {
                         ("set_mode", HashMap::from([("mode".to_string(), mode)]))
                     }
-                    RigctlCommand::GetMode => {
+                    RigctlCommand::GetMode(_vfo) => {
                         let mode = { device_status.read().mode.clone() };
                         writer.write_all(format!("{} 0\n", mode).as_bytes()).await?;
                         continue;
@@ -166,9 +166,12 @@ async fn handle_client(
                         "set_split",
                         HashMap::from([("split".to_string(), split.to_string())]),
                     ),
-                    RigctlCommand::GetSplit => {
+                    RigctlCommand::GetSplit(_vfo) => {
                         // Split status not available
-                        writer.write_all(b"0\n").await?;
+                        let vfo = { device_status.read().vfo.clone() };
+                        writer
+                            .write_all(format!("0\nVFO{vfo}\n").as_bytes())
+                            .await?;
                         continue;
                     }
                     RigctlCommand::SetRit(_offset) => {
@@ -261,7 +264,7 @@ async fn handle_client(
                             writer.write_all(line).await?;
                         }
                         continue;
-                    },
+                    }
                     RigctlCommand::Quit => unreachable!(),
                 };
 
@@ -305,7 +308,7 @@ pub async fn run_server(
 
                 let device_status = device_status.clone();
                 tokio::spawn(async move {
-                    handle_client(socket, device_status, command_sender, addr).await
+                    handle_client(socket, device_status, command_sender, addr).await.unwrap()
                 });
             }
             Ok(msg) = message_receiver.recv() => {
