@@ -2,11 +2,11 @@ use anyhow::{Context, Result, anyhow, bail};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::data_format::DataFormat;
-use crate::parser::{
+use super::parser::{
     BinaryOp, DataType, Expr, Id, InterpolationPart, RigFile, Statement, parse_atomic_expr,
 };
-use crate::wrapper::ExternalApi;
+use super::wrapper::ExternalApi;
+use crate::{data_format::DataFormat, runtime::parser::Enum};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -112,7 +112,7 @@ impl Env {
             })
     }
 
-    pub fn register_enum(&mut self, enum_def: &crate::parser::Enum) {
+    pub fn register_enum(&mut self, enum_def: &Enum) {
         self.enums.insert(
             enum_def.name.clone(),
             enum_def.variants.clone().into_iter().collect(),
@@ -646,7 +646,7 @@ mod tests {
     use parking_lot::RwLock;
 
     use super::*;
-    use crate::parser::{Id, parse_rig_file};
+    use crate::runtime::parser::{Id, parse_rig_file};
     use std::collections::BTreeMap;
 
     struct DummyExternalApi {
@@ -836,7 +836,7 @@ mod tests {
         let interpreter = Interpreter::default();
         let mut env = Env::new();
 
-        let enum_def = crate::parser::Enum {
+        let enum_def = Enum {
             name: "Vfo".to_string(),
             variants: BTreeMap::from([("A".to_string(), 0), ("B".to_string(), 1)]),
         };
@@ -1348,7 +1348,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_string_interpolation_invalid_format() -> Result<()> {
-        use crate::interpreter::{Interpreter, Value};
+        use crate::runtime::interpreter::{Interpreter, Value};
 
         let dsl_source = r#"
             impl Test for Rig {

@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::SchemaFile;
-use crate::parser::{BinaryOp, DataType, Expr, InterpolationPart, RigFile, Statement};
-use crate::parser_errors::{ErrorLevel, ParseError, ParseErrorType, SourcePosition};
+use super::SchemaFile;
+use super::parser::{BinaryOp, DataType, Expr, InterpolationPart, RigFile, Statement};
+use super::parser_errors::{ErrorLevel, ParseError, ParseErrorType, SourcePosition};
 
 #[derive(Debug, Clone)]
 pub struct SemanticError {
@@ -415,7 +415,7 @@ impl SemanticAnalyzer {
     fn validate_command(
         &self,
         command_name: &str,
-        command: &crate::parser::Command,
+        command: &super::parser::Command,
         errors: &mut Vec<SemanticError>,
         context: &mut AnalysisContext,
     ) {
@@ -1086,7 +1086,7 @@ pub fn parse_and_validate_with_schema(
     rig_source: &str,
     schema: &SchemaFile,
 ) -> Result<RigFile, Vec<ParseError>> {
-    let rig_file = crate::parser::parse_rig_file(rig_source).map_err(|x| vec![x])?;
+    let rig_file = super::parser::parse_rig_file(rig_source).map_err(|x| vec![x])?;
 
     let analyzer = SemanticAnalyzer::new(schema.clone());
     analyzer
@@ -1100,7 +1100,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::{parser::parse_rig_file, schema_parser::SchemaParameter};
+    use crate::runtime::{parser::parse_rig_file, schema_parser::SchemaParameter};
 
     fn create_test_schema() -> SchemaFile {
         let mut schema = SchemaFile {

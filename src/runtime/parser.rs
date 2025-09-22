@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use anyhow::Result;
 use logos::Logos;
 
-use crate::parser_errors::{
+use super::parser_errors::{
     ErrorLevel, ParseError, ParseErrorType, SourcePosition, calculate_position,
 };
 
@@ -769,30 +769,30 @@ pub fn parse_with_level(source: &str, level: ErrorLevel) -> Result<RigFile, Pars
     })
 }
 
-pub fn create_semantic_error(
-    source: &str,
-    line: usize,
-    column: usize,
-    message: &str,
-    suggestion: Option<&str>,
-) -> ParseError {
-    ParseError {
-        position: SourcePosition::new(line, column, 0),
-        error_type: Box::new(ParseErrorType::Semantic {
-            message: message.to_string(),
-            suggestion: suggestion.map(|s| s.to_string()),
-            context: "Semantic validation".to_string(),
-        }),
-        source: source.to_string(),
-        level: ErrorLevel::Normal,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
 
     use super::*;
+
+    fn create_semantic_error(
+        source: &str,
+        line: usize,
+        column: usize,
+        message: &str,
+        suggestion: Option<&str>,
+    ) -> ParseError {
+        ParseError {
+            position: SourcePosition::new(line, column, 0),
+            error_type: Box::new(ParseErrorType::Semantic {
+                message: message.to_string(),
+                suggestion: suggestion.map(|s| s.to_string()),
+                context: "Semantic validation".to_string(),
+            }),
+            source: source.to_string(),
+            level: ErrorLevel::Normal,
+        }
+    }
 
     #[test]
     fn test_parse_simple_dsl() {

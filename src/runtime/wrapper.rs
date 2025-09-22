@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::interpreter::{Interpreter, Value};
+use super::interpreter::{Interpreter, Value};
 
 pub trait ExternalApi: Send + Sync {
     fn write(&self, data: &[u8]) -> impl Future<Output = Result<()>> + Send;
@@ -57,7 +57,7 @@ mod tests {
     use parking_lot::RwLock;
 
     use super::*;
-    use crate::parser;
+    use crate::runtime::parser;
 
     struct MockExternalApi {
         pub written_data: RwLock<Vec<Vec<u8>>>,

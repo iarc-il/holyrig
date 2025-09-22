@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use logos::Logos;
 
-use crate::parser::{DataType, Id, Token};
-use crate::parser_errors::{
+use super::parser::{DataType, Id, Token};
+use super::parser_errors::{
     ErrorLevel, ParseError, ParseErrorType, SourcePosition, calculate_position,
 };
 
@@ -175,7 +175,7 @@ pub fn parse_schema_with_level(source: &str, level: ErrorLevel) -> Result<Schema
                     let span = lexer.span();
                     let position = calculate_position(source, span.start);
                     tokens_with_positions
-                        .push(crate::parser::TokenWithPosition { token, position });
+                        .push(super::parser::TokenWithPosition { token, position });
                 }
             }
             Err(_) => {

@@ -6,10 +6,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use holyrig::{
-    Interpreter, SchemaFile, gui, parse_and_validate_with_schema, parse_schema, rigctld, serial,
-    udp_server,
-};
+use holyrig::runtime::{Interpreter, SchemaFile, parse_and_validate_with_schema, parse_schema};
+use holyrig::{gui, rigctld, serial, udp_server};
 
 use gui::GuiMessage;
 use serial::manager::DeviceManager;

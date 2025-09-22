@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use argh::FromArgs;
 
-use holyrig::{parse_and_validate_with_schema, parse_schema, parser::parse_rig_file};
+use holyrig::runtime::{parse_and_validate_with_schema, parse_rig_file, parse_schema};
 
 #[derive(FromArgs)]
 /// Command line tool for validating rig files and schema files
