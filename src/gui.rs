@@ -1,5 +1,5 @@
 use crate::{
-    rig::{BaudRate, DataBits, RigSettings, StopBits},
+    rig_settings::{BaudRate, DataBits, RigSettings, StopBits},
     serial::ManagerCommand,
 };
 use eframe::egui;

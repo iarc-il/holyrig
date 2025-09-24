@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 use tokio_serial::{SerialPortBuilderExt, SerialStream};
 
-use crate::rig::{DataBits, RigSettings, StopBits};
+use crate::rig_settings::{DataBits, RigSettings, StopBits};
 
 #[derive(Debug)]
 pub enum DeviceCommand {

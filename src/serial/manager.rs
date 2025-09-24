@@ -6,7 +6,7 @@ use tokio::time::{Duration, sleep};
 use xdg::BaseDirectories;
 
 use crate::gui::GuiMessage;
-use crate::rig::{RigSettings, Settings};
+use crate::rig_settings::{RigSettings, Settings};
 use crate::runtime::Value;
 use crate::runtime::{ExternalApi, RigWrapper};
 use crate::serial::device::{DeviceCommand, DeviceMessage, SerialDevice};
