@@ -41,24 +41,25 @@ fn load_rig_files<P: AsRef<Path>>(
     Ok(Arc::new(rigs))
 }
 
-fn load_schema_file(base_dirs: &xdg::BaseDirectories) -> Result<SchemaFile> {
+fn load_schema_file() -> Result<SchemaFile> {
     let schema_path = if cfg!(debug_assertions) {
         std::path::PathBuf::from("schema/transceiver.schema")
     } else {
-        base_dirs.place_config_file("schema.toml")?
+        dirs::config_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
+            .join("holyrig")
+            .join("schema.toml")
     };
     Ok(parse_schema(&std::fs::read_to_string(schema_path)?)?)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let base_dirs = xdg::BaseDirectories::with_prefix("holyrig")?;
-    let schema = load_schema_file(&base_dirs)?;
+    let schema = load_schema_file()?;
     let rigs = load_rig_files("./rigs", &schema)?;
 
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
-    let mut device_manager: DeviceManager<Interpreter> =
-        DeviceManager::new(rigs.clone(), base_dirs.clone());
+    let mut device_manager: DeviceManager<Interpreter> = DeviceManager::new(rigs.clone());
 
     let gui_command_sender = device_manager.sender();
     let udp_command_sender = device_manager.sender();

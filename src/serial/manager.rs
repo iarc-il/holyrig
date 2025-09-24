@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
-use xdg::BaseDirectories;
+use std::path::PathBuf;
 
 use crate::gui::GuiMessage;
 use crate::rig_settings::{RigSettings, Settings};
@@ -57,7 +57,7 @@ pub struct DeviceManager<W: RigWrapper + Clone + Send + Sync> {
     rigs: Arc<HashMap<String, W>>,
     devices: HashMap<usize, Device<W>>,
     settings: Settings,
-    base_dirs: BaseDirectories,
+    data_dir: PathBuf,
 
     // manager -> ...
     manager_message_tx: broadcast::Sender<ManagerMessage>,
@@ -138,17 +138,25 @@ impl ExternalApi for DeviceExternalApi {
 }
 
 impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
-    pub fn new(rigs: Arc<HashMap<String, W>>, base_dirs: BaseDirectories) -> Self {
+    pub fn new(rigs: Arc<HashMap<String, W>>) -> Self {
         let (manager_command_tx, manager_command_rx) = mpsc::channel(10);
         let (device_tx, device_rx) = mpsc::channel(10);
 
         let (manager_message_tx, _) = broadcast::channel(10);
 
+        let data_dir = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("holyrig");
+
+        if !data_dir.exists() {
+            std::fs::create_dir_all(&data_dir).unwrap_or_else(|e| eprintln!("Failed to create data directory: {}", e));
+        }
+
         Self {
             rigs,
             devices: HashMap::new(),
             settings: Default::default(),
-            base_dirs,
+            data_dir,
             manager_message_tx,
             manager_command_tx,
             manager_command_rx,
@@ -166,7 +174,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
     }
 
     pub async fn load_rigs(&mut self, gui_sender: &mpsc::Sender<GuiMessage>) -> Result<()> {
-        let settings_path = self.base_dirs.get_data_file(RIGS_FILE);
+        let settings_path = self.data_dir.join(RIGS_FILE);
         let settings = if !settings_path.exists() {
             Settings::default()
         } else {
@@ -233,7 +241,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
                     } else {
                         self.settings.rigs.push(settings.clone());
                     };
-                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let path = self.data_dir.join(RIGS_FILE);
                     let content = toml::to_string(&self.settings)?;
                     std::fs::write(path, content)?;
 
@@ -249,7 +257,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
                     } else {
                         self.settings.rigs.push(settings.clone());
                     };
-                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let path = self.data_dir.join(RIGS_FILE);
                     let content = toml::to_string(&self.settings)?;
                     std::fs::write(path, content)?;
 
@@ -289,7 +297,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
                     .position(|rig| rig.id == device_id)
                 {
                     self.settings.rigs.remove(pos);
-                    let path = self.base_dirs.place_data_file(RIGS_FILE)?;
+                    let path = self.data_dir.join(RIGS_FILE);
                     let content = toml::to_string(&self.settings)?;
                     std::fs::write(path, content)?;
                 }
