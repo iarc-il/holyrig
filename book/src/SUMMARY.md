@@ -7,4 +7,5 @@
     - [Schema Parser](specs/schema_parser.md)
     - [Rig file](specs/rig_file.md)
     - [Semantic Analysis](specs/semantic_analysis.md)
+    - [JSON-RPC Protocol](specs/protocol.md)
 
