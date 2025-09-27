@@ -269,6 +269,20 @@ pub enum DataType {
     String,
 }
 
+impl Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = match self {
+            DataType::Int => "int",
+            DataType::Bool => "bool",
+            DataType::Enum(enum_type) => enum_type.as_str(),
+            DataType::Float => "float",
+            DataType::Bytes => "bytes",
+            DataType::String => "string",
+        };
+        write!(f, "{formatted}")
+    }
+}
+
 impl DataType {
     pub fn is_numeric(&self) -> bool {
         *self == Self::Int || *self == Self::Float

@@ -9,6 +9,12 @@ pub struct RpcError {
     pub data: Option<Value>,
 }
 
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 impl RpcError {
     // Standard JSON-RPC error codes
     pub const PARSE_ERROR: i32 = -32700;

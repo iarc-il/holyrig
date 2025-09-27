@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::interfaces::jsonrpc::Notification;
+use anyhow::Result;
 
 pub mod udp;
 

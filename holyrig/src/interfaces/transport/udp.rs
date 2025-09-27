@@ -39,10 +39,7 @@ impl UdpTransport {
             let error_response = Response {
                 jsonrpc: jsonrpc::Version(String::from("2.0")),
                 result: None,
-                error: Some(jsonrpc::RpcError::new(
-                    -32700,
-                    "Parse error",
-                )),
+                error: Some(jsonrpc::RpcError::new(-32700, "Parse error")),
                 id: jsonrpc::Id::Null,
             };
             let error_data = serde_json::to_vec(&error_response)?;
