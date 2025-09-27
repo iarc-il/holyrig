@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
-use std::path::PathBuf;
 
 use crate::gui::GuiMessage;
 use crate::rig_settings::{RigSettings, Settings};
@@ -149,7 +149,8 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
             .join("holyrig");
 
         if !data_dir.exists() {
-            std::fs::create_dir_all(&data_dir).unwrap_or_else(|e| eprintln!("Failed to create data directory: {}", e));
+            std::fs::create_dir_all(&data_dir)
+                .unwrap_or_else(|e| eprintln!("Failed to create data directory: {}", e));
         }
 
         Self {

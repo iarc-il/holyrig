@@ -43,7 +43,7 @@ fn load_rig_files<P: AsRef<Path>>(
 
 fn load_schema_file() -> Result<SchemaFile> {
     let schema_path = if cfg!(debug_assertions) {
-        std::path::PathBuf::from("schema/transceiver.schema")
+        std::path::PathBuf::from("../schema/transceiver.schema")
     } else {
         dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
@@ -56,7 +56,7 @@ fn load_schema_file() -> Result<SchemaFile> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let schema = load_schema_file()?;
-    let rigs = load_rig_files("./rigs", &schema)?;
+    let rigs = load_rig_files("../rigs", &schema)?;
 
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
     let mut device_manager: DeviceManager<Interpreter> = DeviceManager::new(rigs.clone());
