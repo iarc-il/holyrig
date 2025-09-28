@@ -6,6 +6,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
 
 use crate::gui::GuiMessage;
+use crate::resources::Resources;
 use crate::rig_settings::{RigSettings, Settings};
 use crate::runtime::ExternalApi;
 use crate::runtime::{Interpreter, Value};
@@ -54,7 +55,7 @@ pub enum ManagerMessage {
 }
 
 pub struct DeviceManager {
-    rigs: Arc<HashMap<String, Interpreter>>,
+    resources: Arc<Resources>,
     devices: HashMap<usize, Device>,
     settings: Settings,
     data_dir: PathBuf,
@@ -138,7 +139,7 @@ impl ExternalApi for DeviceExternalApi {
 }
 
 impl DeviceManager {
-    pub fn new(rigs: Arc<HashMap<String, Interpreter>>) -> Self {
+    pub fn new(resources: Arc<Resources>) -> Self {
         let (manager_command_tx, manager_command_rx) = mpsc::channel(10);
         let (device_tx, device_rx) = mpsc::channel(10);
 
@@ -154,7 +155,7 @@ impl DeviceManager {
         }
 
         Self {
-            rigs,
+            resources,
             devices: HashMap::new(),
             settings: Default::default(),
             data_dir,
@@ -371,6 +372,7 @@ impl DeviceManager {
 
     pub async fn add_device(&mut self, device_id: usize, settings: RigSettings) -> Result<()> {
         let rig_wrapper = self
+            .resources
             .rigs
             .get(&settings.rig_type)
             .context("Unknown rig type")?
