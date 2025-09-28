@@ -5,7 +5,6 @@ use std::fmt;
 use super::parser::{
     BinaryOp, DataType, Expr, Id, InterpolationPart, RigFile, Statement, parse_atomic_expr,
 };
-use super::wrapper::ExternalApi;
 use crate::{data_format::DataFormat, runtime::parser::Enum};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,6 +119,12 @@ impl Env {
     }
 }
 
+pub trait ExternalApi: Send + Sync {
+    fn write(&self, data: &[u8]) -> impl Future<Output = Result<()>> + Send;
+    fn read(&self, size: usize) -> impl Future<Output = Result<Vec<u8>>> + Send;
+    fn set_var(&self, var: &str, value: Value) -> Result<()>;
+}
+
 #[derive(Clone)]
 pub struct Interpreter {
     rig_file: RigFile,
@@ -145,7 +150,7 @@ impl Interpreter {
         Ok(env)
     }
 
-    pub async fn execute_command(
+    pub async fn execute_command_with_env(
         &self,
         name: &str,
         args: &[Value],
@@ -180,7 +185,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub async fn execute_init(&self, api: &impl ExternalApi, env: &mut Env) -> Result<()> {
+    pub async fn execute_init_with_env(&self, api: &impl ExternalApi, env: &mut Env) -> Result<()> {
         if let Some(init) = &self.rig_file.impl_block.init {
             for statement in &init.statements {
                 self.execute_statement(statement, api, env).await?;
@@ -189,7 +194,11 @@ impl Interpreter {
         Ok(())
     }
 
-    pub async fn execute_status(&self, api: &impl ExternalApi, env: &mut Env) -> Result<()> {
+    pub async fn execute_status_with_env(
+        &self,
+        api: &impl ExternalApi,
+        env: &mut Env,
+    ) -> Result<()> {
         if let Some(status) = &self.rig_file.impl_block.status {
             for statement in &status.statements {
                 self.execute_statement(statement, api, env).await?;
@@ -571,6 +580,31 @@ impl Interpreter {
         }
         Ok(result)
     }
+
+    pub async fn execute_init(&self, external: &impl ExternalApi) -> Result<()> {
+        let mut env = self.create_env()?;
+        self.execute_init_with_env(external, &mut env).await
+    }
+
+    pub async fn execute_command(
+        &self,
+        command_name: &str,
+        params: HashMap<String, String>,
+        external: &impl ExternalApi,
+    ) -> Result<HashMap<String, Value>> {
+        let mut env = self.create_env()?;
+
+        let args = self.eval_external_args(command_name, params, &mut self.create_env()?)?;
+        self.execute_command_with_env(command_name, &args, external, &mut env)
+            .await?;
+
+        Ok(HashMap::new())
+    }
+
+    pub async fn execute_status(&self, external: &impl ExternalApi) -> Result<()> {
+        let mut env = self.create_env()?;
+        self.execute_status_with_env(external, &mut env).await
+    }
 }
 
 impl Default for Interpreter {
@@ -884,7 +918,10 @@ mod tests {
         let interpreter = Interpreter::new(rig_file.clone());
         let mut env = interpreter.create_env().unwrap();
         let api = DummyExternalApi::new();
-        interpreter.execute_init(&api, &mut env).await.unwrap();
+        interpreter
+            .execute_init_with_env(&api, &mut env)
+            .await
+            .unwrap();
 
         assert_eq!(env.get("version"), Some(Value::Integer(1)));
 
@@ -902,7 +939,7 @@ mod tests {
             },
         ];
         interpreter
-            .execute_command("set_freq", &args, &api, &mut env)
+            .execute_command_with_env("set_freq", &args, &api, &mut env)
             .await?;
 
         assert_eq!(api.output.read()[0], "WRITE: [1, 2, 3, 4]");
@@ -1158,7 +1195,7 @@ mod tests {
         let args = vec![Value::Integer(10), Value::Boolean(true)];
         let api = DummyExternalApi::new();
         interpreter
-            .execute_command("test_params", &args, &api, &mut env)
+            .execute_command_with_env("test_params", &args, &api, &mut env)
             .await?;
 
         assert_eq!(api.output.read().len(), 1);
@@ -1307,7 +1344,7 @@ mod tests {
 
         let api = DummyExternalApi::new();
         let result = interpreter
-            .execute_command("test", &[], &api, &mut env)
+            .execute_command_with_env("test", &[], &api, &mut env)
             .await;
         assert!(
             result.is_ok(),
@@ -1337,7 +1374,7 @@ mod tests {
         let mut env = interpreter.create_env()?;
 
         let result = interpreter
-            .execute_command("test", &[], &DummyExternalApi::new(), &mut env)
+            .execute_command_with_env("test", &[], &DummyExternalApi::new(), &mut env)
             .await;
 
         assert!(result.is_err());
@@ -1367,7 +1404,7 @@ mod tests {
         env.set("var".to_string(), Value::Integer(42));
 
         let result = interpreter
-            .execute_command("test", &[], &DummyExternalApi::new(), &mut env)
+            .execute_command_with_env("test", &[], &DummyExternalApi::new(), &mut env)
             .await;
 
         assert!(result.is_err());

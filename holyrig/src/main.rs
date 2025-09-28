@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
     let rigs = load_rig_files("../rigs", &schema)?;
 
     let (gui_sender, gui_receiver) = mpsc::channel::<GuiMessage>(10);
-    let mut device_manager: DeviceManager<Interpreter> = DeviceManager::new(rigs.clone());
+    let mut device_manager: DeviceManager = DeviceManager::new(rigs.clone());
 
     let gui_command_sender = device_manager.sender();
     let udp_command_sender = device_manager.sender();

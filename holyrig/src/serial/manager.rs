@@ -7,8 +7,8 @@ use tokio::time::{Duration, sleep};
 
 use crate::gui::GuiMessage;
 use crate::rig_settings::{RigSettings, Settings};
-use crate::runtime::Value;
-use crate::runtime::{ExternalApi, RigWrapper};
+use crate::runtime::ExternalApi;
+use crate::runtime::{Interpreter, Value};
 use crate::serial::device::{DeviceCommand, DeviceMessage, SerialDevice};
 
 const RIGS_FILE: &str = "rigs.toml";
@@ -53,9 +53,9 @@ pub enum ManagerMessage {
     },
 }
 
-pub struct DeviceManager<W: RigWrapper + Clone + Send + Sync> {
-    rigs: Arc<HashMap<String, W>>,
-    devices: HashMap<usize, Device<W>>,
+pub struct DeviceManager {
+    rigs: Arc<HashMap<String, Interpreter>>,
+    devices: HashMap<usize, Device>,
     settings: Settings,
     data_dir: PathBuf,
 
@@ -72,10 +72,10 @@ pub struct DeviceManager<W: RigWrapper + Clone + Send + Sync> {
 }
 
 #[derive(Clone)]
-struct Device<W: RigWrapper + Clone> {
+struct Device {
     // Manager to devices channel
     command_tx: mpsc::Sender<DeviceCommand>,
-    rig_wrapper: W,
+    rig_wrapper: Interpreter,
     settings: RigSettings,
 }
 
@@ -137,8 +137,8 @@ impl ExternalApi for DeviceExternalApi {
     }
 }
 
-impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
-    pub fn new(rigs: Arc<HashMap<String, W>>) -> Self {
+impl DeviceManager {
+    pub fn new(rigs: Arc<HashMap<String, Interpreter>>) -> Self {
         let (manager_command_tx, manager_command_rx) = mpsc::channel(10);
         let (device_tx, device_rx) = mpsc::channel(10);
 
@@ -322,7 +322,7 @@ impl<W: RigWrapper + Clone + Send + Sync + 'static> DeviceManager<W> {
         }
     }
 
-    async fn execute_status_commands(device: &Device<W>) -> Result<HashMap<String, Value>> {
+    async fn execute_status_commands(device: &Device) -> Result<HashMap<String, Value>> {
         let external_api = DeviceExternalApi::new(device.command_tx.clone());
         external_api.clear_status_values();
         device.rig_wrapper.execute_status(&external_api).await?;
