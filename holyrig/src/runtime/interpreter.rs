@@ -22,6 +22,26 @@ pub enum Value {
     Unit,
 }
 
+impl From<Value> for serde_json::Value {
+    fn from(value: Value) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<&Value> for serde_json::Value {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Integer(integer) => (*integer).into(),
+            Value::Float(float) => (*float).into(),
+            Value::Bytes(_) => todo!(),
+            Value::String(string) => string.clone().into(),
+            Value::Boolean(boolean) => (*boolean).into(),
+            Value::EnumVariant { .. } => todo!(),
+            Value::Unit => todo!(),
+        }
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

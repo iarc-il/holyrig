@@ -1,5 +1,6 @@
 use anyhow::Result;
 use eframe::egui;
+use holyrig::interfaces::jsonrpc::JsonRpcServer;
 use holyrig::resources::Resources;
 use tokio::sync::mpsc;
 
@@ -21,6 +22,18 @@ async fn main() -> Result<()> {
     let rigctld_command_sender = device_manager.sender();
     let udp_message_receiver = device_manager.receiver();
     let rigctld_message_receiver = device_manager.receiver();
+
+    let jsonrpc_command_sender = device_manager.sender();
+    let jsonrpc_command_receiver = device_manager.receiver();
+    let mut jsonrpc_server = JsonRpcServer::new(
+        "127.0.0.1",
+        5973,
+        resources.clone(),
+        jsonrpc_command_sender,
+        jsonrpc_command_receiver,
+    )?;
+
+    tokio::spawn(async move { jsonrpc_server.run().await });
 
     tokio::spawn(async move { device_manager.run(gui_sender).await });
 
