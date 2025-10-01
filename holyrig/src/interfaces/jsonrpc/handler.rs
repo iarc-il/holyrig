@@ -7,7 +7,7 @@ use super::{Request, Response, RpcError};
 pub trait RpcHandler: Send + Sync {
     async fn handle_request(&self, request: Request) -> Result<Response>;
     fn supported_methods(&self) -> &[&str];
-    fn create_response(&self, id: super::Id, result: Value) -> Response {
+    fn create_response(&self, id: String, result: Value) -> Response {
         Response {
             jsonrpc: super::Version(super::VERSION.to_string()),
             result: Some(result),
@@ -15,7 +15,7 @@ pub trait RpcHandler: Send + Sync {
             id,
         }
     }
-    fn create_error_response(&self, id: super::Id, error: RpcError) -> Response {
+    fn create_error_response(&self, id: String, error: RpcError) -> Response {
         Response {
             jsonrpc: super::Version(super::VERSION.to_string()),
             result: None,
