@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
 
     let jsonrpc_command_sender = device_manager.sender();
     let jsonrpc_command_receiver = device_manager.receiver();
-    let mut jsonrpc_server = JsonRpcServer::new(
+    let jsonrpc_server = JsonRpcServer::new(
         "127.0.0.1",
         5973,
         resources.clone(),

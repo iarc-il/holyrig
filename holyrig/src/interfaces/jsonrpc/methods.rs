@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Sender;
 
-use super::{Request, Response, RpcError, RpcHandler};
+use super::{Request, Response, RpcError};
 use crate::runtime::SchemaFile;
 use crate::serial::manager::ManagerCommand;
 
@@ -111,9 +111,8 @@ impl RigRpcHandler {
     }
 }
 
-#[async_trait::async_trait]
-impl RpcHandler for RigRpcHandler {
-    async fn handle_request(&self, request: Request) -> Result<Response> {
+impl RigRpcHandler {
+    pub async fn handle_request(&self, request: Request) -> Result<Response> {
         let response = match request.method.as_str() {
             "get_capabilities" => {
                 let result = self.get_capabilities()?;
@@ -159,7 +158,20 @@ impl RpcHandler for RigRpcHandler {
         Ok(response)
     }
 
-    fn supported_methods(&self) -> &[&str] {
-        &["get_capabilities", "execute_command"]
+    fn create_response(&self, id: String, result: Value) -> Response {
+        Response {
+            jsonrpc: super::VERSION.into(),
+            result: Some(result),
+            error: None,
+            id,
+        }
+    }
+    fn create_error_response(&self, id: String, error: RpcError) -> Response {
+        Response {
+            jsonrpc: super::VERSION.into(),
+            result: None,
+            error: Some(error),
+            id,
+        }
     }
 }

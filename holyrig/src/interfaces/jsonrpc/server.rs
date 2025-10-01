@@ -2,16 +2,18 @@ use anyhow::Result;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, mpsc};
 
 use super::{Notification, RigRpcHandler};
-use crate::interfaces::transport::{Transport, TransportConfig, udp::UdpTransport};
+use crate::interfaces::jsonrpc::{self, Request, Response};
 use crate::resources::Resources;
 use crate::runtime::Value;
 use crate::serial::manager::{CommandResponse, ManagerCommand, ManagerMessage};
 
 pub struct JsonRpcServer {
-    transport: Arc<UdpTransport>,
+    bind_address: String,
+    port: u16,
     handler: Arc<RigRpcHandler>,
     resources: Arc<Resources>,
     command_tx: mpsc::Sender<ManagerCommand>,
@@ -33,14 +35,9 @@ impl JsonRpcServer {
             command_tx.clone(),
         ));
 
-        let config = TransportConfig {
+        Ok(Self {
             bind_address: bind_address.to_string(),
             port,
-        };
-        let transport = Arc::new(UdpTransport::new(config, handler.clone())?);
-
-        Ok(Self {
-            transport,
             handler,
             resources,
             command_tx,
@@ -48,20 +45,64 @@ impl JsonRpcServer {
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        let transport = Arc::clone(&self.transport);
+    pub async fn run(mut self) -> Result<()> {
+        let addr = format!("{}:{}", self.bind_address, self.port);
+
         tokio::spawn(async move {
-            if let Err(err) = transport.start().await {
-                eprintln!("JSON-RPC transport error: {err}");
+            let socket = UdpSocket::bind(&addr).await.unwrap();
+            println!("JSON-RPC UDP server listening on {}", addr);
+
+            let mut buf = vec![0u8; 2048];
+            loop {
+                tokio::select! {
+                    received = socket.recv_from(&mut buf) => {
+                         match received {
+                            Ok((len, src_addr)) => {
+                                if let Err(e) =
+                                    self.handle_packet(&socket, &buf[..len], src_addr).await
+                                {
+                                    eprintln!("Error handling UDP datagram: {}", e);
+                                }
+                            },
+                            Err(err) => {
+                                eprintln!("Failed to receive data: {err}");
+                            }
+                        }
+                    }
+                    message = self.manager_rx.recv() => {
+                        let message = message.unwrap();
+                        if let Err(err) = self.handle_manager_message(message).await {
+                            eprintln!("Error handling manager message: {err}");
+                        }
+                    }
+                }
             }
         });
+        Ok(())
+    }
 
-        loop {
-            let message = self.manager_rx.recv().await?;
-            if let Err(err) = self.handle_manager_message(message).await {
-                eprintln!("Error handling manager message: {err}");
-            }
+    async fn handle_packet(
+        &self,
+        socket: &UdpSocket,
+        data: &[u8],
+        src_addr: std::net::SocketAddr,
+    ) -> Result<()> {
+        if let Ok(request) = serde_json::from_slice::<Request>(data) {
+            let response = self.handler.handle_request(request).await?;
+            let response_data = serde_json::to_vec(&response)?;
+            socket.send_to(&response_data, src_addr).await?;
+        } else {
+            let error_response = Response {
+                jsonrpc: super::VERSION.into(),
+                result: None,
+                error: Some(jsonrpc::RpcError::new(-32700, "Parse error")),
+                id: String::new(),
+            };
+            let error_data = serde_json::to_vec(&error_response)?;
+            socket.send_to(&error_data, src_addr).await?;
         }
+
+        Ok(())
     }
 
     async fn handle_manager_message(&self, msg: ManagerMessage) -> Result<()> {
@@ -89,26 +130,26 @@ impl JsonRpcServer {
 
     async fn handle_device_connected(&self, device_id: usize) -> Result<()> {
         let notification = Notification {
-            jsonrpc: super::Version(super::VERSION.to_string()),
+            jsonrpc: super::VERSION.into(),
             method: "device_connected".to_string(),
             params: json!({
                 "device_id": device_id,
             }),
         };
-        self.transport.broadcast_notification(notification).await?;
+        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 
     async fn handle_device_disconnected(&self, device_id: usize) -> Result<()> {
         // Notify clients
         let notification = Notification {
-            jsonrpc: super::Version(super::VERSION.to_string()),
+            jsonrpc: super::VERSION.into(),
             method: "device_disconnected".to_string(),
             params: json!({
                 "device_id": device_id,
             }),
         };
-        self.transport.broadcast_notification(notification).await?;
+        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 
@@ -123,14 +164,14 @@ impl JsonRpcServer {
             .collect();
 
         let notification = Notification {
-            jsonrpc: super::Version(super::VERSION.to_string()),
+            jsonrpc: super::VERSION.into(),
             method: "status_update".to_string(),
             params: json!({
                 "device_id": device_id,
                 "values": values,
             }),
         };
-        self.transport.broadcast_notification(notification).await?;
+        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 
@@ -141,16 +182,15 @@ impl JsonRpcServer {
         command_response: CommandResponse,
     ) -> Result<()> {
         let response = match &command_response {
-            CommandResponse::Success(msg) => json!(
-                msg.iter()
-                    .map(|(k, v)| (k, serde_json::Value::from(v)))
-                    .collect::<HashMap<_, _>>()
-            ),
+            CommandResponse::Success(msg) => json!(msg
+                .iter()
+                .map(|(k, v)| (k, serde_json::Value::from(v)))
+                .collect::<HashMap<_, _>>()),
             CommandResponse::Error(err) => json!(err),
         };
 
         let notification = Notification {
-            jsonrpc: super::Version(super::VERSION.to_string()),
+            jsonrpc: super::VERSION.into(),
             method: "command_response".to_string(),
             params: json!({
                 "device_id": device_id,
@@ -159,7 +199,7 @@ impl JsonRpcServer {
                 "response": response,
             }),
         };
-        self.transport.broadcast_notification(notification).await?;
+        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 }

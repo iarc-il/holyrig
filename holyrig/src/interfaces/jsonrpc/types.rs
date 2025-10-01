@@ -4,11 +4,8 @@ use serde_json::Value;
 use super::RpcError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Version(pub String);
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
-    pub jsonrpc: Version,
+    pub jsonrpc: String,
     pub method: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<Value>,
@@ -17,7 +14,7 @@ pub struct Request {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
-    pub jsonrpc: Version,
+    pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +24,7 @@ pub struct Response {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
-    pub jsonrpc: Version,
+    pub jsonrpc: String,
     pub method: String,
     pub params: Value,
 }
