@@ -155,6 +155,10 @@ impl Interpreter {
         Self { rig_file }
     }
 
+    pub fn get_schema(&self) -> &str {
+        &self.rig_file.impl_block.schema
+    }
+
     pub fn create_env(&self) -> Result<Env> {
         let mut env = Env::new();
 

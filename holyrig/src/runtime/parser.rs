@@ -801,7 +801,6 @@ mod tests {
             error_type: Box::new(ParseErrorType::Semantic {
                 message: message.to_string(),
                 suggestion: suggestion.map(|s| s.to_string()),
-                context: "Semantic validation".to_string(),
             }),
             source: source.to_string(),
             level: ErrorLevel::Normal,

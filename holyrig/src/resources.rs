@@ -1,54 +1,66 @@
 use anyhow::Result;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, os::unix::ffi::OsStrExt, path::PathBuf, sync::Arc};
 
 use crate::runtime::{Interpreter, SchemaFile, parse_and_validate_with_schema, parse_schema};
 
 pub struct Resources {
-    pub schema: SchemaFile,
+    pub schemas: HashMap<String, SchemaFile>,
     pub rigs: HashMap<String, Interpreter>,
 }
 
 impl Resources {
     pub fn load() -> Result<Arc<Self>> {
-        let schema = Self::load_schema()?;
-        let rigs = Self::load_rig_files(&schema)?;
-        Ok(Arc::new(Self { schema, rigs }))
+        let schemas = Self::load_schemas()?;
+        let rigs = Self::load_rig_files(&schemas)?;
+        Ok(Arc::new(Self { schemas, rigs }))
     }
 
-    fn load_schema() -> Result<SchemaFile> {
-        let schema_path = if cfg!(debug_assertions) {
-            std::path::PathBuf::from("../schema/transceiver.schema")
+    fn load_resources<T, C, F: Fn(PathBuf, &C) -> Result<(String, T)>>(
+        extension: &[u8],
+        dir: &str,
+        context: C,
+        load_fn: F,
+    ) -> Result<HashMap<String, T>> {
+        let schema_dir = if cfg!(debug_assertions) {
+            PathBuf::from("..")
         } else {
-            dirs::config_dir()
-                .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
-                .join("holyrig")
-                .join("schema.toml")
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
         };
-        Ok(parse_schema(&std::fs::read_to_string(schema_path)?)?)
+
+        schema_dir
+            .join(dir)
+            .iter()
+            .filter_map(|path| {
+                let path = PathBuf::from(path);
+                let is_extension_matching = path
+                    .extension()
+                    .map(|ext| ext.as_bytes() == extension)
+                    .unwrap_or(false);
+                if path.is_file() && is_extension_matching {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .map(|path| load_fn(path, &context))
+            .collect()
     }
 
-    fn load_rig_files(schema: &SchemaFile) -> Result<HashMap<String, Interpreter>> {
-        let mut rigs = HashMap::new();
+    fn load_schemas() -> Result<HashMap<String, SchemaFile>> {
+        Self::load_resources(b"schema", "schema", (), |path, _| {
+            let schema = parse_schema(&std::fs::read_to_string(path)?)?;
+            Ok((schema.name.clone(), schema))
+        })
+    }
 
-        for entry in std::fs::read_dir("../rigs")? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("rig") {
-                continue;
-            }
-
-            let file_name = path
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?
-                .to_string();
-
-            let content = std::fs::read_to_string(path)?;
-            let rig_file = parse_and_validate_with_schema(&content, schema).unwrap();
-            rigs.insert(file_name, Interpreter::new(rig_file));
-        }
-
-        Ok(rigs)
+    fn load_rig_files(
+        schemas: &HashMap<String, SchemaFile>,
+    ) -> Result<HashMap<String, Interpreter>> {
+        Self::load_resources(b"rig", "rig", schemas, |path, schemas| {
+            let source = std::fs::read_to_string(path)?;
+            // TODO: remove unwrap
+            let rig_file = parse_and_validate_with_schema(&source, schemas).unwrap();
+            Ok((rig_file.impl_block.name.clone(), Interpreter::new(rig_file)))
+        })
     }
 }

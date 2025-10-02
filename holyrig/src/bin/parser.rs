@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use argh::FromArgs;
@@ -34,7 +34,8 @@ fn main() -> Result<()> {
     match (rig, schema) {
         (Some(rig), Some(schema)) => {
             let schema = parse_schema(&schema)?;
-            match parse_and_validate_with_schema(&rig, &schema) {
+            let schemas = HashMap::from([(schema.name.clone(), schema)]);
+            match parse_and_validate_with_schema(&rig, &schemas) {
                 Ok(rig_file) => {
                     println!("Successfully parsed schema and rig!");
                     println!(" - Schema: {}", rig_file.impl_block.schema);

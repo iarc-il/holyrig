@@ -47,7 +47,6 @@ pub enum ParseErrorType {
     Semantic {
         message: String,
         suggestion: Option<String>,
-        context: String,
     },
 }
 
@@ -246,7 +245,6 @@ impl std::fmt::Display for ParseError {
             ParseErrorType::Semantic {
                 message,
                 suggestion,
-                context,
             } => {
                 writeln!(
                     f,
@@ -258,12 +256,6 @@ impl std::fmt::Display for ParseError {
 
                 if let Some(suggestion) = suggestion {
                     writeln!(f, "Suggestion: {suggestion}")?;
-                }
-
-                if !context.is_empty()
-                    && matches!(self.level, ErrorLevel::Detailed | ErrorLevel::Verbose)
-                {
-                    writeln!(f, "Context: {context}")?;
                 }
             }
         }

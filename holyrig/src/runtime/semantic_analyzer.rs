@@ -1074,7 +1074,6 @@ pub fn semantic_errors_to_parse_errors(
             error_type: Box::new(ParseErrorType::Semantic {
                 message: error.to_string(),
                 suggestion: None,
-                context: "Semantic analysis".to_string(),
             }),
             source: source.to_string(),
             level: ErrorLevel::Normal,
@@ -1084,9 +1083,21 @@ pub fn semantic_errors_to_parse_errors(
 
 pub fn parse_and_validate_with_schema(
     rig_source: &str,
-    schema: &SchemaFile,
+    schemas: &HashMap<String, SchemaFile>,
 ) -> Result<RigFile, Vec<ParseError>> {
     let rig_file = super::parser::parse_rig_file(rig_source).map_err(|x| vec![x])?;
+    let schema_name = &rig_file.impl_block.schema;
+    let schema = schemas.get(schema_name).ok_or_else(|| {
+        vec![ParseError {
+            position: SourcePosition::new(1, 1, 0),
+            error_type: Box::new(ParseErrorType::Semantic {
+                message: format!("Unknown schema: {schema_name}"),
+                suggestion: None,
+            }),
+            source: rig_source.to_string(),
+            level: ErrorLevel::Normal,
+        }]
+    })?;
 
     let analyzer = SemanticAnalyzer::new(schema.clone());
     analyzer

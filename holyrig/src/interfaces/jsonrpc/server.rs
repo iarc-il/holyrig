@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, mpsc};
@@ -14,7 +14,7 @@ use crate::serial::manager::{CommandResponse, ManagerCommand, ManagerMessage};
 pub struct JsonRpcServer {
     bind_address: String,
     port: u16,
-    handler: Arc<RigRpcHandler>,
+    handlers: Arc<HashMap<usize, RigRpcHandler>>,
     resources: Arc<Resources>,
     command_tx: mpsc::Sender<ManagerCommand>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
@@ -28,17 +28,17 @@ impl JsonRpcServer {
         command_tx: mpsc::Sender<ManagerCommand>,
         manager_rx: broadcast::Receiver<ManagerMessage>,
     ) -> Result<Self> {
-        let handler = Arc::new(RigRpcHandler::new(
-            resources.schema.clone(),
-            HashSet::new(),
-            HashSet::new(),
-            command_tx.clone(),
-        ));
+        // let handler = Arc::new(RigRpcHandler::new(
+        //     resources.schemas.clone(),
+        //     HashSet::new(),
+        //     HashSet::new(),
+        //     command_tx.clone(),
+        // ));
 
         Ok(Self {
             bind_address: bind_address.to_string(),
             port,
-            handler,
+            handlers: Arc::new(HashMap::new()),
             resources,
             command_tx,
             manager_rx,
@@ -88,21 +88,25 @@ impl JsonRpcServer {
         src_addr: std::net::SocketAddr,
     ) -> Result<()> {
         match serde_json::from_slice::<Request>(data) {
-            Ok(request) => {
-                let response = self.handler.handle_request(request).await?;
-                let response_data = serde_json::to_vec(&response)?;
-                socket.send_to(&response_data, src_addr).await?;
-            },
+            Ok(_request) => {
+                todo!()
+                // let response = self.handler.handle_request(request).await?;
+                // let response_data = serde_json::to_vec(&response)?;
+                // socket.send_to(&response_data, src_addr).await?;
+            }
             Err(err) => {
                 let error_response = Response {
                     jsonrpc: super::VERSION.into(),
                     result: None,
-                    error: Some(jsonrpc::RpcError::new(-32700, format!("Parse error: {err}"))),
+                    error: Some(jsonrpc::RpcError::new(
+                        -32700,
+                        format!("Parse error: {err}"),
+                    )),
                     id: String::new(),
                 };
                 let error_data = serde_json::to_vec(&error_response)?;
                 socket.send_to(&error_data, src_addr).await?;
-            },
+            }
         }
 
         Ok(())
@@ -185,10 +189,11 @@ impl JsonRpcServer {
         command_response: CommandResponse,
     ) -> Result<()> {
         let response = match &command_response {
-            CommandResponse::Success(msg) => json!(msg
-                .iter()
-                .map(|(k, v)| (k, serde_json::Value::from(v)))
-                .collect::<HashMap<_, _>>()),
+            CommandResponse::Success(msg) => json!(
+                msg.iter()
+                    .map(|(k, v)| (k, serde_json::Value::from(v)))
+                    .collect::<HashMap<_, _>>()
+            ),
             CommandResponse::Error(err) => json!(err),
         };
 
