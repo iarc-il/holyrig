@@ -87,19 +87,22 @@ impl JsonRpcServer {
         data: &[u8],
         src_addr: std::net::SocketAddr,
     ) -> Result<()> {
-        if let Ok(request) = serde_json::from_slice::<Request>(data) {
-            let response = self.handler.handle_request(request).await?;
-            let response_data = serde_json::to_vec(&response)?;
-            socket.send_to(&response_data, src_addr).await?;
-        } else {
-            let error_response = Response {
-                jsonrpc: super::VERSION.into(),
-                result: None,
-                error: Some(jsonrpc::RpcError::new(-32700, "Parse error")),
-                id: String::new(),
-            };
-            let error_data = serde_json::to_vec(&error_response)?;
-            socket.send_to(&error_data, src_addr).await?;
+        match serde_json::from_slice::<Request>(data) {
+            Ok(request) => {
+                let response = self.handler.handle_request(request).await?;
+                let response_data = serde_json::to_vec(&response)?;
+                socket.send_to(&response_data, src_addr).await?;
+            },
+            Err(err) => {
+                let error_response = Response {
+                    jsonrpc: super::VERSION.into(),
+                    result: None,
+                    error: Some(jsonrpc::RpcError::new(-32700, format!("Parse error: {err}"))),
+                    id: String::new(),
+                };
+                let error_data = serde_json::to_vec(&error_response)?;
+                socket.send_to(&error_data, src_addr).await?;
+            },
         }
 
         Ok(())
