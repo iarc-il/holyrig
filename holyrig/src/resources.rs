@@ -29,9 +29,12 @@ impl Resources {
 
         schema_dir
             .join(dir)
-            .iter()
-            .filter_map(|path| {
-                let path = PathBuf::from(path);
+            .read_dir()?
+            .filter_map(|entry| {
+                if entry.is_err() {
+                    return None;
+                }
+                let path = entry.unwrap().path();
                 let is_extension_matching = path
                     .extension()
                     .map(|ext| ext.as_bytes() == extension)
@@ -56,7 +59,7 @@ impl Resources {
     fn load_rig_files(
         schemas: &HashMap<String, SchemaFile>,
     ) -> Result<HashMap<String, Interpreter>> {
-        Self::load_resources(b"rig", "rig", schemas, |path, schemas| {
+        Self::load_resources(b"rig", "rigs", schemas, |path, schemas| {
             let source = std::fs::read_to_string(path)?;
             // TODO: remove unwrap
             let rig_file = parse_and_validate_with_schema(&source, schemas).unwrap();
