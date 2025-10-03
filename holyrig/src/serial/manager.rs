@@ -48,6 +48,7 @@ pub enum ManagerMessage {
     },
     DeviceConnected {
         device_id: usize,
+        rig_model: String,
     },
     DeviceDisconnected {
         device_id: usize,
@@ -213,11 +214,17 @@ impl DeviceManager {
     async fn handle_device_message(&mut self, device_message: DeviceMessage) {
         let result = match device_message {
             DeviceMessage::Connected { device_id } => {
+                let init_result = self.initialize_device(device_id).await;
+
+                let rig_model = self.devices[&device_id].settings.rig_type.clone();
+
                 let _ = self
                     .manager_message_tx
-                    .send(ManagerMessage::DeviceConnected { device_id });
+                    .send(ManagerMessage::DeviceConnected {
+                        device_id,
+                        rig_model,
+                    });
 
-                let init_result = self.initialize_device(device_id).await;
                 if init_result.is_ok() {
                     self.start_status_polling(device_id).await
                 } else {
@@ -242,39 +249,24 @@ impl DeviceManager {
     async fn handle_manager_command(&mut self, manager_command: ManagerCommand) -> Result<()> {
         match manager_command {
             ManagerCommand::CreateOrUpdateDevice { settings } => {
-                if let Some(_device) = self.devices.get(&settings.id) {
-                    self.devices.remove(&settings.id);
-                    let changed_settings = self
-                        .settings
-                        .rigs
-                        .iter_mut()
-                        .find(|rig| rig.id == settings.id);
-                    if let Some(changed_settings) = changed_settings {
-                        *changed_settings = settings.clone();
-                    } else {
-                        self.settings.rigs.push(settings.clone());
-                    };
-                    let path = self.data_dir.join(RIGS_FILE);
-                    let content = toml::to_string(&self.settings)?;
-                    std::fs::write(path, content)?;
+                self.devices.remove(&settings.id);
 
-                    self.add_device(settings.id, settings).await?;
+                let changed_settings = self
+                    .settings
+                    .rigs
+                    .iter_mut()
+                    .find(|rig| rig.id == settings.id);
+                if let Some(changed_settings) = changed_settings {
+                    *changed_settings = settings.clone();
                 } else {
-                    let changed_settings = self
-                        .settings
-                        .rigs
-                        .iter_mut()
-                        .find(|rig| rig.id == settings.id);
-                    if let Some(changed_settings) = changed_settings {
-                        *changed_settings = settings.clone();
-                    } else {
-                        self.settings.rigs.push(settings.clone());
-                    };
-                    let path = self.data_dir.join(RIGS_FILE);
-                    let content = toml::to_string(&self.settings)?;
-                    std::fs::write(path, content)?;
+                    self.settings.rigs.push(settings.clone());
+                };
+                let path = self.data_dir.join(RIGS_FILE);
+                let content = toml::to_string(&self.settings)?;
+                std::fs::write(path, content)?;
 
-                    self.add_device(settings.id, settings).await?;
+                if let Err(err) = self.add_device(settings.id, settings).await {
+                    eprintln!("Failed to add device: {err}");
                 }
             }
             ManagerCommand::ExecuteCommand {

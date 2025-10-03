@@ -16,7 +16,7 @@ pub struct JsonRpcServer {
     bind_address: String,
     port: u16,
     handlers: Arc<HashMap<String, RigRpcHandler>>,
-    rigs: Arc<RwLock<HashMap<usize, String>>>,
+    rigs_state: Arc<RwLock<HashMap<usize, (String, bool)>>>,
     resources: Arc<Resources>,
     command_tx: mpsc::Sender<ManagerCommand>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
@@ -45,7 +45,7 @@ impl JsonRpcServer {
             bind_address: bind_address.to_string(),
             port,
             handlers: Arc::new(handlers),
-            rigs: Arc::new(RwLock::new(HashMap::new())),
+            rigs_state: Arc::new(RwLock::new(HashMap::new())),
             resources,
             command_tx,
             manager_rx,
@@ -98,13 +98,13 @@ impl JsonRpcServer {
             Ok(request) => match request.method.as_str() {
                 "list_rigs" => {
                     let rigs = serde_json::Value::Object(
-                        self.rigs
+                        self.rigs_state
                             .read()
                             .iter()
-                            .map(|(device_id, model)| {
+                            .map(|(device_id, (_, is_connected))| {
                                 (
-                                    format!("{device_id}"),
-                                    serde_json::Value::String(model.clone()),
+                                    device_id.to_string(),
+                                    serde_json::Value::Bool(*is_connected),
                                 )
                             })
                             .collect(),
@@ -119,8 +119,8 @@ impl JsonRpcServer {
                 _ => {
                     if let Some(id) = request.get_rig_id() {
                         let handler = {
-                            let rigs = self.rigs.read();
-                            let rig_model = rigs.get(&id).unwrap();
+                            let rigs = self.rigs_state.read();
+                            let (rig_model, _) = rigs.get(&id).unwrap();
                             self.handlers.get(rig_model)
                         };
                         if let Some(handler) = handler {
@@ -158,10 +158,16 @@ impl JsonRpcServer {
     async fn handle_manager_message(&self, message: ManagerMessage) -> Result<()> {
         match message {
             ManagerMessage::InitialState { rigs } => {
-                *self.rigs.write() = rigs;
+                *self.rigs_state.write() = rigs
+                    .iter()
+                    .map(|(device_id, rig_model)| (*device_id, (rig_model.clone(), false)))
+                    .collect();
             }
-            ManagerMessage::DeviceConnected { device_id } => {
-                self.handle_device_connected(device_id).await?;
+            ManagerMessage::DeviceConnected {
+                device_id,
+                rig_model,
+            } => {
+                self.handle_device_connected(device_id, rig_model).await?;
             }
             ManagerMessage::DeviceDisconnected { device_id } => {
                 self.handle_device_disconnected(device_id).await?;
@@ -181,7 +187,8 @@ impl JsonRpcServer {
         Ok(())
     }
 
-    async fn handle_device_connected(&self, device_id: usize) -> Result<()> {
+    async fn handle_device_connected(&self, device_id: usize, rig_model: String) -> Result<()> {
+        self.rigs_state.write().insert(device_id, (rig_model, true));
         let notification = Notification {
             jsonrpc: super::VERSION.into(),
             method: "device_connected".to_string(),
@@ -194,7 +201,12 @@ impl JsonRpcServer {
     }
 
     async fn handle_device_disconnected(&self, device_id: usize) -> Result<()> {
-        // Notify clients
+        self.rigs_state
+            .write()
+            .entry(device_id)
+            .and_modify(|(_, is_connected)| {
+                *is_connected = false;
+            });
         let notification = Notification {
             jsonrpc: super::VERSION.into(),
             method: "device_disconnected".to_string(),

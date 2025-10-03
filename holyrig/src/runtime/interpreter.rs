@@ -36,7 +36,7 @@ impl From<&Value> for serde_json::Value {
             Value::Bytes(_) => todo!(),
             Value::String(string) => string.clone().into(),
             Value::Boolean(boolean) => (*boolean).into(),
-            Value::EnumVariant { .. } => todo!(),
+            Value::EnumVariant { variant_name, .. } => variant_name.as_str().into(),
             Value::Unit => todo!(),
         }
     }

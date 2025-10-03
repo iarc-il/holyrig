@@ -78,7 +78,7 @@ pub async fn run_server(
                          };
                          (response, Some(device_id))
                     },
-                    ManagerMessage::DeviceConnected { device_id } => {
+                    ManagerMessage::DeviceConnected { device_id, rig_model: _ } => {
                         (format!("Device {device_id} connected"), Some(device_id))
                     },
                     ManagerMessage::DeviceDisconnected { device_id } => {
