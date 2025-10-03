@@ -155,8 +155,8 @@ impl Interpreter {
         Self { rig_file }
     }
 
-    pub fn get_schema(&self) -> &str {
-        &self.rig_file.impl_block.schema
+    pub fn rig_file(&self) -> &RigFile {
+        &self.rig_file
     }
 
     pub fn create_env(&self) -> Result<Env> {

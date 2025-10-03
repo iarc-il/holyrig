@@ -1,4 +1,5 @@
 use anyhow::Result;
+use parking_lot::RwLock;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,7 +15,8 @@ use crate::serial::manager::{CommandResponse, ManagerCommand, ManagerMessage};
 pub struct JsonRpcServer {
     bind_address: String,
     port: u16,
-    handlers: Arc<HashMap<usize, RigRpcHandler>>,
+    handlers: Arc<HashMap<String, RigRpcHandler>>,
+    rigs: Arc<RwLock<HashMap<usize, String>>>,
     resources: Arc<Resources>,
     command_tx: mpsc::Sender<ManagerCommand>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
@@ -28,17 +30,22 @@ impl JsonRpcServer {
         command_tx: mpsc::Sender<ManagerCommand>,
         manager_rx: broadcast::Receiver<ManagerMessage>,
     ) -> Result<Self> {
-        // let handler = Arc::new(RigRpcHandler::new(
-        //     resources.schemas.clone(),
-        //     HashSet::new(),
-        //     HashSet::new(),
-        //     command_tx.clone(),
-        // ));
+        let handlers = resources
+            .rigs
+            .iter()
+            .map(|(rig_name, interpreter)| {
+                let rig_file = interpreter.rig_file();
+                let schema = resources.schemas.get(&rig_file.impl_block.schema).unwrap();
+                let handler = RigRpcHandler::new(rig_file, schema, command_tx.clone());
+                (rig_name.clone(), handler)
+            })
+            .collect();
 
         Ok(Self {
             bind_address: bind_address.to_string(),
             port,
-            handlers: Arc::new(HashMap::new()),
+            handlers: Arc::new(handlers),
+            rigs: Arc::new(RwLock::new(HashMap::new())),
             resources,
             command_tx,
             manager_rx,
@@ -87,33 +94,72 @@ impl JsonRpcServer {
         data: &[u8],
         src_addr: std::net::SocketAddr,
     ) -> Result<()> {
-        match serde_json::from_slice::<Request>(data) {
-            Ok(_request) => {
-                todo!()
-                // let response = self.handler.handle_request(request).await?;
-                // let response_data = serde_json::to_vec(&response)?;
-                // socket.send_to(&response_data, src_addr).await?;
-            }
-            Err(err) => {
-                let error_response = Response {
-                    jsonrpc: super::VERSION.into(),
-                    result: None,
-                    error: Some(jsonrpc::RpcError::new(
-                        -32700,
-                        format!("Parse error: {err}"),
-                    )),
-                    id: String::new(),
-                };
-                let error_data = serde_json::to_vec(&error_response)?;
-                socket.send_to(&error_data, src_addr).await?;
-            }
-        }
+        let response = match serde_json::from_slice::<Request>(data) {
+            Ok(request) => match request.method.as_str() {
+                "list_rigs" => {
+                    let rigs = serde_json::Value::Object(
+                        self.rigs
+                            .read()
+                            .iter()
+                            .map(|(device_id, model)| {
+                                (
+                                    format!("{device_id}"),
+                                    serde_json::Value::String(model.clone()),
+                                )
+                            })
+                            .collect(),
+                    );
+                    Response {
+                        jsonrpc: super::VERSION.into(),
+                        result: Some(rigs),
+                        error: None,
+                        id: request.id,
+                    }
+                }
+                _ => {
+                    if let Some(id) = request.get_rig_id() {
+                        let handler = {
+                            let rigs = self.rigs.read();
+                            let rig_model = rigs.get(&id).unwrap();
+                            self.handlers.get(rig_model)
+                        };
+                        if let Some(handler) = handler {
+                            handler.handle_request(&request, id).await?
+                        } else {
+                            Response::build_error(
+                                id.to_string(),
+                                jsonrpc::RpcError::unknown_rig_id(id),
+                            )
+                        }
+                    } else {
+                        Response {
+                            jsonrpc: super::VERSION.into(),
+                            result: None,
+                            error: Some(jsonrpc::RpcError::missing_rig_id()),
+                            id: String::new(),
+                        }
+                    }
+                }
+            },
+            Err(err) => Response {
+                jsonrpc: super::VERSION.into(),
+                result: None,
+                error: Some(jsonrpc::RpcError::parse_error(&err)),
+                id: String::new(),
+            },
+        };
+
+        let error_data = serde_json::to_vec(&response)?;
+        socket.send_to(&error_data, src_addr).await?;
 
         Ok(())
     }
 
-    async fn handle_manager_message(&self, msg: ManagerMessage) -> Result<()> {
-        match msg {
+    async fn handle_manager_message(&self, message: ManagerMessage) -> Result<()> {
+        match message {
+            ManagerMessage::InitialState { rigs } => {
+                *self.rigs.write() = rigs;
+            }
             ManagerMessage::DeviceConnected { device_id } => {
                 self.handle_device_connected(device_id).await?;
             }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,6 +29,8 @@ impl RpcError {
     pub const RIG_COMMUNICATION_ERROR: i32 = -32000;
     pub const INVALID_COMMAND_PARAMS: i32 = -32001;
     pub const SUBSCRIPTION_ERROR: i32 = -32002;
+    pub const MISSING_RIG_ID: i32 = -32003;
+    pub const UNKNOWN_RIG_ID: i32 = -32004;
 
     pub fn new(code: i32, message: impl Into<String>) -> Self {
         Self {
@@ -44,8 +48,8 @@ impl RpcError {
         }
     }
 
-    pub fn parse_error() -> Self {
-        Self::new(Self::PARSE_ERROR, "Parse error")
+    pub fn parse_error(message: &impl Display) -> Self {
+        Self::new(Self::PARSE_ERROR, format!("Parse error: {message}"))
     }
 
     pub fn invalid_request() -> Self {
@@ -74,5 +78,13 @@ impl RpcError {
 
     pub fn subscription_error(msg: impl Into<String>) -> Self {
         Self::new(Self::SUBSCRIPTION_ERROR, msg)
+    }
+
+    pub fn missing_rig_id() -> Self {
+        Self::new(Self::MISSING_RIG_ID, "Missing rig id")
+    }
+
+    pub fn unknown_rig_id(rig_id: usize) -> Self {
+        Self::new(Self::UNKNOWN_RIG_ID, format!("Unknown rig id: {rig_id}"))
     }
 }

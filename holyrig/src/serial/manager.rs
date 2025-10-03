@@ -37,6 +37,10 @@ pub enum ManagerCommand {
 
 #[derive(Debug, Clone)]
 pub enum ManagerMessage {
+    InitialState {
+        // DeviceId, RigFile name
+        rigs: HashMap<usize, String>,
+    },
     CommandResponse {
         device_id: usize,
         command_name: String,
@@ -190,6 +194,13 @@ impl DeviceManager {
             }
         }
 
+        self.manager_message_tx.send(ManagerMessage::InitialState {
+            rigs: settings
+                .rigs
+                .iter()
+                .map(|settings| (settings.id, settings.rig_type.clone()))
+                .collect(),
+        })?;
         gui_sender
             .send(GuiMessage::InitialState(settings.rigs.clone()))
             .await?;

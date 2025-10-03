@@ -12,6 +12,18 @@ pub struct Request {
     pub id: String,
 }
 
+impl Request {
+    pub fn get_rig_id(&self) -> Option<usize> {
+        if let Some(Value::Object(params)) = &self.params
+            && let Some(Value::Number(id)) = params.get("rig_id")
+        {
+            Some(id.as_u64()? as usize)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
     pub jsonrpc: String,
@@ -20,6 +32,17 @@ pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<RpcError>,
     pub id: String,
+}
+
+impl Response {
+    pub fn build_error(id: String, error: RpcError) -> Response {
+        Response {
+            jsonrpc: super::VERSION.into(),
+            result: None,
+            error: Some(error),
+            id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

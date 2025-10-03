@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::Display,
+};
 
 use anyhow::Result;
 use logos::Logos;
@@ -334,6 +337,23 @@ pub struct Settings {
 pub struct RigFile {
     pub settings: Settings,
     pub impl_block: Impl,
+}
+
+impl RigFile {
+    pub fn get_supported_status_fields(&self) -> HashSet<String> {
+        let mut implemented_status = HashSet::new();
+        if let Some(status) = &self.impl_block.status {
+            for stmt in &status.statements {
+                if let Statement::FunctionCall { name, args } = stmt
+                    && name == "set_var"
+                    && let Some(Expr::String(var_name)) = args.first()
+                {
+                    implemented_status.insert(var_name.clone());
+                }
+            }
+        }
+        implemented_status
+    }
 }
 
 impl Default for RigFile {

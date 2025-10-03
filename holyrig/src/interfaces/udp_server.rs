@@ -54,6 +54,13 @@ pub async fn run_server(
             },
             response = message_receiver.recv() => {
                 let (udp_response, device_id) = match response? {
+                    ManagerMessage::InitialState { rigs } => {
+                        let mut response = "Available rigs:".to_string();
+                        for (device_id, rig_file_name) in rigs {
+                            response.push_str(format!("{device_id}: {rig_file_name}\n").as_str());
+                        }
+                        (response, None)
+                    },
                     ManagerMessage::CommandResponse { device_id, command_name, response } => {
                          let response = match response {
                              CommandResponse::Success(response) => {
@@ -69,13 +76,13 @@ pub async fn run_server(
 
                              },
                          };
-                         (response, device_id)
+                         (response, Some(device_id))
                     },
                     ManagerMessage::DeviceConnected { device_id } => {
-                        (format!("Device {device_id} connected"), device_id)
+                        (format!("Device {device_id} connected"), Some(device_id))
                     },
                     ManagerMessage::DeviceDisconnected { device_id } => {
-                        (format!("Device {device_id} disconnected"), device_id)
+                        (format!("Device {device_id} disconnected"), Some(device_id))
                     },
                     ManagerMessage::StatusUpdate { device_id, values } => {
                         let formatted_values: Vec<_> = values
@@ -83,11 +90,17 @@ pub async fn run_server(
                             .map(|(name, value)| format!("{name} = {value:?}"))
                             .collect();
 
-                        (format!("Device {device_id} status update:\n{}\n", formatted_values.join("\n")), device_id)
+                        (format!("Device {device_id} status update:\n{}\n", formatted_values.join("\n")), Some(device_id))
                     }
                 };
-                if let Some(addr) = device_id_to_addr.get(&device_id) {
-                    socket.send_to(udp_response.as_bytes(), addr).await?;
+                if let Some(device_id) = device_id {
+                    if let Some(addr) = device_id_to_addr.get(&device_id) {
+                        socket.send_to(udp_response.as_bytes(), addr).await?;
+                    }
+                } else {
+                    for addr in device_id_to_addr.values() {
+                        socket.send_to(udp_response.as_bytes(), addr).await?;
+                    }
                 }
                 continue;
             }

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Sender;
 
 use super::{Request, Response, RpcError};
-use crate::runtime::SchemaFile;
+use crate::runtime::{RigFile, SchemaFile};
 use crate::serial::manager::ManagerCommand;
 
 pub struct RigRpcHandler {
@@ -16,13 +16,15 @@ pub struct RigRpcHandler {
 
 impl RigRpcHandler {
     pub fn new(
-        schema: SchemaFile,
-        implemented_commands: HashSet<String>,
-        implemented_status: HashSet<String>,
+        rig_file: &RigFile,
+        schema: &SchemaFile,
         command_sender: Sender<ManagerCommand>,
     ) -> Self {
+        let implemented_commands = rig_file.impl_block.commands.keys().cloned().collect();
+        let implemented_status = rig_file.get_supported_status_fields();
+
         Self {
-            schema,
+            schema: schema.clone(),
             implemented_commands,
             implemented_status,
             command_sender,
@@ -71,6 +73,7 @@ impl RigRpcHandler {
 
     async fn execute_command(
         &self,
+        rig_id: usize,
         command: String,
         params: HashMap<String, Value>,
     ) -> Result<Value> {
@@ -101,7 +104,7 @@ impl RigRpcHandler {
 
         self.command_sender
             .send(ManagerCommand::ExecuteCommand {
-                device_id: 0, // TODO: Handle multiple devices
+                device_id: rig_id,
                 command_name: command,
                 params: string_params,
             })
@@ -109,18 +112,17 @@ impl RigRpcHandler {
 
         Ok(Value::Object(serde_json::Map::new()))
     }
-}
 
-impl RigRpcHandler {
-    pub async fn handle_request(&self, request: Request) -> Result<Response> {
+    pub async fn handle_request(&self, request: &Request, rig_id: usize) -> Result<Response> {
         let response = match request.method.as_str() {
             "get_capabilities" => {
                 let result = self.get_capabilities()?;
-                self.create_response(request.id, result)
+                self.create_response(&request.id, result)
             }
             "execute_command" => {
                 let params = request
                     .params
+                    .as_ref()
                     .ok_or_else(|| anyhow!(RpcError::invalid_params()))?;
                 let params_map = params
                     .as_object()
@@ -138,40 +140,32 @@ impl RigRpcHandler {
                     .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                     .unwrap_or_default();
 
-                match self.execute_command(command, parameters).await {
-                    Ok(result) => self.create_response(request.id, result),
+                match self.execute_command(rig_id, command, parameters).await {
+                    Ok(result) => self.create_response(&request.id, result),
                     Err(err) => {
                         if let Some(rpc_err) = err.downcast_ref::<RpcError>() {
-                            self.create_error_response(request.id, rpc_err.clone())
+                            Response::build_error(request.id.to_string(), rpc_err.clone())
                         } else {
-                            self.create_error_response(
-                                request.id,
+                            Response::build_error(
+                                request.id.to_string(),
                                 RpcError::rig_communication_error(err.to_string()),
                             )
                         }
                     }
                 }
             }
-            _ => self.create_error_response(request.id, RpcError::method_not_found()),
+            _ => Response::build_error(request.id.to_string(), RpcError::method_not_found()),
         };
 
         Ok(response)
     }
 
-    fn create_response(&self, id: String, result: Value) -> Response {
+    fn create_response(&self, id: &str, result: Value) -> Response {
         Response {
             jsonrpc: super::VERSION.into(),
             result: Some(result),
             error: None,
-            id,
-        }
-    }
-    fn create_error_response(&self, id: String, error: RpcError) -> Response {
-        Response {
-            jsonrpc: super::VERSION.into(),
-            result: None,
-            error: Some(error),
-            id,
+            id: id.to_string(),
         }
     }
 }
