@@ -3,6 +3,8 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::interfaces::jsonrpc::types::Id;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcError {
     pub code: i32,
@@ -10,7 +12,7 @@ pub struct RpcError {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
     #[serde(skip)]
-    pub id: String,
+    pub id: Id,
 }
 
 impl std::fmt::Display for RpcError {
@@ -41,7 +43,7 @@ impl RpcError {
             code,
             message: message.into(),
             data: None,
-            id: String::new(),
+            id: Default::default(),
         }
     }
 
@@ -50,12 +52,12 @@ impl RpcError {
             code,
             message: message.into(),
             data: Some(data),
-            id: String::new(),
+            id: Default::default(),
         }
     }
 
-    pub fn with_id(mut self, id: impl Into<String>) -> Self {
-        self.id = id.into();
+    pub fn with_id(mut self, id: &Id) -> Self {
+        self.id = id.clone();
         self
     }
 

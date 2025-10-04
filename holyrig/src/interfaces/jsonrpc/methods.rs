@@ -5,6 +5,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 
 use super::{Request, Response, RpcError};
+use crate::interfaces::jsonrpc::types::Id;
 use crate::runtime::{RigFile, SchemaFile};
 use crate::serial::manager::ManagerCommand;
 
@@ -186,12 +187,12 @@ impl RigRpcHandler {
         Ok(response)
     }
 
-    fn create_response(&self, id: &str, result: Value) -> Response {
+    fn create_response(&self, id: &Id, result: Value) -> Response {
         Response {
             jsonrpc: super::VERSION.into(),
             result: Some(result),
             error: None,
-            id: id.to_string(),
+            id: id.clone(),
         }
     }
 }
