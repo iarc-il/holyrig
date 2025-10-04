@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::{collections::HashMap, os::unix::ffi::OsStrExt, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use crate::runtime::{Interpreter, SchemaFile, parse_and_validate_with_schema, parse_schema};
 
@@ -37,7 +37,7 @@ impl Resources {
                 let path = entry.unwrap().path();
                 let is_extension_matching = path
                     .extension()
-                    .map(|ext| ext.as_bytes() == extension)
+                    .map(|ext| ext.as_encoded_bytes() == extension)
                     .unwrap_or(false);
                 if path.is_file() && is_extension_matching {
                     Some(path)
