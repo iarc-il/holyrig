@@ -31,6 +31,7 @@ impl RpcError {
     pub const SUBSCRIPTION_ERROR: i32 = -32002;
     pub const MISSING_RIG_ID: i32 = -32003;
     pub const UNKNOWN_RIG_ID: i32 = -32004;
+    pub const UNKNOWN_COMMAND: i32 = -32005;
 
     pub fn new(code: i32, message: impl Into<String>) -> Self {
         Self {
@@ -56,8 +57,8 @@ impl RpcError {
         Self::new(Self::INVALID_REQUEST, "Invalid Request")
     }
 
-    pub fn method_not_found() -> Self {
-        Self::new(Self::METHOD_NOT_FOUND, "Method not found")
+    pub fn method_not_found(method: &str) -> Self {
+        Self::new(Self::METHOD_NOT_FOUND, format!("Method not found: {method}"))
     }
 
     pub fn invalid_params() -> Self {
@@ -86,5 +87,9 @@ impl RpcError {
 
     pub fn unknown_rig_id(rig_id: usize) -> Self {
         Self::new(Self::UNKNOWN_RIG_ID, format!("Unknown rig id: {rig_id}"))
+    }
+
+    pub fn unknown_command(command: &str) -> Self {
+        Self::new(Self::UNKNOWN_COMMAND, format!("Unknown command: {command}"))
     }
 }

@@ -122,27 +122,14 @@ impl JsonRpcServer {
                         if let Some(handler) = handler {
                             handler.handle_request(&request, id).await?
                         } else {
-                            Response::build_error(
-                                id.to_string(),
-                                jsonrpc::RpcError::unknown_rig_id(id),
-                            )
+                            Response::build_error(request.id, jsonrpc::RpcError::unknown_rig_id(id))
                         }
                     } else {
-                        Response {
-                            jsonrpc: super::VERSION.into(),
-                            result: None,
-                            error: Some(jsonrpc::RpcError::missing_rig_id()),
-                            id: String::new(),
-                        }
+                        Response::build_error(request.id, jsonrpc::RpcError::missing_rig_id())
                     }
                 }
             },
-            Err(err) => Response {
-                jsonrpc: super::VERSION.into(),
-                result: None,
-                error: Some(jsonrpc::RpcError::parse_error(&err)),
-                id: String::new(),
-            },
+            Err(err) => Response::build_error(String::new(), jsonrpc::RpcError::parse_error(&err)),
         };
 
         let error_data = serde_json::to_vec(&response)?;

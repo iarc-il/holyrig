@@ -82,7 +82,7 @@ impl RigRpcHandler {
             .schema
             .commands
             .get(&command)
-            .ok_or_else(|| anyhow!(RpcError::method_not_found()))?;
+            .ok_or_else(|| anyhow!(RpcError::unknown_command(&command)))?;
 
         if !self.implemented_commands.contains(&command) {
             return Err(anyhow!(RpcError::new(
@@ -165,7 +165,7 @@ impl RigRpcHandler {
                     }
                 }
             }
-            _ => Response::build_error(request.id.to_string(), RpcError::method_not_found()),
+            method => Response::build_error(request.id.to_string(), RpcError::method_not_found(method)),
         };
 
         Ok(response)
