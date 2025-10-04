@@ -19,7 +19,7 @@ pub struct JsonRpcServer {
     port: u16,
     handlers: Arc<HashMap<String, RigRpcHandler>>,
     rigs_state: Arc<RwLock<HashMap<usize, (String, bool)>>>,
-    subscribed_status: Arc<RwLock<Subscriptions>>,
+    registered_status: Arc<RwLock<Subscriptions>>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
 }
 
@@ -47,7 +47,7 @@ impl JsonRpcServer {
             port,
             handlers: Arc::new(handlers),
             rigs_state: Arc::new(RwLock::new(HashMap::new())),
-            subscribed_status: Arc::new(RwLock::new(HashMap::new())),
+            registered_status: Arc::new(RwLock::new(HashMap::new())),
             manager_rx,
         })
     }
@@ -146,7 +146,7 @@ impl JsonRpcServer {
                 handler.check_fields(&fields).map_err(|fields| {
                     anyhow!(RpcError::unknown_fields(fields).with_id(&request.id))
                 })?;
-                self.subscribed_status
+                self.registered_status
                     .write()
                     .insert((id, src_addr), fields);
 
@@ -203,7 +203,7 @@ impl JsonRpcServer {
                     .collect();
 
                 let clients: Vec<_> = self
-                    .subscribed_status
+                    .registered_status
                     .read()
                     .clone()
                     .into_iter()
@@ -233,7 +233,7 @@ impl JsonRpcServer {
                     let packet = serde_json::to_vec(&notification).unwrap();
                     if let Err(err) = socket.send_to(&packet, addr).await {
                         eprintln!("Failed to send notification to {addr}: {err}");
-                        self.subscribed_status.write().remove(&(device_id, addr));
+                        self.registered_status.write().remove(&(device_id, addr));
                     }
                 }
             }

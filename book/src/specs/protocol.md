@@ -117,7 +117,7 @@ Response:
 }
 ```
 
-### subscribe_status
+### register_status
 
 Subscribes to status updates for specified fields.
 
@@ -125,7 +125,7 @@ Request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method": "subscribe_status",
+    "method": "register_status",
     "params": {
         "rig_id": "0",
         "fields": ["freq", "mode", "transmit"]
@@ -140,7 +140,7 @@ Response:
     "jsonrpc": "2.0",
     "id": 3,
     "result": {
-        "subscription_id": "sub_1234"
+        "result": "success"
     }
 }
 ```
@@ -152,7 +152,6 @@ Status Update Notification (Server -> Client):
     "method": "status_update",
     "params": {
         "rig_id": "0",
-        "subscription_id": "sub_1234",
         "updates": {
             "freq": 14250000,
             "mode": "USB",
