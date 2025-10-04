@@ -150,46 +150,20 @@ impl JsonRpcServer {
                 device_id,
                 rig_model,
             } => {
-                self.handle_device_connected(device_id, rig_model).await?;
+                self.rigs_state.write().insert(device_id, (rig_model, true));
             }
             ManagerMessage::DeviceDisconnected { device_id } => {
-                self.handle_device_disconnected(device_id).await?;
+                self.rigs_state
+                    .write()
+                    .entry(device_id)
+                    .and_modify(|(_, is_connected)| {
+                        *is_connected = false;
+                    });
             }
             ManagerMessage::StatusUpdate { device_id, values } => {
                 self.handle_status_update(device_id, values).await?;
             }
         }
-        Ok(())
-    }
-
-    async fn handle_device_connected(&self, device_id: usize, rig_model: String) -> Result<()> {
-        self.rigs_state.write().insert(device_id, (rig_model, true));
-        let notification = Notification {
-            jsonrpc: super::VERSION.into(),
-            method: "device_connected".to_string(),
-            params: json!({
-                "device_id": device_id,
-            }),
-        };
-        // self.transport.broadcast_notification(notification).await?;
-        Ok(())
-    }
-
-    async fn handle_device_disconnected(&self, device_id: usize) -> Result<()> {
-        self.rigs_state
-            .write()
-            .entry(device_id)
-            .and_modify(|(_, is_connected)| {
-                *is_connected = false;
-            });
-        let notification = Notification {
-            jsonrpc: super::VERSION.into(),
-            method: "device_disconnected".to_string(),
-            params: json!({
-                "device_id": device_id,
-            }),
-        };
-        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 
