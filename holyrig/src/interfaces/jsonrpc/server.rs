@@ -138,6 +138,14 @@ impl JsonRpcServer {
                     })
                     .ok_or_else(|| anyhow!(RpcError::invalid_params().with_id(&request.id)))?;
 
+                let rigs_state = self.rigs_state.read();
+                let (rig_model, _) = rigs_state
+                    .get(&id)
+                    .ok_or_else(|| anyhow!(RpcError::unknown_rig_id(id)))?;
+                let handler = self.handlers.get(rig_model).unwrap();
+                handler.check_fields(&fields).map_err(|fields| {
+                    anyhow!(RpcError::unknown_fields(fields).with_id(&request.id))
+                })?;
                 self.subscribed_status
                     .write()
                     .insert((id, src_addr), fields);

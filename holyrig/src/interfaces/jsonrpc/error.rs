@@ -34,6 +34,7 @@ impl RpcError {
     pub const MISSING_RIG_ID: i32 = -32003;
     pub const UNKNOWN_RIG_ID: i32 = -32004;
     pub const UNKNOWN_COMMAND: i32 = -32005;
+    pub const UNKNOWN_FIELDS: i32 = -32006;
 
     pub fn new(code: i32, message: impl Into<String>) -> Self {
         Self {
@@ -103,5 +104,11 @@ impl RpcError {
 
     pub fn unknown_command(command: &str) -> Self {
         Self::new(Self::UNKNOWN_COMMAND, format!("Unknown command: {command}"))
+    }
+    pub fn unknown_fields(fields: Vec<String>) -> Self {
+        Self::new(
+            Self::UNKNOWN_FIELDS,
+            format!("Unknown fields: {}", fields.join(", ")),
+        )
     }
 }

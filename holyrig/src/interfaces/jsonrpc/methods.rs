@@ -32,6 +32,19 @@ impl RigRpcHandler {
         }
     }
 
+    pub fn check_fields(&self, fields: &[String]) -> Result<(), Vec<String>> {
+        let unknown_fields: Vec<_> = fields
+            .iter()
+            .filter(|field| !self.implemented_status.contains(*field))
+            .cloned()
+            .collect();
+        if unknown_fields.is_empty() {
+            Ok(())
+        } else {
+            Err(unknown_fields)
+        }
+    }
+
     fn get_capabilities(&self) -> Result<Value> {
         let mut capabilities = serde_json::Map::new();
 
