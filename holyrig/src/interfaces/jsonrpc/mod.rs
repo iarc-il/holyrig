@@ -1,10 +1,10 @@
 mod error;
-mod methods;
+mod handler;
 mod server;
 mod types;
 
 pub use error::RpcError;
-pub use methods::RigRpcHandler;
+pub use handler::RigRpcHandler;
 pub use server::JsonRpcServer;
 pub use types::{Notification, Request, Response};
 
