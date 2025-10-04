@@ -10,7 +10,7 @@ use super::{Notification, RigRpcHandler};
 use crate::interfaces::jsonrpc::{self, Request, Response};
 use crate::resources::Resources;
 use crate::runtime::Value;
-use crate::serial::manager::{CommandResponse, ManagerCommand, ManagerMessage};
+use crate::serial::manager::{ManagerCommand, ManagerMessage};
 
 pub struct JsonRpcServer {
     bind_address: String,
@@ -175,14 +175,6 @@ impl JsonRpcServer {
             ManagerMessage::StatusUpdate { device_id, values } => {
                 self.handle_status_update(device_id, values).await?;
             }
-            ManagerMessage::CommandResponse {
-                device_id,
-                command_name,
-                response,
-            } => {
-                self.handle_command_response(device_id, command_name, response)
-                    .await?;
-            }
         }
         Ok(())
     }
@@ -234,35 +226,6 @@ impl JsonRpcServer {
             params: json!({
                 "device_id": device_id,
                 "values": values,
-            }),
-        };
-        // self.transport.broadcast_notification(notification).await?;
-        Ok(())
-    }
-
-    async fn handle_command_response(
-        &self,
-        device_id: usize,
-        command_name: String,
-        command_response: CommandResponse,
-    ) -> Result<()> {
-        let response = match &command_response {
-            CommandResponse::Success(msg) => json!(
-                msg.iter()
-                    .map(|(k, v)| (k, serde_json::Value::from(v)))
-                    .collect::<HashMap<_, _>>()
-            ),
-            CommandResponse::Error(err) => json!(err),
-        };
-
-        let notification = Notification {
-            jsonrpc: super::VERSION.into(),
-            method: "command_response".to_string(),
-            params: json!({
-                "device_id": device_id,
-                "command": command_name,
-                "success": matches!(command_response, CommandResponse::Success(_)),
-                "response": response,
             }),
         };
         // self.transport.broadcast_notification(notification).await?;

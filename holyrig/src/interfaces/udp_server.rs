@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tokio::net::UdpSocket;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
 
 use crate::serial::ManagerCommand;
 use crate::serial::manager::{CommandResponse, ManagerMessage};
@@ -61,23 +62,6 @@ pub async fn run_server(
                         }
                         (response, None)
                     },
-                    ManagerMessage::CommandResponse { device_id, command_name, response } => {
-                         let response = match response {
-                             CommandResponse::Success(response) => {
-                                 let mut message = format!("Executed command {command_name} on device {device_id}");
-                                 if !response.is_empty() {
-                                     message.push_str(&format!(" {response:?}"));
-                                 }
-                                 message.push('\n');
-                                 message
-                             },
-                             CommandResponse::Error(err) => {
-                                 format!("Failed executing command {command_name} on device {device_id}: {err}\n")
-
-                             },
-                         };
-                         (response, Some(device_id))
-                    },
                     ManagerMessage::DeviceConnected { device_id, rig_model: _ } => {
                         (format!("Device {device_id} connected"), Some(device_id))
                     },
@@ -114,13 +98,33 @@ pub async fn run_server(
 
                 device_id_to_addr.insert(device_id, addr);
 
+                let (tx, rx) = oneshot::channel();
                 command_sender
                     .send(ManagerCommand::ExecuteCommand {
                         device_id,
-                        command_name,
+                        command_name: command_name.clone(),
                         params,
+                        response_channel: Some(tx),
                     })
                     .await?;
+
+                let response = match rx.await? {
+                    CommandResponse::Success(response) => {
+                        let mut message =
+                            format!("Executed command {command_name} on device {device_id}");
+                        if !response.is_empty() {
+                            message.push_str(&format!(" {response:?}"));
+                        }
+                        message.push('\n');
+                        message
+                    }
+                    CommandResponse::Error(err) => {
+                        format!(
+                            "Failed executing command {command_name} on device {device_id}: {err}\n"
+                        )
+                    }
+                };
+                socket.send_to(response.as_bytes(), addr).await?;
             }
             Err(err) => {
                 let error_str = format!("ERROR: Invalid command format - {err}\n");

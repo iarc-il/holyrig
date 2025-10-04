@@ -1,8 +1,9 @@
 use anyhow::{Context, Result, anyhow};
+use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 
 use crate::gui::GuiMessage;
@@ -20,6 +21,20 @@ pub enum CommandResponse {
     Error(String),
 }
 
+impl From<CommandResponse> for serde_json::Value {
+    fn from(value: CommandResponse) -> Self {
+        match value {
+            CommandResponse::Success(values) => values
+                .into_iter()
+                .map(|(key, value)| (key, serde_json::Value::from(value)))
+                .collect(),
+            CommandResponse::Error(err) => {
+                json!({"error": err})
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ManagerCommand {
     CreateOrUpdateDevice {
@@ -29,6 +44,7 @@ pub enum ManagerCommand {
         device_id: usize,
         command_name: String,
         params: HashMap<String, String>,
+        response_channel: Option<oneshot::Sender<CommandResponse>>,
     },
     RemoveDevice {
         device_id: usize,
@@ -40,11 +56,6 @@ pub enum ManagerMessage {
     InitialState {
         // DeviceId, RigFile name
         rigs: HashMap<usize, String>,
-    },
-    CommandResponse {
-        device_id: usize,
-        command_name: String,
-        response: CommandResponse,
     },
     DeviceConnected {
         device_id: usize,
@@ -273,6 +284,7 @@ impl DeviceManager {
                 device_id,
                 command_name,
                 params,
+                response_channel,
             } => {
                 let result = self.execute_command(device_id, &command_name, params).await;
 
@@ -283,12 +295,9 @@ impl DeviceManager {
                         CommandResponse::Error(err.to_string())
                     }
                 };
-                self.manager_message_tx
-                    .send(ManagerMessage::CommandResponse {
-                        device_id,
-                        command_name,
-                        response,
-                    })?;
+                if let Some(response_channel) = response_channel {
+                    response_channel.send(response).unwrap();
+                }
             }
             ManagerCommand::RemoveDevice { device_id } => {
                 if let Some(device) = self.devices.remove(&device_id) {

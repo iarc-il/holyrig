@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
 
 use super::{Request, Response, RpcError};
 use crate::runtime::{RigFile, SchemaFile};
@@ -99,18 +100,28 @@ impl RigRpcHandler {
                 )))
             })?;
 
+            let value = match value {
+                Value::Bool(boolean) => boolean.to_string(),
+                Value::Number(number) => number.to_string(),
+                Value::String(string) => string.clone(),
+                value => todo!("{value:?}"),
+            };
             string_params.insert(param.name.clone(), value.to_string());
         }
 
+        let (tx, rx) = oneshot::channel();
         self.command_sender
             .send(ManagerCommand::ExecuteCommand {
                 device_id: rig_id,
                 command_name: command,
                 params: string_params,
+                response_channel: Some(tx),
             })
             .await?;
 
-        Ok(Value::Object(serde_json::Map::new()))
+        let response = rx.await?;
+
+        Ok(response.into())
     }
 
     pub async fn handle_request(&self, request: &Request, rig_id: usize) -> Result<Response> {

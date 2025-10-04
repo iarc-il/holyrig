@@ -273,6 +273,7 @@ async fn handle_client(
                         device_id: 0, // TODO: Support multiple devices
                         command_name: command_name.to_string(),
                         params,
+                        response_channel: None,
                     })
                     .await
                 {
