@@ -17,8 +17,6 @@ pub struct JsonRpcServer {
     port: u16,
     handlers: Arc<HashMap<String, RigRpcHandler>>,
     rigs_state: Arc<RwLock<HashMap<usize, (String, bool)>>>,
-    resources: Arc<Resources>,
-    command_tx: mpsc::Sender<ManagerCommand>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
 }
 
@@ -46,8 +44,6 @@ impl JsonRpcServer {
             port,
             handlers: Arc::new(handlers),
             rigs_state: Arc::new(RwLock::new(HashMap::new())),
-            resources,
-            command_tx,
             manager_rx,
         })
     }
