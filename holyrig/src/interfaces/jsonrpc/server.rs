@@ -10,15 +10,16 @@ use tokio::sync::{broadcast, mpsc};
 use super::{Notification, RigRpcHandler};
 use crate::interfaces::jsonrpc::{Request, Response, RpcError};
 use crate::resources::Resources;
-use crate::runtime::Value;
 use crate::serial::manager::{ManagerCommand, ManagerMessage};
+
+type Subscriptions = HashMap<(usize, SocketAddr), Vec<String>>;
 
 pub struct JsonRpcServer {
     bind_address: String,
     port: u16,
     handlers: Arc<HashMap<String, RigRpcHandler>>,
     rigs_state: Arc<RwLock<HashMap<usize, (String, bool)>>>,
-    subscribed_status: Arc<RwLock<HashMap<(usize, SocketAddr), Vec<String>>>>,
+    subscribed_status: Arc<RwLock<Subscriptions>>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
 }
 
@@ -85,7 +86,7 @@ impl JsonRpcServer {
                     }
                     message = self.manager_rx.recv() => {
                         let message = message.unwrap();
-                        if let Err(err) = self.handle_manager_message(message).await {
+                        if let Err(err) = self.handle_manager_message(message, &socket).await {
                             eprintln!("Error handling manager message: {err}");
                         }
                     }
@@ -161,7 +162,11 @@ impl JsonRpcServer {
         Ok(response)
     }
 
-    async fn handle_manager_message(&self, message: ManagerMessage) -> Result<()> {
+    async fn handle_manager_message(
+        &self,
+        message: ManagerMessage,
+        socket: &UdpSocket,
+    ) -> Result<()> {
         match message {
             ManagerMessage::InitialState { rigs } => {
                 *self.rigs_state.write() = rigs
@@ -184,31 +189,47 @@ impl JsonRpcServer {
                     });
             }
             ManagerMessage::StatusUpdate { device_id, values } => {
-                self.handle_status_update(device_id, values).await?;
+                let values: HashMap<_, _> = values
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::from(v)))
+                    .collect();
+
+                let clients: Vec<_> = self
+                    .subscribed_status
+                    .read()
+                    .clone()
+                    .into_iter()
+                    .filter(|((id, _), _)| *id == device_id)
+                    .collect();
+
+                for ((_, addr), fields) in clients {
+                    let values: HashMap<_, _> = values
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            if fields.contains(k) {
+                                Some((k.clone(), v.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    let notification = Notification {
+                        jsonrpc: super::VERSION.into(),
+                        method: "status_update".to_string(),
+                        params: json!({
+                            "rig_id": device_id,
+                            "updates": values,
+                        }),
+                    };
+                    let packet = serde_json::to_vec(&notification).unwrap();
+                    if let Err(err) = socket.send_to(&packet, addr).await {
+                        eprintln!("Failed to send notification to {addr}: {err}");
+                        self.subscribed_status.write().remove(&(device_id, addr));
+                    }
+                }
             }
         }
-        Ok(())
-    }
-
-    async fn handle_status_update(
-        &self,
-        device_id: usize,
-        values: HashMap<String, Value>,
-    ) -> Result<()> {
-        let values: HashMap<_, _> = values
-            .into_iter()
-            .map(|(k, v)| (k, serde_json::Value::from(v)))
-            .collect();
-
-        let notification = Notification {
-            jsonrpc: super::VERSION.into(),
-            method: "status_update".to_string(),
-            params: json!({
-                "device_id": device_id,
-                "values": values,
-            }),
-        };
-        // self.transport.broadcast_notification(notification).await?;
         Ok(())
     }
 }
