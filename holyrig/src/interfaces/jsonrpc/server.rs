@@ -1,13 +1,14 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use parking_lot::RwLock;
 use serde_json::json;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, mpsc};
 
 use super::{Notification, RigRpcHandler};
-use crate::interfaces::jsonrpc::{self, Request, Response};
+use crate::interfaces::jsonrpc::{Request, Response, RpcError};
 use crate::resources::Resources;
 use crate::runtime::Value;
 use crate::serial::manager::{ManagerCommand, ManagerMessage};
@@ -17,6 +18,7 @@ pub struct JsonRpcServer {
     port: u16,
     handlers: Arc<HashMap<String, RigRpcHandler>>,
     rigs_state: Arc<RwLock<HashMap<usize, (String, bool)>>>,
+    subscribed_status: Arc<RwLock<HashMap<(usize, SocketAddr), Vec<String>>>>,
     manager_rx: broadcast::Receiver<ManagerMessage>,
 }
 
@@ -44,6 +46,7 @@ impl JsonRpcServer {
             port,
             handlers: Arc::new(handlers),
             rigs_state: Arc::new(RwLock::new(HashMap::new())),
+            subscribed_status: Arc::new(RwLock::new(HashMap::new())),
             manager_rx,
         })
     }
@@ -61,11 +64,19 @@ impl JsonRpcServer {
                     received = socket.recv_from(&mut buf) => {
                          match received {
                             Ok((len, src_addr)) => {
-                                if let Err(e) =
-                                    self.handle_packet(&socket, &buf[..len], src_addr).await
-                                {
-                                    eprintln!("Error handling UDP datagram: {}", e);
-                                }
+                                let response = match self.handle_packet(&buf[..len], src_addr).await {
+                                    Ok(response) => response,
+                                    Err(err) => {
+                                        if let Some(rpc_error) = err.downcast_ref::<RpcError>() {
+                                            eprintln!("Error handling UDP datagram: {err}");
+                                            Response::build_error(rpc_error.clone())
+                                        } else {
+                                            continue;
+                                        }
+                                    },
+                                };
+                                let error_data = serde_json::to_vec(&response).unwrap();
+                                socket.send_to(&error_data, src_addr).await.unwrap();
                             },
                             Err(err) => {
                                 eprintln!("Failed to receive data: {err}");
@@ -84,58 +95,70 @@ impl JsonRpcServer {
         Ok(())
     }
 
-    async fn handle_packet(
-        &self,
-        socket: &UdpSocket,
-        data: &[u8],
-        src_addr: std::net::SocketAddr,
-    ) -> Result<()> {
-        let response = match serde_json::from_slice::<Request>(data) {
-            Ok(request) => match request.method.as_str() {
-                "list_rigs" => {
-                    let rigs = serde_json::Value::Object(
-                        self.rigs_state
-                            .read()
+    async fn handle_packet(&self, data: &[u8], src_addr: SocketAddr) -> Result<Response> {
+        let request = serde_json::from_slice::<Request>(data)
+            .map_err(|err| anyhow!(RpcError::parse_error(&err)))?;
+        let response = match request.method.as_str() {
+            "list_rigs" => {
+                let rigs = serde_json::Value::Object(
+                    self.rigs_state
+                        .read()
+                        .iter()
+                        .map(|(device_id, (_, is_connected))| {
+                            (
+                                device_id.to_string(),
+                                serde_json::Value::Bool(*is_connected),
+                            )
+                        })
+                        .collect(),
+                );
+                Response {
+                    jsonrpc: super::VERSION.into(),
+                    result: Some(rigs),
+                    error: None,
+                    id: request.id,
+                }
+            }
+            "subscribe_status" => {
+                let id = request
+                    .get_rig_id()
+                    .ok_or_else(|| anyhow!(RpcError::missing_rig_id()))?;
+                let fields = request
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.as_object())
+                    .and_then(|params| params.get("fields"))
+                    .and_then(|fields| fields.as_array())
+                    .and_then(|fields| {
+                        fields
                             .iter()
-                            .map(|(device_id, (_, is_connected))| {
-                                (
-                                    device_id.to_string(),
-                                    serde_json::Value::Bool(*is_connected),
-                                )
-                            })
-                            .collect(),
-                    );
-                    Response {
-                        jsonrpc: super::VERSION.into(),
-                        result: Some(rigs),
-                        error: None,
-                        id: request.id,
-                    }
-                }
-                _ => {
-                    if let Some(id) = request.get_rig_id() {
-                        let handler = {
-                            let rigs = self.rigs_state.read();
-                            let (rig_model, _) = rigs.get(&id).unwrap();
-                            self.handlers.get(rig_model)
-                        };
-                        if let Some(handler) = handler {
-                            handler.handle_request(&request, id).await?
-                        } else {
-                            Response::build_error(request.id, jsonrpc::RpcError::unknown_rig_id(id))
-                        }
-                    } else {
-                        Response::build_error(request.id, jsonrpc::RpcError::missing_rig_id())
-                    }
-                }
-            },
-            Err(err) => Response::build_error(String::new(), jsonrpc::RpcError::parse_error(&err)),
+                            .map(|field| field.as_str().map(|field| field.to_string()))
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .ok_or_else(|| anyhow!(RpcError::invalid_params().with_id(&request.id)))?;
+
+                self.subscribed_status
+                    .write()
+                    .insert((id, src_addr), fields);
+
+                Response::build_success(request.id)
+            }
+            _ => {
+                let id = request
+                    .get_rig_id()
+                    .ok_or_else(|| anyhow!(RpcError::missing_rig_id().with_id(&request.id)))?;
+                let handler = {
+                    let rigs = self.rigs_state.read();
+                    let (rig_model, _) = rigs.get(&id).unwrap();
+                    self.handlers
+                        .get(rig_model)
+                        .ok_or_else(|| anyhow!(RpcError::unknown_rig_id(id).with_id(&request.id)))?
+                };
+                handler.handle_request(&request, id).await?
+            }
         };
 
-        let error_data = serde_json::to_vec(&response)?;
-        socket.send_to(&error_data, src_addr).await?;
-
-        Ok(())
+        Ok(response)
     }
 
     async fn handle_manager_message(&self, message: ManagerMessage) -> Result<()> {

@@ -9,6 +9,8 @@ pub struct RpcError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+    #[serde(skip)]
+    pub id: String,
 }
 
 impl std::fmt::Display for RpcError {
@@ -38,6 +40,7 @@ impl RpcError {
             code,
             message: message.into(),
             data: None,
+            id: String::new(),
         }
     }
 
@@ -46,7 +49,13 @@ impl RpcError {
             code,
             message: message.into(),
             data: Some(data),
+            id: String::new(),
         }
+    }
+
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
     }
 
     pub fn parse_error(message: &impl Display) -> Self {
@@ -58,7 +67,10 @@ impl RpcError {
     }
 
     pub fn method_not_found(method: &str) -> Self {
-        Self::new(Self::METHOD_NOT_FOUND, format!("Method not found: {method}"))
+        Self::new(
+            Self::METHOD_NOT_FOUND,
+            format!("Method not found: {method}"),
+        )
     }
 
     pub fn invalid_params() -> Self {

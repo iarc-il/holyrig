@@ -155,17 +155,19 @@ impl RigRpcHandler {
                     Ok(result) => self.create_response(&request.id, result),
                     Err(err) => {
                         if let Some(rpc_err) = err.downcast_ref::<RpcError>() {
-                            Response::build_error(request.id.to_string(), rpc_err.clone())
+                            Response::build_error(rpc_err.clone().with_id(&request.id))
                         } else {
                             Response::build_error(
-                                request.id.to_string(),
-                                RpcError::rig_communication_error(err.to_string()),
+                                RpcError::rig_communication_error(err.to_string())
+                                    .with_id(&request.id),
                             )
                         }
                     }
                 }
             }
-            method => Response::build_error(request.id.to_string(), RpcError::method_not_found(method)),
+            method => {
+                Response::build_error(RpcError::method_not_found(method).with_id(&request.id))
+            }
         };
 
         Ok(response)

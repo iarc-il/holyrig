@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::RpcError;
 
@@ -35,11 +35,21 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn build_error(id: String, error: RpcError) -> Response {
+    pub fn build_error(mut error: RpcError) -> Self {
+        let id = std::mem::take(&mut error.id);
         Response {
             jsonrpc: super::VERSION.into(),
             result: None,
             error: Some(error),
+            id,
+        }
+    }
+
+    pub fn build_success(id: String) -> Self {
+        Response {
+            jsonrpc: super::VERSION.into(),
+            result: Some(json!({"result": "success"})),
+            error: None,
             id,
         }
     }
