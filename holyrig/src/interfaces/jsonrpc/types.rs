@@ -35,21 +35,20 @@ impl Request {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
-    pub jsonrpc: String,
+    jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
+    result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<RpcError>,
-    pub id: Id,
+    error: Option<RpcError>,
+    id: Id,
 }
 
 impl Response {
-    pub fn build_error(mut error: RpcError) -> Self {
-        let id = std::mem::take(&mut error.id);
+    pub fn build_result(id: Id, result: Value) -> Response {
         Response {
             jsonrpc: super::VERSION.into(),
-            result: None,
-            error: Some(error),
+            result: Some(result),
+            error: None,
             id,
         }
     }
@@ -59,6 +58,16 @@ impl Response {
             jsonrpc: super::VERSION.into(),
             result: Some(json!({"result": "success"})),
             error: None,
+            id,
+        }
+    }
+
+    pub fn build_error(mut error: RpcError) -> Self {
+        let id = std::mem::take(&mut error.id);
+        Response {
+            jsonrpc: super::VERSION.into(),
+            result: None,
+            error: Some(error),
             id,
         }
     }

@@ -113,12 +113,7 @@ impl JsonRpcServer {
                         })
                         .collect(),
                 );
-                Response {
-                    jsonrpc: super::VERSION.into(),
-                    result: Some(rigs),
-                    error: None,
-                    id: request.id,
-                }
+                Response::build_result(request.id, rigs)
             }
             "subscribe_status" => {
                 let id = request

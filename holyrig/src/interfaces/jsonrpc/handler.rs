@@ -5,7 +5,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 
 use super::{Request, Response, RpcError};
-use crate::interfaces::jsonrpc::types::Id;
 use crate::runtime::{RigFile, SchemaFile};
 use crate::serial::manager::ManagerCommand;
 
@@ -142,7 +141,7 @@ impl RigRpcHandler {
         let response = match request.method.as_str() {
             "get_capabilities" => {
                 let result = self.get_capabilities()?;
-                self.create_response(&request.id, result)
+                Response::build_result(request.id.clone(), result)
             }
             "execute_command" => {
                 let params = request
@@ -166,7 +165,7 @@ impl RigRpcHandler {
                     .unwrap_or_default();
 
                 match self.execute_command(rig_id, command, parameters).await {
-                    Ok(result) => self.create_response(&request.id, result),
+                    Ok(result) => Response::build_result(request.id.clone(), result),
                     Err(err) => {
                         if let Some(rpc_err) = err.downcast_ref::<RpcError>() {
                             Response::build_error(rpc_err.clone().with_id(&request.id))
@@ -185,14 +184,5 @@ impl RigRpcHandler {
         };
 
         Ok(response)
-    }
-
-    fn create_response(&self, id: &Id, result: Value) -> Response {
-        Response {
-            jsonrpc: super::VERSION.into(),
-            result: Some(result),
-            error: None,
-            id: id.clone(),
-        }
     }
 }
