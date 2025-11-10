@@ -23,6 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_core::{BOOL, Error};
 
+use auto_dispatch::auto_dispatch;
+
 const CLSID_SIMPLE_COM_OBJECT: GUID = GUID::from_u128(0x12345678_1234_1234_1234_123456789ABC);
 
 const IID_IUNKNOWN: GUID = GUID::from_u128(0x00000000_0000_0000_C000_000000000046);
@@ -35,6 +37,33 @@ const DISPID_ADD: i32 = 3;
 #[implement(IDispatch)]
 struct SimpleComObject {
     counter: RefCell<i32>,
+}
+
+#[auto_dispatch]
+impl SimpleComObject {
+    // Getter for simple value
+    #[id(1)]
+    fn prop1(&self) -> Result<u32, HRESULT> {
+        0
+    }
+
+    // Getter for other com component
+    #[id(2)]
+    fn other_com1(&self) -> Result<ComObj, HRESULT> {
+        todo!()
+    }
+
+    // Getter
+    #[id(3)]
+    fn prop2(&self) -> Result<bool, HRESULT> {
+        todo!()
+    }
+
+    // Setter
+    #[id(3)]
+    fn prop2(&self, value: bool) -> Result<(), HRESULT> {
+        todo!()
+    }
 }
 
 impl IDispatch_Impl for SimpleComObject_Impl {
