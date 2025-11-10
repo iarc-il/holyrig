@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use windows::core::{implement, IUnknown, Result, GUID, PCWSTR};
 
-use windows::Win32::Foundation::{BOOL, CLASS_E_NOAGGREGATION, E_NOINTERFACE, E_NOTIMPL, HWND};
+use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE, E_NOTIMPL, HWND};
 use windows::Win32::System::Com::{
     CoInitializeEx, CoRegisterClassObject, CoRevokeClassObject, CoUninitialize, IClassFactory,
     IClassFactory_Impl, IDispatch, IDispatch_Impl, ITypeInfo, CLSCTX_LOCAL_SERVER,
@@ -16,6 +16,7 @@ use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, TranslateMessage, MSG,
 };
+use windows_core::BOOL;
 
 const CLSID_SIMPLE_COM_OBJECT: GUID = GUID::from_u128(0x12345678_1234_1234_1234_123456789ABC);
 
@@ -25,7 +26,7 @@ const IID_IDISPATCH: GUID = GUID::from_u128(0x00020400_0000_0000_C000_0000000000
 #[implement(IDispatch)]
 struct SimpleComObject;
 
-impl IDispatch_Impl for SimpleComObject {
+impl IDispatch_Impl for SimpleComObject_Impl {
     fn GetTypeInfoCount(&self) -> Result<u32> {
         Ok(0)
     }
@@ -63,10 +64,10 @@ impl IDispatch_Impl for SimpleComObject {
 #[implement(IClassFactory)]
 struct SimpleComObjectFactory;
 
-impl IClassFactory_Impl for SimpleComObjectFactory {
+impl IClassFactory_Impl for SimpleComObjectFactory_Impl {
     fn CreateInstance(
         &self,
-        punkouter: Option<&IUnknown>,
+        punkouter: windows_core::Ref<IUnknown>,
         riid: *const GUID,
         ppvobject: *mut *mut c_void,
     ) -> Result<()> {
@@ -96,7 +97,7 @@ impl IClassFactory_Impl for SimpleComObjectFactory {
 
 fn main() -> Result<()> {
     unsafe {
-        CoInitializeEx(None, COINIT_MULTITHREADED)?;
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
 
         let factory: IClassFactory = SimpleComObjectFactory.into();
 
@@ -135,11 +136,11 @@ fn main() -> Result<()> {
 
         let mut msg = MSG::default();
         while running.load(Ordering::SeqCst) {
-            let result = GetMessageW(&mut msg, HWND::default(), 0, 0);
+            let result = GetMessageW(&mut msg, Some(HWND::default()), 0, 0);
             if result.0 == 0 || result.0 == -1 {
                 break;
             }
-            TranslateMessage(&msg);
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
 
             std::thread::sleep(std::time::Duration::from_millis(100));
