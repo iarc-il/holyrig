@@ -1,30 +1,41 @@
 #![allow(non_camel_case_types)]
 
+use std::cell::RefCell;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use windows::core::{implement, IUnknown, Result, GUID, PCWSTR};
+use std::sync::atomic::{AtomicBool, Ordering};
+use windows::core::{BSTR, GUID, IUnknown, PCWSTR, Result, implement};
 
-use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE, E_NOTIMPL, HWND};
+use windows::Win32::Foundation::{
+    CLASS_E_NOAGGREGATION, DISP_E_MEMBERNOTFOUND, DISP_E_PARAMNOTFOUND, E_INVALIDARG,
+    E_NOINTERFACE, E_NOTIMPL, HWND,
+};
 use windows::Win32::System::Com::{
-    CoInitializeEx, CoRegisterClassObject, CoRevokeClassObject, CoUninitialize, IClassFactory,
-    IClassFactory_Impl, IDispatch, IDispatch_Impl, ITypeInfo, CLSCTX_LOCAL_SERVER,
-    COINIT_MULTITHREADED, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO, REGCLS_MULTIPLEUSE,
+    CLSCTX_LOCAL_SERVER, COINIT_MULTITHREADED, CoInitializeEx, CoRegisterClassObject,
+    CoRevokeClassObject, CoUninitialize, DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
+    DISPATCH_PROPERTYPUT, DISPPARAMS, EXCEPINFO, IClassFactory, IClassFactory_Impl, IDispatch,
+    IDispatch_Impl, ITypeInfo, REGCLS_MULTIPLEUSE,
 };
 
-use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::System::Variant::{InitVariantFromInt32Array, VARIANT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, TranslateMessage, MSG,
+    DispatchMessageW, GetMessageW, MSG, TranslateMessage,
 };
-use windows_core::BOOL;
+use windows_core::{BOOL, Error};
 
 const CLSID_SIMPLE_COM_OBJECT: GUID = GUID::from_u128(0x12345678_1234_1234_1234_123456789ABC);
 
 const IID_IUNKNOWN: GUID = GUID::from_u128(0x00000000_0000_0000_C000_000000000046);
 const IID_IDISPATCH: GUID = GUID::from_u128(0x00020400_0000_0000_C000_000000000046);
 
+const DISPID_COUNTER: i32 = 1;
+const DISPID_GETMESSAGE: i32 = 2;
+const DISPID_ADD: i32 = 3;
+
 #[implement(IDispatch)]
-struct SimpleComObject;
+struct SimpleComObject {
+    counter: RefCell<i32>,
+}
 
 impl IDispatch_Impl for SimpleComObject_Impl {
     fn GetTypeInfoCount(&self) -> Result<u32> {
@@ -38,26 +49,112 @@ impl IDispatch_Impl for SimpleComObject_Impl {
     fn GetIDsOfNames(
         &self,
         _riid: *const GUID,
-        _rgsznames: *const PCWSTR,
-        _cnames: u32,
+        rgsznames: *const PCWSTR,
+        cnames: u32,
         _lcid: u32,
-        _rgdispid: *mut i32,
+        rgdispid: *mut i32,
     ) -> Result<()> {
-        Err(E_NOTIMPL.into())
+        unsafe {
+            if rgsznames.is_null() || rgdispid.is_null() {
+                return Err(E_INVALIDARG.into());
+            }
+
+            for i in 0..cnames {
+                let name_ptr = *rgsznames.add(i as usize);
+                let name = name_ptr.to_string().unwrap_or_default().to_uppercase();
+
+                let dispid = match name.as_str() {
+                    "COUNTER" => DISPID_COUNTER,
+                    "GETMESSAGE" => DISPID_GETMESSAGE,
+                    "ADD" => DISPID_ADD,
+                    _ => return Err(DISP_E_MEMBERNOTFOUND.into()),
+                };
+
+                *rgdispid.add(i as usize) = dispid;
+            }
+
+            Ok(())
+        }
     }
 
     fn Invoke(
         &self,
-        _dispidmember: i32,
+        dispidmember: i32,
         _riid: *const GUID,
         _lcid: u32,
-        _wflags: DISPATCH_FLAGS,
-        _pdispparams: *const DISPPARAMS,
-        _pvarresult: *mut VARIANT,
+        wflags: DISPATCH_FLAGS,
+        pdispparams: *const DISPPARAMS,
+        pvarresult: *mut VARIANT,
         _pexcepinfo: *mut EXCEPINFO,
         _puargerr: *mut u32,
     ) -> Result<()> {
-        Err(E_NOTIMPL.into())
+        unsafe {
+            match dispidmember {
+                DISPID_COUNTER => {
+                    if wflags.0 & DISPATCH_PROPERTYGET.0 != 0 {
+                        if !pvarresult.is_null() {
+                            *pvarresult = InitVariantFromInt32Array(&[*self.counter.borrow()])?;
+                        }
+                        Ok(())
+                    } else if wflags.0 & DISPATCH_PROPERTYPUT.0 != 0 {
+                        if pdispparams.is_null() {
+                            return Err(E_INVALIDARG.into());
+                        }
+                        let params = &*pdispparams;
+                        if params.cArgs == 0 || params.rgvarg.is_null() {
+                            return Err(DISP_E_PARAMNOTFOUND.into());
+                        }
+                        let value = &*params.rgvarg;
+
+                        *self.counter.borrow_mut() = value
+                            .try_into()
+                            .or(Err(Error::from_hresult(E_INVALIDARG)))?;
+                        Ok(())
+                    } else {
+                        Err(E_INVALIDARG.into())
+                    }
+                }
+                DISPID_GETMESSAGE => {
+                    if wflags.0 & DISPATCH_METHOD.0 != 0 {
+                        if !pvarresult.is_null() {
+                            *pvarresult = VARIANT::from(BSTR::from("Hello world"));
+                        }
+                        Ok(())
+                    } else {
+                        Err(E_INVALIDARG.into())
+                    }
+                }
+                DISPID_ADD => {
+                    if wflags.0 & DISPATCH_METHOD.0 != 0 {
+                        if pdispparams.is_null() {
+                            return Err(E_INVALIDARG.into());
+                        }
+                        let params = &*pdispparams;
+                        if params.cArgs < 2 || params.rgvarg.is_null() {
+                            return Err(DISP_E_PARAMNOTFOUND.into());
+                        }
+                        let arg2 = &*params.rgvarg.add(0);
+                        let arg1 = &*params.rgvarg.add(1);
+
+                        let val1: i32 =
+                            arg1.try_into().or(Err(Error::from_hresult(E_INVALIDARG)))?;
+                        let val2: i32 =
+                            arg2.try_into().or(Err(Error::from_hresult(E_INVALIDARG)))?;
+
+                        let sum = val1 + val2;
+
+                        if !pvarresult.is_null() {
+                            *pvarresult = sum.into();
+                        }
+
+                        Ok(())
+                    } else {
+                        Err(E_INVALIDARG.into())
+                    }
+                }
+                _ => Err(DISP_E_MEMBERNOTFOUND.into()),
+            }
+        }
     }
 }
 
@@ -83,7 +180,10 @@ impl IClassFactory_Impl for SimpleComObjectFactory_Impl {
                 return Err(E_NOINTERFACE.into());
             }
 
-            let instance: IDispatch = SimpleComObject.into();
+            let instance: IDispatch = SimpleComObject {
+                counter: RefCell::new(0),
+            }
+            .into();
             *ppvobject = std::mem::transmute_copy(&instance);
             std::mem::forget(instance);
         }
