@@ -49,7 +49,7 @@ impl SimpleComObject {
 
     // Getter for other com component
     #[id(2)]
-    fn other_com1(&self) -> Result<ComObj, HRESULT> {
+    fn other_com1(&self) -> Result<IUnknown, HRESULT> {
         todo!()
     }
 
