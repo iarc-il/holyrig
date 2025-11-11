@@ -100,16 +100,10 @@ impl AutoDispatch {
                 if type_tuple.elems.is_empty() {
                     Ok(None)
                 } else {
-                    Err(syn::Error::new(
-                        type_tuple.span(),
-                        "Unsupported return type",
-                    ))
+                    Err(syn::Error::new(type_tuple.span(), "Unsupported type"))
                 }
             }
-            _ => Err(syn::Error::new(
-                property_type.span(),
-                "Unsupported return type",
-            )),
+            _ => Err(syn::Error::new(property_type.span(), "Unsupported type")),
         }
     }
 
@@ -171,9 +165,54 @@ impl AutoDispatch {
         Self::parse_property_type(return_type)
     }
 
+    fn parse_input_type(func: &syn::ImplItemFn) -> syn::Result<Option<PropertyType>> {
+        let args: Vec<_> = func.sig.inputs.iter().cloned().collect();
+
+        let (receiver, maybe_arg) = match &args[..] {
+            [syn::FnArg::Receiver(receiver), syn::FnArg::Typed(arg)] => (receiver, Some(arg)),
+            [syn::FnArg::Receiver(receiver)] => (receiver, None),
+            _ => {
+                return Err(syn::Error::new(
+                    func.sig.inputs.span(),
+                    "Invalid function args",
+                ));
+            }
+        };
+
+        match &receiver.reference {
+            None | Some((_, Some(_))) => {
+                return Err(syn::Error::new(
+                    receiver.span(),
+                    "self parameter must be `&self`",
+                ));
+            }
+            Some((_, None)) => {}
+        }
+        if receiver.mutability.is_some() {
+            return Err(syn::Error::new(
+                receiver.span(),
+                "self parameter must not be mutable",
+            ));
+        }
+
+        if receiver.colon_token.is_some() {
+            return Err(syn::Error::new(
+                receiver.span(),
+                "self parameter must not be typed",
+            ));
+        }
+
+        if let Some(arg) = maybe_arg {
+            Self::parse_property_type(&arg.ty)
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
         self.parse_id_attribute(func)?;
-        let _return_type = Self::parse_return_type(func);
+        let _return_type = Self::parse_return_type(func)?;
+        let _input_type = Self::parse_input_type(func)?;
         Ok(())
     }
 }
