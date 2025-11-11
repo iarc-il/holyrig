@@ -1,12 +1,50 @@
 use std::collections::BTreeMap;
 
-use proc_macro2::Span;
 use quote::ToTokens;
 use syn::parse::Parse;
 use syn::spanned::Spanned;
 
 pub struct AutoDispatch {
     dispid_to_name: BTreeMap<i32, String>,
+}
+
+impl AutoDispatch {
+    fn new() -> Self {
+        Self {
+            dispid_to_name: BTreeMap::new(),
+        }
+    }
+
+    fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
+        let id = if let [attr] = &func.attrs[..]
+            && let syn::Meta::List(list) = &attr.meta
+            && let Some(ident) = list.path.get_ident()
+            && ident.to_string().as_str() == "id"
+            && let syn::Lit::Int(id) = syn::parse::Parser::parse2(
+                |input: syn::parse::ParseStream<'_>| input.parse::<syn::Lit>(),
+                list.tokens.clone(),
+            )? {
+            id.base10_parse::<i32>()?
+        } else {
+            return Err(syn::Error::new(
+                func.span(),
+                "Expected id attribute: #[id(<dispid>)]",
+            ));
+        };
+
+        let func_name = func.sig.ident.to_string();
+        if let Some(name) = self.dispid_to_name.get(&id)
+            && name != &func_name
+        {
+            return Err(syn::Error::new(
+                func.span(),
+                format!("Duplicated id for functions `{name}`, `{func_name}`"),
+            ));
+        }
+        self.dispid_to_name.insert(id, func.sig.ident.to_string());
+
+        Ok(())
+    }
 }
 
 impl Parse for AutoDispatch {
@@ -24,9 +62,7 @@ impl Parse for AutoDispatch {
             ));
         }
 
-        let id_ident = syn::Ident::new("id", Span::call_site());
-
-        let mut dispid_to_name: BTreeMap<i32, String> = BTreeMap::new();
+        let mut auto_dispatch = AutoDispatch::new();
 
         for inner_item in impl_block.items {
             let syn::ImplItem::Fn(func) = inner_item else {
@@ -36,36 +72,10 @@ impl Parse for AutoDispatch {
                 ));
             };
 
-            let id = if let [attr] = &func.attrs[..]
-                && let syn::Meta::List(list) = &attr.meta
-                && let Some(ident) = list.path.get_ident()
-                && ident == &id_ident
-                && let syn::Lit::Int(id) = syn::parse::Parser::parse2(
-                    |input: syn::parse::ParseStream<'_>| input.parse::<syn::Lit>(),
-                    list.tokens.clone(),
-                )? {
-                id.base10_parse::<i32>()?
-            } else {
-                return Err(syn::Error::new(
-                    func.span(),
-                    "Expected id attribute: #[id(<dispid>)]",
-                ));
-            };
-
-            let func_name = func.sig.ident.to_string();
-            if let Some(name) = dispid_to_name.get(&id)
-                && name != &func_name
-            {
-                return Err(syn::Error::new(
-                    func.span(),
-                    format!("Duplicated id for functions `{name}`, `{func_name}`"),
-                ));
-            }
-            dispid_to_name.insert(id, func.sig.ident.to_string());
+            auto_dispatch.parse_function(&func)?;
         }
 
-        println!("{dispid_to_name:#?}");
-        Ok(Self { dispid_to_name })
+        Ok(auto_dispatch)
     }
 }
 
