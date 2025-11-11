@@ -44,7 +44,7 @@ impl AutoDispatch {
         }
     }
 
-    fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
+    fn parse_id_attribute(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
         let id = if let [attr] = &func.attrs[..]
             && let syn::Meta::List(list) = &attr.meta
             && let Some(ident) = list.path.get_ident()
@@ -71,6 +71,50 @@ impl AutoDispatch {
             ));
         }
         self.dispid_to_name.insert(id, func.sig.ident.to_string());
+        Ok(())
+    }
+
+    fn parse_property_type(property_type: &syn::Type) -> syn::Result<Option<PropertyType>> {
+        match property_type {
+            syn::Type::Path(type_path) => {
+                let segment = simple_path_to_string(&type_path.path)?.ident.to_string();
+                let property_type = match segment.as_str() {
+                    "IUnknown" => PropertyType::IUnknown,
+                    "BSTR" => PropertyType::Bstr,
+                    "bool" => PropertyType::Bool,
+                    "u8" => PropertyType::U8,
+                    "i8" => PropertyType::I8,
+                    "u16" => PropertyType::U16,
+                    "i16" => PropertyType::I16,
+                    "u32" => PropertyType::U32,
+                    "i32" => PropertyType::I32,
+                    "f32" => PropertyType::F32,
+                    "f64" => PropertyType::F64,
+                    _ => {
+                        return Err(syn::Error::new(type_path.span(), "Unsupported return type"));
+                    }
+                };
+                Ok(Some(property_type))
+            }
+            syn::Type::Tuple(type_tuple) => {
+                if type_tuple.elems.is_empty() {
+                    Ok(None)
+                } else {
+                    Err(syn::Error::new(
+                        type_tuple.span(),
+                        "Unsupported return type",
+                    ))
+                }
+            }
+            _ => Err(syn::Error::new(
+                property_type.span(),
+                "Unsupported return type",
+            )),
+        }
+    }
+
+    fn parse_return_type(func: &syn::ImplItemFn) -> syn::Result<Option<PropertyType>> {
+        let func_name = func.sig.ident.to_string();
 
         let syn::ReturnType::Type(_, output_type) = &func.sig.output else {
             return Err(syn::Error::new(
@@ -79,92 +123,57 @@ impl AutoDispatch {
             ));
         };
 
-        if let syn::Type::Path(type_path) = output_type.as_ref() {
-            let segment = simple_path_to_string(&type_path.path)?;
-            let syn::PathArguments::AngleBracketed(segment_args) = &segment.arguments else {
-                return Err(syn::Error::new(
-                    segment.span(),
-                    format!("Invalid output type for function `{func_name}`"),
-                ));
-            };
-
-            let args: Vec<_> = segment_args.args.iter().cloned().collect();
-
-            let [
-                syn::GenericArgument::Type(return_type),
-                syn::GenericArgument::Type(error_type),
-            ] = &args[..]
-            else {
-                return Err(syn::Error::new(
-                    segment_args.args.span(),
-                    format!("Invalid output type for function `{func_name}`"),
-                ));
-            };
-
-            if let syn::Type::Path(type_path) = error_type {
-                let err_type = simple_path_to_string(&type_path.path)?.ident.to_string();
-                if err_type.as_str() != "HRESULT" {
-                    return Err(syn::Error::new(
-                        segment_args.args.span(),
-                        format!(
-                            "Err type of return type of `{func_name}` must be HRESULT, but it is `{err_type}`"
-                        ),
-                    ));
-                }
-            } else {
-                return Err(syn::Error::new(
-                    segment_args.args.span(),
-                    "Invalid err type of return type",
-                ));
-            }
-
-            let return_type = match return_type {
-                syn::Type::Path(type_path) => {
-                    let segment = simple_path_to_string(&type_path.path)?.ident.to_string();
-                    let property_type = match segment.as_str() {
-                        "IUnknown" => PropertyType::IUnknown,
-                        "BSTR" => PropertyType::Bstr,
-                        "bool" => PropertyType::Bool,
-                        "u8" => PropertyType::U8,
-                        "i8" => PropertyType::I8,
-                        "u16" => PropertyType::U16,
-                        "i16" => PropertyType::I16,
-                        "u32" => PropertyType::U32,
-                        "i32" => PropertyType::I32,
-                        "f32" => PropertyType::F32,
-                        "f64" => PropertyType::F64,
-                        _ => {
-                            return Err(syn::Error::new(
-                                type_path.span(),
-                                "Unsupported return type",
-                            ));
-                        }
-                    };
-                    Some(property_type)
-                }
-                syn::Type::Tuple(type_tuple) => {
-                    if !type_tuple.elems.is_empty() {
-                        return Err(syn::Error::new(
-                            type_tuple.span(),
-                            "Unsupported return type",
-                        ));
-                    }
-                    None
-                }
-                _ => {
-                    return Err(syn::Error::new(
-                        return_type.span(),
-                        "Unsupported return type",
-                    ));
-                }
-            };
-        } else {
+        let syn::Type::Path(type_path) = output_type.as_ref() else {
             return Err(syn::Error::new(
                 output_type.span(),
                 format!("Invalid output type for function `{func_name}`"),
             ));
+        };
+
+        let segment = simple_path_to_string(&type_path.path)?;
+        let syn::PathArguments::AngleBracketed(segment_args) = &segment.arguments else {
+            return Err(syn::Error::new(
+                segment.span(),
+                format!("Invalid output type for function `{func_name}`"),
+            ));
+        };
+
+        let args: Vec<_> = segment_args.args.iter().cloned().collect();
+
+        let [
+            syn::GenericArgument::Type(return_type),
+            syn::GenericArgument::Type(error_type),
+        ] = &args[..]
+        else {
+            return Err(syn::Error::new(
+                segment_args.args.span(),
+                format!("Invalid output type for function `{func_name}`"),
+            ));
+        };
+
+        if let syn::Type::Path(type_path) = error_type {
+            let err_type = simple_path_to_string(&type_path.path)?.ident.to_string();
+            if err_type.as_str() != "HRESULT" {
+                return Err(syn::Error::new(
+                    segment_args.args.span(),
+                    format!(
+                        "Err type of return type of `{func_name}` must be HRESULT, but it is `{err_type}`"
+                    ),
+                ));
+            }
+        } else {
+            return Err(syn::Error::new(
+                segment_args.args.span(),
+                "Invalid err type of return type",
+            ));
         }
 
+        Self::parse_property_type(return_type)
+    }
+
+    fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
+        self.parse_id_attribute(func)?;
+        let _return_type = Self::parse_return_type(func);
         Ok(())
     }
 }
