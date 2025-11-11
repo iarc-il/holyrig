@@ -17,7 +17,7 @@ use windows::Win32::System::Com::{
     IDispatch_Impl, ITypeInfo, REGCLS_MULTIPLEUSE,
 };
 
-use windows::Win32::System::Variant::{InitVariantFromInt32Array, VARIANT};
+use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, TranslateMessage,
 };
@@ -120,12 +120,13 @@ impl IDispatch_Impl for SimpleComObject_Impl {
         unsafe {
             match dispidmember {
                 DISPID_COUNTER => {
-                    if wflags.0 & DISPATCH_PROPERTYGET.0 != 0 {
+                    if wflags.contains(DISPATCH_PROPERTYGET) {
                         if !pvarresult.is_null() {
-                            *pvarresult = InitVariantFromInt32Array(&[*self.counter.borrow()])?;
+                            let value = *self.counter.borrow();
+                            *pvarresult = value.into();
                         }
                         Ok(())
-                    } else if wflags.0 & DISPATCH_PROPERTYPUT.0 != 0 {
+                    } else if wflags.contains(DISPATCH_PROPERTYPUT) {
                         if pdispparams.is_null() {
                             return Err(E_INVALIDARG.into());
                         }
@@ -144,7 +145,7 @@ impl IDispatch_Impl for SimpleComObject_Impl {
                     }
                 }
                 DISPID_GETMESSAGE => {
-                    if wflags.0 & DISPATCH_METHOD.0 != 0 {
+                    if wflags.contains(DISPATCH_METHOD) {
                         if !pvarresult.is_null() {
                             *pvarresult = VARIANT::from(BSTR::from("Hello world"));
                         }
@@ -154,7 +155,7 @@ impl IDispatch_Impl for SimpleComObject_Impl {
                     }
                 }
                 DISPID_ADD => {
-                    if wflags.0 & DISPATCH_METHOD.0 != 0 {
+                    if wflags.contains(DISPATCH_METHOD) {
                         if pdispparams.is_null() {
                             return Err(E_INVALIDARG.into());
                         }
