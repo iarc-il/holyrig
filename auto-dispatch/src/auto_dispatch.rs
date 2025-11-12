@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
+use proc_macro2::Span;
 use quote::ToTokens;
+use quote::quote;
+use syn::Ident;
 use syn::parse::Parse;
 use syn::spanned::Spanned;
 
-pub struct AutoDispatch {
-    dispid_to_name: BTreeMap<i32, String>,
-}
+type DispId = i32;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum PropertyType {
     IUnknown,
     Bstr,
@@ -24,9 +25,16 @@ enum PropertyType {
 }
 
 struct DispatchFunc {
+    property_type: Option<PropertyType>,
     get_func: Option<syn::ImplItemFn>,
     put_func: Option<syn::ImplItemFn>,
     method_func: Option<syn::ImplItemFn>,
+}
+
+pub struct AutoDispatch {
+    target: String,
+    dispid_to_name: BTreeMap<DispId, String>,
+    dispatch_funcs: BTreeMap<DispId, DispatchFunc>,
 }
 
 fn simple_path_to_string(path: &syn::Path) -> syn::Result<&syn::PathSegment> {
@@ -38,13 +46,15 @@ fn simple_path_to_string(path: &syn::Path) -> syn::Result<&syn::PathSegment> {
 }
 
 impl AutoDispatch {
-    fn new() -> Self {
+    fn new(target: String) -> Self {
         Self {
+            target,
             dispid_to_name: BTreeMap::new(),
+            dispatch_funcs: BTreeMap::new(),
         }
     }
 
-    fn parse_id_attribute(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
+    fn parse_id_attribute(&mut self, func: &syn::ImplItemFn) -> syn::Result<DispId> {
         let id = if let [attr] = &func.attrs[..]
             && let syn::Meta::List(list) = &attr.meta
             && let Some(ident) = list.path.get_ident()
@@ -53,7 +63,7 @@ impl AutoDispatch {
                 |input: syn::parse::ParseStream<'_>| input.parse::<syn::Lit>(),
                 list.tokens.clone(),
             )? {
-            id.base10_parse::<i32>()?
+            id.base10_parse::<DispId>()?
         } else {
             return Err(syn::Error::new(
                 func.span(),
@@ -71,7 +81,7 @@ impl AutoDispatch {
             ));
         }
         self.dispid_to_name.insert(id, func.sig.ident.to_string());
-        Ok(())
+        Ok(id)
     }
 
     fn parse_property_type(property_type: &syn::Type) -> syn::Result<Option<PropertyType>> {
@@ -210,9 +220,65 @@ impl AutoDispatch {
     }
 
     fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
-        self.parse_id_attribute(func)?;
-        let _return_type = Self::parse_return_type(func)?;
-        let _input_type = Self::parse_input_type(func)?;
+        let id = self.parse_id_attribute(func)?;
+        let return_type = Self::parse_return_type(func)?;
+        let input_type = Self::parse_input_type(func)?;
+        match (input_type, return_type) {
+            (None, Some(return_type)) => {
+                if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
+                    if dispatch_func.get_func.is_some() {
+                        return Err(syn::Error::new(
+                            func.span(),
+                            "Duplicated get_property function",
+                        ));
+                    }
+                    if dispatch_func.property_type.unwrap() != return_type {
+                        return Err(syn::Error::new(func.span(), "Mismatch in property type"));
+                    }
+                    dispatch_func.get_func = Some(func.clone());
+                } else {
+                    self.dispatch_funcs.insert(
+                        id,
+                        DispatchFunc {
+                            property_type: Some(return_type),
+                            get_func: Some(func.clone()),
+                            put_func: None,
+                            method_func: None,
+                        },
+                    );
+                }
+            }
+            (Some(input_type), None) => {
+                if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
+                    if dispatch_func.put_func.is_some() {
+                        return Err(syn::Error::new(
+                            func.span(),
+                            "Duplicated set_property function",
+                        ));
+                    }
+                    if dispatch_func.property_type.unwrap() != input_type {
+                        return Err(syn::Error::new(func.span(), "Mismatch in property type"));
+                    }
+                    dispatch_func.put_func = Some(func.clone());
+                } else {
+                    self.dispatch_funcs.insert(
+                        id,
+                        DispatchFunc {
+                            property_type: Some(input_type),
+                            get_func: None,
+                            put_func: Some(func.clone()),
+                            method_func: None,
+                        },
+                    );
+                }
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    func.span(),
+                    "Function can be either property get or property set",
+                ));
+            }
+        }
         Ok(())
     }
 }
