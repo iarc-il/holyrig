@@ -28,12 +28,13 @@ struct DispatchFunc {
     property_type: Option<PropertyType>,
     get_func: Option<syn::ImplItemFn>,
     put_func: Option<syn::ImplItemFn>,
-    method_func: Option<syn::ImplItemFn>,
+    // method_func: Option<syn::ImplItemFn>,
 }
 
 pub struct AutoDispatch {
     target: String,
     dispid_to_name: BTreeMap<DispId, String>,
+    dispid_to_const: BTreeMap<DispId, Ident>,
     dispatch_funcs: BTreeMap<DispId, DispatchFunc>,
 }
 
@@ -50,6 +51,7 @@ impl AutoDispatch {
         Self {
             target,
             dispid_to_name: BTreeMap::new(),
+            dispid_to_const: BTreeMap::new(),
             dispatch_funcs: BTreeMap::new(),
         }
     }
@@ -80,7 +82,17 @@ impl AutoDispatch {
                 format!("Duplicated id for functions `{name}`, `{func_name}`"),
             ));
         }
-        self.dispid_to_name.insert(id, func.sig.ident.to_string());
+        let name = func.sig.ident.to_string();
+
+        self.dispid_to_const.insert(
+            id,
+            Ident::new(
+                format!("{}_DISPID", name.to_uppercase()).as_str(),
+                func.sig.ident.span(),
+            ),
+        );
+        self.dispid_to_name.insert(id, name);
+
         Ok(id)
     }
 
@@ -243,7 +255,6 @@ impl AutoDispatch {
                             property_type: Some(return_type),
                             get_func: Some(func.clone()),
                             put_func: None,
-                            method_func: None,
                         },
                     );
                 }
@@ -267,7 +278,6 @@ impl AutoDispatch {
                             property_type: Some(input_type),
                             get_func: None,
                             put_func: Some(func.clone()),
-                            method_func: None,
                         },
                     );
                 }
@@ -280,6 +290,64 @@ impl AutoDispatch {
             }
         }
         Ok(())
+    }
+
+    fn generate_dispids(&self, impl_struct_ident: &Ident) -> proc_macro2::TokenStream {
+        let mut dispids: Vec<_> = self.dispid_to_const.iter().collect();
+        dispids.sort();
+
+        let dispids_consts: Vec<_> = dispids
+            .iter()
+            .map(|(dispid, const_name)| {
+                quote! { const #const_name: i32 = #dispid; }
+            })
+            .collect();
+
+        quote! {
+            impl #impl_struct_ident {
+                #(#dispids_consts)*
+            }
+        }
+    }
+
+    fn generate_get_ids_of_names(&self) -> proc_macro2::TokenStream {
+        let match_arms = self.dispid_to_name.iter().map(|(dispid, name)| {
+            let const_name = &self.dispid_to_const[dispid];
+            quote! {
+                #name => Self::#const_name,
+            }
+        });
+
+        quote! {
+            fn GetIDsOfNames(
+                &self,
+                _riid: *const GUID,
+                rgsznames: *const PCWSTR,
+                cnames: u32,
+                _lcid: u32,
+                rgdispid: *mut i32,
+            ) -> Result<()> {
+                unsafe {
+                    if rgsznames.is_null() || rgdispid.is_null() {
+                        return Err(E_INVALIDARG.into());
+                    }
+
+                    for i in 0..cnames {
+                        let name_ptr = *rgsznames.add(i as usize);
+                        let name = name_ptr.to_string().unwrap_or_default().to_uppercase();
+
+                        let dispid = match name.as_str() {
+                            #(#match_arms)*
+                            _ => return Err(DISP_E_MEMBERNOTFOUND.into()),
+                        };
+
+                        *rgdispid.add(i as usize) = dispid;
+                    }
+
+                    Ok(())
+                }
+            }
+        }
     }
 }
 
@@ -298,7 +366,16 @@ impl Parse for AutoDispatch {
             ));
         }
 
-        let mut auto_dispatch = AutoDispatch::new();
+        let target = if let syn::Type::Path(type_path) = impl_block.self_ty.as_ref() {
+            simple_path_to_string(&type_path.path)?.ident.to_string()
+        } else {
+            return Err(syn::Error::new(
+                impl_block.self_ty.span(),
+                "Invalid type name to implement",
+            ));
+        };
+
+        let mut auto_dispatch = AutoDispatch::new(target);
 
         for inner_item in impl_block.items {
             let syn::ImplItem::Fn(func) = inner_item else {
@@ -316,5 +393,42 @@ impl Parse for AutoDispatch {
 }
 
 impl ToTokens for AutoDispatch {
-    fn to_tokens(&self, _tokens: &mut proc_macro2::TokenStream) {}
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let impl_struct_ident =
+            Ident::new(format!("{}_Impl", self.target).as_str(), Span::call_site());
+
+        let dispids_consts = self.generate_dispids(&impl_struct_ident);
+        let get_ids_of_names = self.generate_get_ids_of_names();
+
+        let result = quote! {
+            #dispids_consts
+
+            impl IDispatch_Impl for #impl_struct_ident {
+                fn GetTypeInfoCount(&self) -> Result<u32> {
+                    Ok(0)
+                }
+
+                fn GetTypeInfo(&self, _itinfo: u32, _lcid: u32) -> Result<ITypeInfo> {
+                    Err(E_NOTIMPL.into())
+                }
+
+                #get_ids_of_names
+
+                fn Invoke(
+                    &self,
+                    dispidmember: i32,
+                    _riid: *const GUID,
+                    _lcid: u32,
+                    wflags: DISPATCH_FLAGS,
+                    pdispparams: *const DISPPARAMS,
+                    pvarresult: *mut VARIANT,
+                    _pexcepinfo: *mut EXCEPINFO,
+                    _puargerr: *mut u32,
+                ) -> Result<()> {
+                    todo!()
+                }
+            }
+        };
+        tokens.extend(result);
+    }
 }
