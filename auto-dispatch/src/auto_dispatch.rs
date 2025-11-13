@@ -27,7 +27,7 @@ enum PropertyType {
 struct DispatchFunc {
     property_type: Option<PropertyType>,
     get_func: Option<syn::ImplItemFn>,
-    put_func: Option<syn::ImplItemFn>,
+    set_func: Option<syn::ImplItemFn>,
     // method_func: Option<syn::ImplItemFn>,
 }
 
@@ -235,8 +235,17 @@ impl AutoDispatch {
         let id = self.parse_id_attribute(func)?;
         let return_type = Self::parse_return_type(func)?;
         let input_type = Self::parse_input_type(func)?;
+
+        let mut processed_func = func.clone();
+        processed_func.attrs = vec![];
+
         match (input_type, return_type) {
             (None, Some(return_type)) => {
+                processed_func.sig.ident = Ident::new(
+                    format!("{}_getter", processed_func.sig.ident).as_str(),
+                    processed_func.sig.ident.span(),
+                );
+
                 if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
                     if dispatch_func.get_func.is_some() {
                         return Err(syn::Error::new(
@@ -247,21 +256,26 @@ impl AutoDispatch {
                     if dispatch_func.property_type.unwrap() != return_type {
                         return Err(syn::Error::new(func.span(), "Mismatch in property type"));
                     }
-                    dispatch_func.get_func = Some(func.clone());
+                    dispatch_func.get_func = Some(processed_func.clone());
                 } else {
                     self.dispatch_funcs.insert(
                         id,
                         DispatchFunc {
                             property_type: Some(return_type),
-                            get_func: Some(func.clone()),
-                            put_func: None,
+                            get_func: Some(processed_func.clone()),
+                            set_func: None,
                         },
                     );
                 }
             }
             (Some(input_type), None) => {
+                processed_func.sig.ident = Ident::new(
+                    format!("{}_setter", processed_func.sig.ident).as_str(),
+                    processed_func.sig.ident.span(),
+                );
+
                 if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
-                    if dispatch_func.put_func.is_some() {
+                    if dispatch_func.set_func.is_some() {
                         return Err(syn::Error::new(
                             func.span(),
                             "Duplicated set_property function",
@@ -270,14 +284,14 @@ impl AutoDispatch {
                     if dispatch_func.property_type.unwrap() != input_type {
                         return Err(syn::Error::new(func.span(), "Mismatch in property type"));
                     }
-                    dispatch_func.put_func = Some(func.clone());
+                    dispatch_func.set_func = Some(processed_func.clone());
                 } else {
                     self.dispatch_funcs.insert(
                         id,
                         DispatchFunc {
                             property_type: Some(input_type),
                             get_func: None,
-                            put_func: Some(func.clone()),
+                            set_func: Some(processed_func.clone()),
                         },
                     );
                 }
@@ -292,7 +306,7 @@ impl AutoDispatch {
         Ok(())
     }
 
-    fn generate_dispids(&self, impl_struct_ident: &Ident) -> proc_macro2::TokenStream {
+    fn generate_dispids(&self) -> proc_macro2::TokenStream {
         let mut dispids: Vec<_> = self.dispid_to_const.iter().collect();
         dispids.sort();
 
@@ -304,10 +318,24 @@ impl AutoDispatch {
             .collect();
 
         quote! {
-            impl #impl_struct_ident {
-                #(#dispids_consts)*
+            #(#dispids_consts)*
+        }
+    }
+
+    fn generate_inner_funcs(&self) -> proc_macro2::TokenStream {
+        let mut dispatch_funcs: Vec<_> = self.dispatch_funcs.iter().collect();
+        dispatch_funcs.sort_by_key(|(id, _)| **id);
+
+        let mut result = quote! {};
+        for (_, funcs) in dispatch_funcs {
+            if let Some(get_func) = &funcs.get_func {
+                result.extend(quote! { #get_func });
+            }
+            if let Some(set_func) = &funcs.set_func {
+                result.extend(quote! { #set_func });
             }
         }
+        result
     }
 
     fn generate_get_ids_of_names(&self) -> proc_macro2::TokenStream {
@@ -397,11 +425,15 @@ impl ToTokens for AutoDispatch {
         let impl_struct_ident =
             Ident::new(format!("{}_Impl", self.target).as_str(), Span::call_site());
 
-        let dispids_consts = self.generate_dispids(&impl_struct_ident);
+        let dispids_consts = self.generate_dispids();
+        let inner_funcs_impl = self.generate_inner_funcs();
         let get_ids_of_names = self.generate_get_ids_of_names();
 
         let result = quote! {
-            #dispids_consts
+            impl #impl_struct_ident {
+                #dispids_consts
+                #inner_funcs_impl
+            }
 
             impl IDispatch_Impl for #impl_struct_ident {
                 fn GetTypeInfoCount(&self) -> Result<u32> {
