@@ -33,26 +33,20 @@ struct SimpleComObject {
 
 #[auto_dispatch]
 impl SimpleComObject {
-    // Getter for simple value
     #[id(1)]
+    #[getter]
     fn prop1(&self) -> Result<u32, HRESULT> {
         Ok(*self.counter.borrow())
     }
 
-    // // Getter for other com component
-    // #[id(2)]
-    // fn other_com1(&self) -> Result<IUnknown, HRESULT> {
-    //     todo!()
-    // }
-
-    // Getter
-    #[id(3)]
+    #[id(2)]
+    #[getter]
     fn prop2(&self) -> Result<bool, HRESULT> {
         Ok(*self.flag.borrow())
     }
 
-    // Setter
-    #[id(3)]
+    #[id(2)]
+    #[setter]
     fn prop2(&self, value: bool) -> Result<(), HRESULT> {
         *self.flag.borrow_mut() = value;
         Ok(())
