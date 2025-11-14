@@ -24,6 +24,12 @@ enum PropertyType {
     F64,
 }
 
+enum FuncType {
+    Getter,
+    Setter,
+    Method,
+}
+
 struct DispatchFunc {
     property_type: Option<PropertyType>,
     get_func: Option<syn::ImplItemFn>,
@@ -38,7 +44,7 @@ pub struct AutoDispatch {
     dispatch_funcs: BTreeMap<DispId, DispatchFunc>,
 }
 
-fn simple_path_to_string(path: &syn::Path) -> syn::Result<&syn::PathSegment> {
+fn get_simple_path(path: &syn::Path) -> syn::Result<&syn::PathSegment> {
     if path.segments.len() == 1 {
         Ok(path.segments.first().unwrap())
     } else {
@@ -56,25 +62,71 @@ impl AutoDispatch {
         }
     }
 
-    fn parse_id_attribute(&mut self, func: &syn::ImplItemFn) -> syn::Result<DispId> {
-        let id = if let [attr] = &func.attrs[..]
-            && let syn::Meta::List(list) = &attr.meta
+    fn parse_id_attribute(attr: &syn::Attribute) -> syn::Result<Option<DispId>> {
+        if let syn::Meta::List(list) = &attr.meta
             && let Some(ident) = list.path.get_ident()
             && ident.to_string().as_str() == "id"
             && let syn::Lit::Int(id) = syn::parse::Parser::parse2(
                 |input: syn::parse::ParseStream<'_>| input.parse::<syn::Lit>(),
                 list.tokens.clone(),
-            )? {
-            id.base10_parse::<DispId>()?
+            )?
+        {
+            Ok(Some(id.base10_parse::<DispId>()?))
         } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_func_type_attribute(attr: &syn::Attribute) -> syn::Result<Option<FuncType>> {
+        if let syn::Meta::Path(path) = &attr.meta {
+            let name = get_simple_path(path)?.ident.to_string();
+            let result = match name.as_str() {
+                "getter" => FuncType::Getter,
+                "setter" => FuncType::Setter,
+                _ => {
+                    return Err(syn::Error::new(
+                        attr.span(),
+                        format!("Unknown attribute: {name}"),
+                    ));
+                }
+            };
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_attributes(&mut self, func: &syn::ImplItemFn) -> syn::Result<(DispId, FuncType)> {
+        let mut dispid = None;
+        let mut func_type = None;
+        for attr in &func.attrs {
+            if let Some(id) = Self::parse_id_attribute(attr)? {
+                if dispid.is_some() {
+                    return Err(syn::Error::new(attr.span(), "Duplicated id attribute"));
+                }
+                dispid = Some(id);
+            }
+            if let Some(func_type_attr) = Self::parse_func_type_attribute(attr)? {
+                if func_type.is_some() {
+                    return Err(syn::Error::new(
+                        attr.span(),
+                        "Duplicated property type attribute",
+                    ));
+                }
+                func_type = Some(func_type_attr);
+            }
+        }
+
+        let Some(dispid) = dispid else {
             return Err(syn::Error::new(
                 func.span(),
                 "Expected id attribute: #[id(<dispid>)]",
             ));
         };
+        let func_type = func_type.unwrap_or(FuncType::Method);
 
         let func_name = func.sig.ident.to_string();
-        if let Some(name) = self.dispid_to_name.get(&id)
+        if let Some(name) = self.dispid_to_name.get(&dispid)
             && name != &func_name
         {
             return Err(syn::Error::new(
@@ -85,21 +137,21 @@ impl AutoDispatch {
         let name = func.sig.ident.to_string();
 
         self.dispid_to_const.insert(
-            id,
+            dispid,
             Ident::new(
                 format!("{}_DISPID", name.to_uppercase()).as_str(),
                 func.sig.ident.span(),
             ),
         );
-        self.dispid_to_name.insert(id, name);
+        self.dispid_to_name.insert(dispid, name);
 
-        Ok(id)
+        Ok((dispid, func_type))
     }
 
     fn parse_property_type(property_type: &syn::Type) -> syn::Result<Option<PropertyType>> {
         match property_type {
             syn::Type::Path(type_path) => {
-                let segment = simple_path_to_string(&type_path.path)?.ident.to_string();
+                let segment = get_simple_path(&type_path.path)?.ident.to_string();
                 let property_type = match segment.as_str() {
                     "IUnknown" => PropertyType::IUnknown,
                     "BSTR" => PropertyType::Bstr,
@@ -146,7 +198,7 @@ impl AutoDispatch {
             ));
         };
 
-        let segment = simple_path_to_string(&type_path.path)?;
+        let segment = get_simple_path(&type_path.path)?;
         let syn::PathArguments::AngleBracketed(segment_args) = &segment.arguments else {
             return Err(syn::Error::new(
                 segment.span(),
@@ -168,7 +220,7 @@ impl AutoDispatch {
         };
 
         if let syn::Type::Path(type_path) = error_type {
-            let err_type = simple_path_to_string(&type_path.path)?.ident.to_string();
+            let err_type = get_simple_path(&type_path.path)?.ident.to_string();
             if err_type.as_str() != "HRESULT" {
                 return Err(syn::Error::new(
                     segment_args.args.span(),
@@ -232,15 +284,22 @@ impl AutoDispatch {
     }
 
     fn parse_function(&mut self, func: &syn::ImplItemFn) -> syn::Result<()> {
-        let id = self.parse_id_attribute(func)?;
+        let (id, func_type) = self.parse_attributes(func)?;
         let return_type = Self::parse_return_type(func)?;
         let input_type = Self::parse_input_type(func)?;
 
         let mut processed_func = func.clone();
         processed_func.attrs = vec![];
 
-        match (input_type, return_type) {
-            (None, Some(return_type)) => {
+        match func_type {
+            FuncType::Getter => {
+                let (Some(return_type), None) = (return_type, input_type) else {
+                    return Err(syn::Error::new(
+                        func.span(),
+                        "Function signature doesn't match to a getter function",
+                    ));
+                };
+
                 processed_func.sig.ident = Ident::new(
                     format!("{}_getter", processed_func.sig.ident).as_str(),
                     processed_func.sig.ident.span(),
@@ -268,7 +327,14 @@ impl AutoDispatch {
                     );
                 }
             }
-            (Some(input_type), None) => {
+            FuncType::Setter => {
+                let (Some(input_type), None) = (input_type, return_type) else {
+                    return Err(syn::Error::new(
+                        func.span(),
+                        "Function signature doesn't match to a getter function",
+                    ));
+                };
+
                 processed_func.sig.ident = Ident::new(
                     format!("{}_setter", processed_func.sig.ident).as_str(),
                     processed_func.sig.ident.span(),
@@ -296,11 +362,8 @@ impl AutoDispatch {
                     );
                 }
             }
-            _ => {
-                return Err(syn::Error::new(
-                    func.span(),
-                    "Function can be either property get or property set",
-                ));
+            FuncType::Method => {
+                todo!();
             }
         }
         Ok(())
@@ -478,7 +541,7 @@ impl Parse for AutoDispatch {
         }
 
         let target = if let syn::Type::Path(type_path) = impl_block.self_ty.as_ref() {
-            simple_path_to_string(&type_path.path)?.ident.to_string()
+            get_simple_path(&type_path.path)?.ident.to_string()
         } else {
             return Err(syn::Error::new(
                 impl_block.self_ty.span(),
