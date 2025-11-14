@@ -362,7 +362,7 @@ impl AutoDispatch {
 
                     for i in 0..cnames {
                         let name_ptr = *rgsznames.add(i as usize);
-                        let name = name_ptr.to_string().unwrap_or_default().to_uppercase();
+                        let name = name_ptr.to_string()?;
 
                         let dispid = match name.as_str() {
                             #(#match_arms)*
