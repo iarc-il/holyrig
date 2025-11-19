@@ -12,16 +12,35 @@ type DispId = i32;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum PropertyType {
     IUnknown,
+    IDispatch,
     Bstr,
     Bool,
-    U8,
-    I8,
     U16,
     I16,
     U32,
     I32,
-    F32,
+    U64,
+    I64,
     F64,
+}
+
+impl ToTokens for PropertyType {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let result = match self {
+            PropertyType::IUnknown => quote! { IUnknown },
+            PropertyType::IDispatch => quote! { IDispatch },
+            PropertyType::Bstr => quote! { BSTR },
+            PropertyType::Bool => quote! { bool },
+            PropertyType::U16 => quote! { u16 },
+            PropertyType::I16 => quote! { i16 },
+            PropertyType::U32 => quote! { u32 },
+            PropertyType::I32 => quote! { i32 },
+            PropertyType::U64 => quote! { u64 },
+            PropertyType::I64 => quote! { i64 },
+            PropertyType::F64 => quote! { f64 },
+        };
+        tokens.extend(result);
+    }
 }
 
 enum FuncType {
@@ -34,7 +53,7 @@ struct DispatchFunc {
     property_type: Option<PropertyType>,
     get_func: Option<syn::ImplItemFn>,
     set_func: Option<syn::ImplItemFn>,
-    // method_func: Option<syn::ImplItemFn>,
+    method_func: Option<syn::ImplItemFn>,
 }
 
 pub struct AutoDispatch {
@@ -154,15 +173,15 @@ impl AutoDispatch {
                 let segment = get_simple_path(&type_path.path)?.ident.to_string();
                 let property_type = match segment.as_str() {
                     "IUnknown" => PropertyType::IUnknown,
+                    "IDispatch" => PropertyType::IDispatch,
                     "BSTR" => PropertyType::Bstr,
                     "bool" => PropertyType::Bool,
-                    "u8" => PropertyType::U8,
-                    "i8" => PropertyType::I8,
                     "u16" => PropertyType::U16,
                     "i16" => PropertyType::I16,
                     "u32" => PropertyType::U32,
                     "i32" => PropertyType::I32,
-                    "f32" => PropertyType::F32,
+                    "u64" => PropertyType::U64,
+                    "i64" => PropertyType::I64,
                     "f64" => PropertyType::F64,
                     _ => {
                         return Err(syn::Error::new(type_path.span(), "Unsupported return type"));
@@ -246,10 +265,7 @@ impl AutoDispatch {
             [syn::FnArg::Receiver(receiver), syn::FnArg::Typed(arg)] => (receiver, Some(arg)),
             [syn::FnArg::Receiver(receiver)] => (receiver, None),
             _ => {
-                return Err(syn::Error::new(
-                    func.sig.inputs.span(),
-                    "Invalid function args",
-                ));
+                return Ok(None);
             }
         };
 
@@ -323,6 +339,7 @@ impl AutoDispatch {
                             property_type: Some(return_type),
                             get_func: Some(processed_func.clone()),
                             set_func: None,
+                            method_func: None,
                         },
                     );
                 }
@@ -358,12 +375,36 @@ impl AutoDispatch {
                             property_type: Some(input_type),
                             get_func: None,
                             set_func: Some(processed_func.clone()),
+                            method_func: None,
                         },
                     );
                 }
             }
             FuncType::Method => {
-                todo!();
+                processed_func.sig.ident = Ident::new(
+                    format!("{}_method", processed_func.sig.ident).as_str(),
+                    processed_func.sig.ident.span(),
+                );
+
+                if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
+                    if dispatch_func.method_func.is_some() {
+                        return Err(syn::Error::new(
+                            func.span(),
+                            "Duplicated get_property function",
+                        ));
+                    }
+                    dispatch_func.method_func = Some(processed_func.clone());
+                } else {
+                    self.dispatch_funcs.insert(
+                        id,
+                        DispatchFunc {
+                            property_type: return_type,
+                            get_func: None,
+                            set_func: None,
+                            method_func: Some(processed_func),
+                        },
+                    );
+                }
             }
         }
         Ok(())
@@ -396,6 +437,9 @@ impl AutoDispatch {
             }
             if let Some(set_func) = &funcs.set_func {
                 result.extend(quote! { #set_func });
+            }
+            if let Some(method_func) = &funcs.method_func {
+                result.extend(quote! { #method_func });
             }
         }
         result
@@ -449,9 +493,9 @@ impl AutoDispatch {
         let match_arms: Vec<_> = dispid_consts
             .into_iter()
             .map(|(dispid, const_name)| {
-                let dispatch_funcs = &self.dispatch_funcs[dispid];
+                let dispatch_func = &self.dispatch_funcs[dispid];
 
-                let property_get = if let Some(get_func) = &dispatch_funcs.get_func {
+                let property_get = if let Some(get_func) = &dispatch_func.get_func {
                     let func_name = &get_func.sig.ident;
 
                     quote! {
@@ -466,7 +510,7 @@ impl AutoDispatch {
                     quote! {}
                 };
 
-                let property_set = if let Some(set_func) = &dispatch_funcs.set_func {
+                let property_set = if let Some(set_func) = &dispatch_func.set_func {
                     let func_name = &set_func.sig.ident;
 
                     quote! {
@@ -490,10 +534,83 @@ impl AutoDispatch {
                     quote! {}
                 };
 
+                let method = if let Some(method_func) = &dispatch_func.method_func {
+                    let func_name = &method_func.sig.ident;
+
+                    let params: Vec<_> = method_func
+                        .sig
+                        .inputs
+                        .iter()
+                        .skip(1)
+                        .enumerate()
+                        .map(|(index, arg)| {
+                            if let syn::FnArg::Typed(arg) = arg {
+                                let name = Ident::new(format!("val{}", index + 1).as_str(), arg.span());
+                                (name, arg.ty.as_ref().clone())
+                            } else {
+                                panic!();
+                            }
+                        })
+                        .collect();
+
+                    let unwrap_args: Vec<_> = params
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (name, param_type))| {
+                            quote! {
+                                let #name = &*params.rgvarg.add(#index);
+                                let #name: #param_type = #name
+                                    .try_into()
+                                    .or(Err(Error::from_hresult(E_INVALIDARG)))?;
+                            }
+                        })
+                        .collect();
+
+                    let params_len = params.len() as u32;
+
+                    let arg_names: Vec<_> = params.iter().map(|(name, _)| name.clone()).collect();
+
+                    let func_call = quote! {
+                        self.#func_name(#(#arg_names),*).map_err(Error::from_hresult)?
+                    };
+
+                    let func_call = if dispatch_func.property_type.is_some() {
+                        quote! {
+                            if !pvarresult.is_null() {
+                                *pvarresult = #func_call.into();
+                            }
+                        }
+                    } else {
+                        quote! { #func_call; }
+                    };
+
+                    quote! {
+                        if wflags.contains(DISPATCH_METHOD) {
+                            if pdispparams.is_null() {
+                                return Err(E_INVALIDARG.into());
+                            }
+
+                            let params = &*pdispparams;
+                            if params.cArgs != #params_len || params.rgvarg.is_null() {
+                                return Err(DISP_E_PARAMNOTFOUND.into());
+                            }
+
+                            #(#unwrap_args)*
+
+                            #func_call
+
+                            Ok(())
+                        } else
+                    }
+                } else {
+                    quote! {}
+                };
+
                 quote! {
                     Self::#const_name => {
                         #property_get
                         #property_set
+                        #method
                         {
                             Err(E_INVALIDARG.into())
                         }
@@ -582,7 +699,7 @@ impl ToTokens for AutoDispatch {
 
                 use windows_core::{HRESULT, Error};
                 use windows::core::{IUnknown, GUID, PCWSTR};
-                use windows::Win32::System::Com::{ITypeInfo, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT};
+                use windows::Win32::System::Com::{ITypeInfo, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_METHOD};
                 use windows::Win32::Foundation::{E_NOTIMPL, E_INVALIDARG, DISP_E_MEMBERNOTFOUND, DISP_E_PARAMNOTFOUND};
                 use windows::Win32::System::Variant::VARIANT;
 
