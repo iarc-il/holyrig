@@ -16,14 +16,11 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, TranslateMessage,
 };
-use windows_core::BOOL;
+use windows_core::{Interface, BOOL};
 
 use auto_dispatch::auto_dispatch;
 
 const CLSID_SIMPLE_COM_OBJECT: GUID = GUID::from_u128(0x12345678_1234_1234_1234_123456789ABC);
-
-const IID_IUNKNOWN: GUID = GUID::from_u128(0x00000000_0000_0000_C000_000000000046);
-const IID_IDISPATCH: GUID = GUID::from_u128(0x00020400_0000_0000_C000_000000000046);
 
 #[implement(IDispatch)]
 struct SimpleObject {
@@ -92,7 +89,7 @@ impl IClassFactory_Impl for SimpleObjectFactory_Impl {
         unsafe {
             let requested_iid = *riid;
 
-            if requested_iid != IID_IUNKNOWN && requested_iid != IID_IDISPATCH {
+            if requested_iid != IUnknown::IID && requested_iid != IDispatch::IID {
                 *ppvobject = std::ptr::null_mut();
                 return Err(E_NOINTERFACE.into());
             }
@@ -127,20 +124,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         println!("COM server started successfully!");
-        println!(
-            "CLSID: {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-            CLSID_SIMPLE_COM_OBJECT.data1,
-            CLSID_SIMPLE_COM_OBJECT.data2,
-            CLSID_SIMPLE_COM_OBJECT.data3,
-            CLSID_SIMPLE_COM_OBJECT.data4[0],
-            CLSID_SIMPLE_COM_OBJECT.data4[1],
-            CLSID_SIMPLE_COM_OBJECT.data4[2],
-            CLSID_SIMPLE_COM_OBJECT.data4[3],
-            CLSID_SIMPLE_COM_OBJECT.data4[4],
-            CLSID_SIMPLE_COM_OBJECT.data4[5],
-            CLSID_SIMPLE_COM_OBJECT.data4[6],
-            CLSID_SIMPLE_COM_OBJECT.data4[7],
-        );
         println!("Press Ctrl+C to stop the server...");
 
         let running = Arc::new(AtomicBool::new(true));
