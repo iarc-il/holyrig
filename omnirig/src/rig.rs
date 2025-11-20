@@ -12,6 +12,8 @@ use auto_dispatch::auto_dispatch;
 pub struct RigX {
     rig_type: RwLock<String>,
     status_str: RwLock<String>,
+    readable_params: RwLock<i32>,
+    writeable_params: RwLock<i32>,
     freq: RwLock<i32>,
     freq_a: RwLock<i32>,
     freq_b: RwLock<i32>,
@@ -31,6 +33,8 @@ impl Default for RigX {
         Self {
             rig_type: RwLock::new("DummyRig".to_string()),
             status_str: RwLock::new("Not configured".to_string()),
+            readable_params: RwLock::new(0),
+            writeable_params: RwLock::new(0),
             freq: RwLock::new(0),
             freq_a: RwLock::new(0),
             freq_b: RwLock::new(0),
@@ -55,6 +59,34 @@ impl RigX {
         println!("RigX::RigType getter called");
         let rig_type = self.rig_type.read().unwrap();
         Ok(BSTR::from(rig_type.as_str()))
+    }
+
+    #[id(0x02)]
+    #[getter]
+    fn ReadableParams(&self) -> Result<i32, HRESULT> {
+        println!("RigX::ReadableParams getter called");
+        Ok(*self.readable_params.read().unwrap())
+    }
+
+    #[id(0x03)]
+    #[getter]
+    fn WriteableParams(&self) -> Result<i32, HRESULT> {
+        println!("RigX::WriteableParams getter called");
+        Ok(*self.writeable_params.read().unwrap())
+    }
+
+    #[id(0x04)]
+    fn IsParamReadable(&self, param: i32) -> Result<bool, HRESULT> {
+        println!("RigX::IsParamReadable called with param: {}", param);
+        let readable_params = *self.readable_params.read().unwrap();
+        Ok((readable_params & param) != 0)
+    }
+
+    #[id(0x05)]
+    fn IsParamWriteable(&self, param: i32) -> Result<bool, HRESULT> {
+        println!("RigX::IsParamWriteable called with param: {}", param);
+        let writeable_params = *self.writeable_params.read().unwrap();
+        Ok((writeable_params & param) != 0)
     }
 
     #[id(0x07)]
@@ -242,5 +274,57 @@ impl RigX {
         println!("RigX::Status getter called");
         let status = *self.status.read().unwrap();
         Ok(status.into())
+    }
+
+    #[id(0x13)]
+    fn ClearRit(&self) -> Result<(), HRESULT> {
+        println!("RigX::ClearRit called");
+        *self.rit_offset.write().unwrap() = 0;
+        Ok(())
+    }
+
+    #[id(0x14)]
+    fn SetSimplexMode(&self, freq: i32) -> Result<(), HRESULT> {
+        println!("RigX::SetSimplexMode called with freq: {}", freq);
+        *self.freq.write().unwrap() = freq;
+        *self.freq_a.write().unwrap() = freq;
+        *self.freq_b.write().unwrap() = freq;
+        *self.split.write().unwrap() = RigParamX::SplitOff;
+        Ok(())
+    }
+
+    #[id(0x15)]
+    fn SetSplitMode(&self, rx_freq: i32, tx_freq: i32) -> Result<(), HRESULT> {
+        println!(
+            "RigX::SetSplitMode called with rx_freq: {}, tx_freq: {}",
+            rx_freq, tx_freq
+        );
+        *self.freq_a.write().unwrap() = rx_freq;
+        *self.freq_b.write().unwrap() = tx_freq;
+        *self.split.write().unwrap() = RigParamX::SplitOn;
+        Ok(())
+    }
+
+    #[id(0x16)]
+    fn FrequencyOfTone(&self, tone: i32) -> Result<i32, HRESULT> {
+        println!("RigX::FrequencyOfTone called with tone: {}", tone);
+        Ok(tone * 10)
+    }
+
+    #[id(0x18)]
+    fn GetRxFrequency(&self) -> Result<i32, HRESULT> {
+        println!("RigX::GetRxFrequency called");
+        Ok(*self.freq_a.read().unwrap())
+    }
+
+    #[id(0x19)]
+    fn GetTxFrequency(&self) -> Result<i32, HRESULT> {
+        println!("RigX::GetTxFrequency called");
+        let split = *self.split.read().unwrap();
+        if split == RigParamX::SplitOn {
+            Ok(*self.freq_b.read().unwrap())
+        } else {
+            Ok(*self.freq_a.read().unwrap())
+        }
     }
 }
