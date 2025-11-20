@@ -553,6 +553,18 @@ impl AutoDispatch {
                         })
                         .collect();
 
+                    let check_args = if !params.is_empty() {
+                        let params_len = params.len() as u32;
+                        quote! {
+                            let params = &*pdispparams;
+                            if params.cArgs != #params_len || params.rgvarg.is_null() {
+                                return Err(DISP_E_PARAMNOTFOUND.into());
+                            }
+                        }
+                    } else {
+                        quote! {}
+                    };
+
                     let unwrap_args: Vec<_> = params
                         .iter()
                         .enumerate()
@@ -566,8 +578,6 @@ impl AutoDispatch {
                             }
                         })
                         .collect();
-
-                    let params_len = params.len() as u32;
 
                     let arg_names: Vec<_> = params.iter().map(|(name, _)| name.clone()).collect();
 
@@ -590,16 +600,9 @@ impl AutoDispatch {
                             if pdispparams.is_null() {
                                 return Err(E_INVALIDARG.into());
                             }
-
-                            let params = &*pdispparams;
-                            if params.cArgs != #params_len || params.rgvarg.is_null() {
-                                return Err(DISP_E_PARAMNOTFOUND.into());
-                            }
-
+                            #check_args
                             #(#unwrap_args)*
-
                             #func_call
-
                             Ok(())
                         } else
                     }
