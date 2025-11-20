@@ -6,6 +6,7 @@ use windows::core::{implement, BSTR};
 use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
 
 use crate::enums::{RigParamX, RigStatusX};
+use crate::port_bits::PortBits;
 use auto_dispatch::auto_dispatch;
 
 #[implement(IDispatch)]
@@ -26,10 +27,13 @@ pub struct RigX {
     tx: RwLock<RigParamX>,
     mode: RwLock<RigParamX>,
     status: RwLock<RigStatusX>,
+    port_bits: RwLock<Option<IDispatch>>,
 }
 
 impl Default for RigX {
     fn default() -> Self {
+        let port_bits: IDispatch = PortBits::default().into();
+
         Self {
             rig_type: RwLock::new("DummyRig".to_string()),
             status_str: RwLock::new("Not configured".to_string()),
@@ -47,6 +51,7 @@ impl Default for RigX {
             tx: RwLock::new(RigParamX::default()),
             mode: RwLock::new(RigParamX::default()),
             status: RwLock::new(RigStatusX::default()),
+            port_bits: RwLock::new(Some(port_bits)),
         }
     }
 }
@@ -326,5 +331,17 @@ impl RigX {
         } else {
             Ok(*self.freq_a.read().unwrap())
         }
+    }
+
+    #[id(0x1A)]
+    #[getter]
+    fn PortBits(&self) -> Result<IDispatch, HRESULT> {
+        println!("RigX::PortBits getter called");
+        self.port_bits
+            .read()
+            .unwrap()
+            .as_ref()
+            .cloned()
+            .ok_or(windows::Win32::Foundation::E_FAIL)
     }
 }
