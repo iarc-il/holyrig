@@ -2,6 +2,8 @@
 
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
+mod enums;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
