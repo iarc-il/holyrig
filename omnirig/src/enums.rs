@@ -1,6 +1,7 @@
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RigParamX {
+    #[default]
     Unknown = 1,
     Freq = 2,
     FreqA = 4,
@@ -80,8 +81,9 @@ impl From<RigParamX> for i32 {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RigStatusX {
+    #[default]
     NotConfigured = 0,
     Disabled = 1,
     PortBusy = 2,
