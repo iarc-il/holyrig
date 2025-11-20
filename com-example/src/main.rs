@@ -26,13 +26,13 @@ const IID_IUNKNOWN: GUID = GUID::from_u128(0x00000000_0000_0000_C000_00000000004
 const IID_IDISPATCH: GUID = GUID::from_u128(0x00020400_0000_0000_C000_000000000046);
 
 #[implement(IDispatch)]
-struct SimpleComObject {
+struct SimpleObject {
     counter: RefCell<u32>,
     flag: RefCell<bool>,
 }
 
 #[auto_dispatch]
-impl SimpleComObject {
+impl SimpleObject {
     #[id(1)]
     #[getter]
     fn prop1(&self) -> Result<u32, HRESULT> {
@@ -76,9 +76,9 @@ impl SimpleComObject {
 }
 
 #[implement(IClassFactory)]
-struct SimpleComObjectFactory;
+struct SimpleObjectFactory;
 
-impl IClassFactory_Impl for SimpleComObjectFactory_Impl {
+impl IClassFactory_Impl for SimpleObjectFactory_Impl {
     fn CreateInstance(
         &self,
         punkouter: windows_core::Ref<IUnknown>,
@@ -97,7 +97,7 @@ impl IClassFactory_Impl for SimpleComObjectFactory_Impl {
                 return Err(E_NOINTERFACE.into());
             }
 
-            let instance: IDispatch = SimpleComObject {
+            let instance: IDispatch = SimpleObject {
                 counter: RefCell::new(0),
                 flag: RefCell::new(false),
             }
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
 
-        let factory: IClassFactory = SimpleComObjectFactory.into();
+        let factory: IClassFactory = SimpleObjectFactory.into();
 
         let cookie = CoRegisterClassObject(
             &CLSID_SIMPLE_COM_OBJECT,
