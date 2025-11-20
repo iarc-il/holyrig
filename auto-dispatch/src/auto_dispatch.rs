@@ -553,12 +553,11 @@ impl AutoDispatch {
                         })
                         .collect();
 
-                    let params_last: usize = params.len() - 1;
                     let unwrap_args: Vec<_> = params
                         .iter()
                         .enumerate()
                         .map(|(index, (name, param_type))| {
-                            let index = params_last - index;
+                            let index = params.len() - 1 - index;
                             quote! {
                                 let #name = &*params.rgvarg.add(#index);
                                 let #name: #param_type = #name
