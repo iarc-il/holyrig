@@ -2,6 +2,7 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITH
 
 mod enums;
 mod port_bits;
+mod rig;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
