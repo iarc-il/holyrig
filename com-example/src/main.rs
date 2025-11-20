@@ -51,6 +51,28 @@ impl SimpleComObject {
         *self.flag.borrow_mut() = value;
         Ok(())
     }
+
+    #[id(3)]
+    fn do_stuff(&self, value1: bool, value2: u16, value3: u16) -> Result<(), HRESULT> {
+        println!("Value1: {value1}");
+        println!("Value2: {value2}");
+        println!("Value3: {value3}");
+        if value1 {
+            println!("Result: {}", value2 * value3);
+        } else {
+            println!("Result: {}", value2 + value3);
+        }
+        Ok(())
+    }
+
+    #[id(4)]
+    fn do_other_stuff(&self, value1: bool, value3: i64) -> Result<u32, HRESULT> {
+        if value1 {
+            Ok((value3 * 3 + 1) as u32)
+        } else {
+            Ok((value3 / 2) as u32)
+        }
+    }
 }
 
 #[implement(IClassFactory)]
