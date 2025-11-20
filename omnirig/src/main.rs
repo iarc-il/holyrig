@@ -1,6 +1,7 @@
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
 mod enums;
+mod omnirig;
 mod port_bits;
 mod rig;
 
