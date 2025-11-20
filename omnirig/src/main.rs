@@ -1,8 +1,7 @@
-#![allow(non_camel_case_types)]
-
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
 mod enums;
+mod port_bits;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
