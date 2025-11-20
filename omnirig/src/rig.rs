@@ -2,15 +2,16 @@
 #![allow(non_snake_case)]
 
 use std::sync::RwLock;
-use windows::core::implement;
+use windows::core::{implement, BSTR};
 use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
 
 use crate::enums::{RigParamX, RigStatusX};
 use auto_dispatch::auto_dispatch;
 
-#[derive(Default)]
 #[implement(IDispatch)]
 pub struct RigX {
+    rig_type: RwLock<String>,
+    status_str: RwLock<String>,
     freq: RwLock<i32>,
     freq_a: RwLock<i32>,
     freq_b: RwLock<i32>,
@@ -25,8 +26,45 @@ pub struct RigX {
     status: RwLock<RigStatusX>,
 }
 
+impl Default for RigX {
+    fn default() -> Self {
+        Self {
+            rig_type: RwLock::new("DummyRig".to_string()),
+            status_str: RwLock::new("Not configured".to_string()),
+            freq: RwLock::new(0),
+            freq_a: RwLock::new(0),
+            freq_b: RwLock::new(0),
+            rit_offset: RwLock::new(0),
+            pitch: RwLock::new(0),
+            vfo: RwLock::new(RigParamX::default()),
+            split: RwLock::new(RigParamX::default()),
+            rit: RwLock::new(RigParamX::default()),
+            xit: RwLock::new(RigParamX::default()),
+            tx: RwLock::new(RigParamX::default()),
+            mode: RwLock::new(RigParamX::default()),
+            status: RwLock::new(RigStatusX::default()),
+        }
+    }
+}
+
 #[auto_dispatch]
 impl RigX {
+    #[id(0x01)]
+    #[getter]
+    fn RigType(&self) -> Result<BSTR, HRESULT> {
+        println!("RigX::RigType getter called");
+        let rig_type = self.rig_type.read().unwrap();
+        Ok(BSTR::from(rig_type.as_str()))
+    }
+
+    #[id(0x07)]
+    #[getter]
+    fn StatusStr(&self) -> Result<BSTR, HRESULT> {
+        println!("RigX::StatusStr getter called");
+        let status_str = self.status_str.read().unwrap();
+        Ok(BSTR::from(status_str.as_str()))
+    }
+
     #[id(0x08)]
     #[getter]
     fn Freq(&self) -> Result<i32, HRESULT> {
