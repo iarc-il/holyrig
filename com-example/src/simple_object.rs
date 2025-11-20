@@ -1,5 +1,5 @@
-use std::cell::RefCell;
 use std::ffi::c_void;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use windows::core::{GUID, IUnknown, implement};
 
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_FAIL, E_NOINTERFACE};
@@ -11,12 +11,19 @@ use auto_dispatch::auto_dispatch;
 
 use crate::sub_object::SubObject;
 
+struct SendSyncIDispatch(IDispatch);
+
+unsafe impl Send for SendSyncIDispatch {}
+unsafe impl Sync for SendSyncIDispatch {}
+
+static SINGLETON: OnceLock<Arc<Mutex<Option<SendSyncIDispatch>>>> = OnceLock::new();
+
 #[implement(IDispatch)]
 struct SimpleObject {
-    counter: RefCell<u32>,
-    flag: RefCell<bool>,
-    sub1: RefCell<Option<IDispatch>>,
-    sub2: RefCell<Option<IDispatch>>,
+    counter: RwLock<u32>,
+    flag: RwLock<bool>,
+    sub1: RwLock<Option<IDispatch>>,
+    sub2: RwLock<Option<IDispatch>>,
 }
 
 impl Default for SimpleObject {
@@ -25,10 +32,10 @@ impl Default for SimpleObject {
         let sub2: IDispatch = SubObject::default().into();
 
         Self {
-            counter: RefCell::new(0),
-            flag: RefCell::new(false),
-            sub1: RefCell::new(Some(sub1)),
-            sub2: RefCell::new(Some(sub2)),
+            counter: RwLock::new(0),
+            flag: RwLock::new(false),
+            sub1: RwLock::new(Some(sub1)),
+            sub2: RwLock::new(Some(sub2)),
         }
     }
 }
@@ -38,19 +45,19 @@ impl SimpleObject {
     #[id(1)]
     #[getter]
     fn prop1(&self) -> Result<u32, HRESULT> {
-        Ok(*self.counter.borrow())
+        Ok(*self.counter.read().unwrap())
     }
 
     #[id(2)]
     #[getter]
     fn prop2(&self) -> Result<bool, HRESULT> {
-        Ok(*self.flag.borrow())
+        Ok(*self.flag.read().unwrap())
     }
 
     #[id(2)]
     #[setter]
     fn prop2(&self, value: bool) -> Result<(), HRESULT> {
-        *self.flag.borrow_mut() = value;
+        *self.flag.write().unwrap() = value;
         Ok(())
     }
 
@@ -79,13 +86,13 @@ impl SimpleObject {
     #[id(5)]
     #[getter]
     fn sub1(&self) -> Result<IDispatch, HRESULT> {
-        self.sub1.borrow().as_ref().cloned().ok_or(E_FAIL)
+        self.sub1.read().unwrap().as_ref().cloned().ok_or(E_FAIL)
     }
 
     #[id(6)]
     #[getter]
     fn sub2(&self) -> Result<IDispatch, HRESULT> {
-        self.sub2.borrow().as_ref().cloned().ok_or(E_FAIL)
+        self.sub2.read().unwrap().as_ref().cloned().ok_or(E_FAIL)
     }
 }
 
@@ -111,7 +118,13 @@ impl IClassFactory_Impl for SimpleObjectFactory_Impl {
                 return Err(E_NOINTERFACE.into());
             }
 
-            let instance: IDispatch = SimpleObject::default().into();
+            let singleton = SINGLETON.get_or_init(|| {
+                let obj: IDispatch = SimpleObject::default().into();
+                Arc::new(Mutex::new(Some(SendSyncIDispatch(obj))))
+            });
+
+            let instance = singleton.lock().unwrap().as_ref().unwrap().0.clone();
+
             *ppvobject = std::mem::transmute_copy(&instance);
             std::mem::forget(instance);
         }
