@@ -105,7 +105,7 @@ pub enum Token<'source> {
 pub enum StringToken<'source> {
     #[regex(r"[a-fA-F0-9]*[a-fA-F][a-fA-F0-9]*", priority = 3, callback = |lex| {
         let s = lex.slice();
-        if s.len() % 2 == 0 { Some(s) } else { None }
+        if s.len().is_multiple_of(2) { Some(s) } else { None }
     })]
     HexString(&'source str),
     #[token(".", priority = 2)]

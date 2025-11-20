@@ -119,7 +119,7 @@ impl DataFormat {
         let mut digits = abs_value.to_string();
 
         // TODO: convert to digits without formatting strings
-        if digits.len() % 2 != 0 {
+        if !digits.len().is_multiple_of(2) {
             digits = format!("0{digits}");
         }
 
