@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::simple_object::SimpleObjectFactory;
 
 mod simple_object;
+mod sub_object;
 
 const CLSID_SIMPLE_COM_OBJECT: GUID = GUID::from_u128(0x12345678_1234_1234_1234_123456789ABC);
 
