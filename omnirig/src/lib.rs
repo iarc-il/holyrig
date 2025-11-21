@@ -1,13 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use windows::core::GUID;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
     CoInitializeEx, CoRegisterClassObject, CoRevokeClassObject, CoUninitialize, IClassFactory,
     CLSCTX_LOCAL_SERVER, COINIT_MULTITHREADED, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, TranslateMessage, MSG,
+    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
 };
 
 use crate::omnirig::OmniRigXFactory;
@@ -47,14 +46,12 @@ pub fn run_omnirig_server() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut msg = MSG::default();
         while running.load(Ordering::SeqCst) {
-            let result = GetMessageW(&mut msg, Some(HWND::default()), 0, 0);
-            if result.0 == 0 || result.0 == -1 {
-                break;
+            if PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-
-            std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
         println!("Revoking class object...");
