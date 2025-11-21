@@ -13,8 +13,6 @@ use auto_dispatch::auto_dispatch;
 
 #[implement(IDispatch)]
 pub struct OmniRigX {
-    interface_version: RwLock<i32>,
-    software_version: RwLock<i32>,
     dialog_visible: RwLock<bool>,
     rig1: RwLock<Option<IDispatch>>,
     rig2: RwLock<Option<IDispatch>>,
@@ -26,8 +24,6 @@ impl Default for OmniRigX {
         let rig2: IDispatch = RigX::default().into();
 
         Self {
-            interface_version: RwLock::new(0x101),
-            software_version: RwLock::new(0x101),
             dialog_visible: RwLock::new(false),
             rig1: RwLock::new(Some(rig1)),
             rig2: RwLock::new(Some(rig2)),
@@ -41,14 +37,14 @@ impl OmniRigX {
     #[getter]
     fn InterfaceVersion(&self) -> Result<i32, HRESULT> {
         println!("OmniRigX::InterfaceVersion getter called");
-        Ok(*self.interface_version.read().unwrap())
+        Ok(0x101)
     }
 
     #[id(0x02)]
     #[getter]
     fn SoftwareVersion(&self) -> Result<i32, HRESULT> {
         println!("OmniRigX::SoftwareVersion getter called");
-        Ok(*self.software_version.read().unwrap())
+        Ok(0x10014)
     }
 
     #[id(0x03)]
