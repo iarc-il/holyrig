@@ -3,6 +3,14 @@ name = "omnirig"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "omnirig"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omnirig"
+path = "src/main.rs"
+
 [dependencies]
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging"] }
 auto-dispatch = { path = "../auto-dispatch" }
