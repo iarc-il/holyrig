@@ -1,9 +1,12 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+use std::ffi::c_void;
 use std::sync::RwLock;
-use windows::core::implement;
-use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
+use windows::core::{implement, IUnknown, Interface, GUID};
+use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE};
+use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IDispatch, IDispatch_Impl};
+use windows_core::BOOL;
 
 use crate::rig::RigX;
 use auto_dispatch::auto_dispatch;
@@ -87,6 +90,41 @@ impl OmniRigX {
             value
         );
         *self.dialog_visible.write().unwrap() = value;
+        Ok(())
+    }
+}
+
+#[implement(IClassFactory)]
+pub struct OmniRigXFactory;
+
+impl IClassFactory_Impl for OmniRigXFactory_Impl {
+    fn CreateInstance(
+        &self,
+        punkouter: windows_core::Ref<IUnknown>,
+        riid: *const GUID,
+        ppvobject: *mut *mut c_void,
+    ) -> windows::core::Result<()> {
+        if punkouter.is_some() {
+            return Err(CLASS_E_NOAGGREGATION.into());
+        }
+
+        unsafe {
+            let requested_iid = *riid;
+
+            if requested_iid != IUnknown::IID && requested_iid != IDispatch::IID {
+                *ppvobject = std::ptr::null_mut();
+                return Err(E_NOINTERFACE.into());
+            }
+
+            println!("OmniRigXFactory: Creating new OmniRigX instance");
+            let instance: IDispatch = OmniRigX::default().into();
+            *ppvobject = std::mem::transmute_copy(&instance);
+            std::mem::forget(instance);
+        }
+        Ok(())
+    }
+
+    fn LockServer(&self, _flock: BOOL) -> windows::core::Result<()> {
         Ok(())
     }
 }
