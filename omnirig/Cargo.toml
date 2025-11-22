@@ -12,8 +12,12 @@ name = "omnirig"
 path = "src/main.rs"
 
 [dependencies]
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_Security"] }
 auto-dispatch = { path = "../auto-dispatch" }
 ctrlc = "3.4"
 windows-core = "0.62.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+bytemuck = "1.14"
 
