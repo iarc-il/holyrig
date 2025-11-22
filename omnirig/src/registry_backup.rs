@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use windows::core::GUID;
 use windows::Win32::System::Registry::REG_VALUE_TYPE;
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CLASSES_ROOT, KEY_READ, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
-    RegCreateKeyExW, RegDeleteTreeW, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW,
-    RegSetValueExW,
+    RegCloseKey, RegCreateKeyExW, RegDeleteKeyExW, RegDeleteTreeW, RegEnumKeyExW, RegEnumValueW,
+    RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CLASSES_ROOT, KEY_READ,
+    KEY_WOW64_32KEY, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
-use windows::core::GUID;
 use windows_core::PCWSTR;
 
 const OMNIRIG_CLSID: &str = "{0839E8C6-ED30-4950-8087-966F970F0CAE}";
@@ -180,7 +180,7 @@ fn read_registry_key(hkey: HKEY) -> Result<RegistryKey, Box<dyn std::error::Erro
                 hkey,
                 PCWSTR::from_raw(subkey_path_wide.as_ptr()),
                 Some(0),
-                KEY_READ,
+                KEY_READ | KEY_WOW64_32KEY,
                 &mut subkey_handle,
             );
 
@@ -213,7 +213,7 @@ fn write_registry_key(
             Some(0),
             None,
             REG_OPTION_NON_VOLATILE,
-            KEY_WRITE,
+            KEY_WRITE | KEY_WOW64_32KEY,
             None,
             &mut hkey,
             None,
@@ -241,12 +241,14 @@ pub fn backup_omnirig_registry() -> Result<RegistryBackup, Box<dyn std::error::E
             HKEY_CLASSES_ROOT,
             PCWSTR::from_raw(clsid_path.as_ptr()),
             Some(0),
-            KEY_READ,
+            KEY_READ | KEY_WOW64_32KEY,
             &mut hkey,
         );
 
         if !result.is_ok() {
-            println!("Original OmniRig not found in registry. Nothing to backup. (Error: {result:?})");
+            println!(
+                "Original OmniRig not found in registry. Nothing to backup. (Error: {result:?})"
+            );
             return Ok(RegistryBackup {
                 clsid_key: None,
                 original_exe_path: None,
@@ -292,13 +294,30 @@ pub fn restore_omnirig_registry(backup: &RegistryBackup) -> Result<(), Box<dyn s
 
     unsafe {
         let clsid_path_wide = to_wide_string(&clsid_path);
-        let result = RegDeleteTreeW(
+
+        let mut hkey = HKEY::default();
+        let open_result = RegOpenKeyExW(
             HKEY_CLASSES_ROOT,
             PCWSTR::from_raw(clsid_path_wide.as_ptr()),
+            Some(0),
+            KEY_READ | KEY_WRITE | KEY_WOW64_32KEY,
+            &mut hkey,
         );
 
-        if !result.is_ok() {
-            println!("Warning: Could not delete existing CLSID key: {:?}", result);
+        if open_result.is_ok() {
+            let delete_result = RegDeleteTreeW(hkey, None);
+            RegCloseKey(hkey).ok()?;
+
+            let delete_key_result = RegDeleteKeyExW(
+                HKEY_CLASSES_ROOT,
+                PCWSTR::from_raw(clsid_path_wide.as_ptr()),
+                KEY_WOW64_32KEY.0,
+                Some(0),
+            );
+
+            if !delete_result.is_ok() || !delete_key_result.is_ok() {
+                println!("Warning: Could not fully delete existing CLSID key");
+            }
         }
     }
 
@@ -336,7 +355,7 @@ pub fn register_holyrig_com_component(
             Some(0),
             None,
             REG_OPTION_NON_VOLATILE,
-            KEY_WRITE,
+            KEY_WRITE | KEY_WOW64_32KEY,
             None,
             &mut hkey_clsid,
             None,
@@ -371,7 +390,7 @@ pub fn register_holyrig_com_component(
             Some(0),
             None,
             REG_OPTION_NON_VOLATILE,
-            KEY_WRITE,
+            KEY_WRITE | KEY_WOW64_32KEY,
             None,
             &mut hkey_localserver,
             None,
@@ -419,7 +438,7 @@ pub fn get_current_omnirig_path() -> Result<Option<String>, Box<dyn std::error::
             HKEY_CLASSES_ROOT,
             PCWSTR::from_raw(clsid_path_wide.as_ptr()),
             Some(0),
-            KEY_READ,
+            KEY_READ | KEY_WOW64_32KEY,
             &mut hkey,
         );
 
