@@ -9,7 +9,7 @@ use syn::spanned::Spanned;
 
 type DispId = i32;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum PropertyType {
     IUnknown,
     IDispatch,
@@ -22,6 +22,7 @@ enum PropertyType {
     U64,
     I64,
     F64,
+    Other(String),
 }
 
 impl ToTokens for PropertyType {
@@ -38,6 +39,10 @@ impl ToTokens for PropertyType {
             PropertyType::U64 => quote! { u64 },
             PropertyType::I64 => quote! { i64 },
             PropertyType::F64 => quote! { f64 },
+            PropertyType::Other(other) => {
+                let ident = Ident::new(other, Span::call_site());
+                quote! { #ident }
+            }
         };
         tokens.extend(result);
     }
@@ -183,9 +188,7 @@ impl AutoDispatch {
                     "u64" => PropertyType::U64,
                     "i64" => PropertyType::I64,
                     "f64" => PropertyType::F64,
-                    _ => {
-                        return Err(syn::Error::new(type_path.span(), "Unsupported return type"));
-                    }
+                    other => PropertyType::Other(segment),
                 };
                 Ok(Some(property_type))
             }
@@ -328,7 +331,7 @@ impl AutoDispatch {
                             "Duplicated get_property function",
                         ));
                     }
-                    if dispatch_func.property_type.unwrap() != return_type {
+                    if dispatch_func.property_type.clone().unwrap() != return_type {
                         return Err(syn::Error::new(func.span(), "Mismatch in property type"));
                     }
                     dispatch_func.get_func = Some(processed_func.clone());
@@ -364,7 +367,7 @@ impl AutoDispatch {
                             "Duplicated set_property function",
                         ));
                     }
-                    if dispatch_func.property_type.unwrap() != input_type {
+                    if dispatch_func.property_type.as_ref().unwrap() != &input_type {
                         return Err(syn::Error::new(func.span(), "Mismatch in property type"));
                     }
                     dispatch_func.set_func = Some(processed_func.clone());
@@ -381,7 +384,6 @@ impl AutoDispatch {
                 }
             }
             FuncType::Method => {
-
                 if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
                     if dispatch_func.method_func.is_some() {
                         return Err(syn::Error::new(
