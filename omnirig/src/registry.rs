@@ -75,7 +75,12 @@ impl Drop for RegKey {
     }
 }
 
-pub fn register_com_component(clsid: &GUID, exe_path: &str, prog_id: &str, version: &str) -> Result<()> {
+pub fn register_com_component(
+    clsid: &GUID,
+    exe_path: &str,
+    prog_id: &str,
+    version: &str,
+) -> Result<()> {
     let clsid_path = format!("CLSID\\{{{:?}}}", clsid);
     println!("CLSID path: {clsid_path}");
     let clsid_key = RegKey::new(HKEY_CURRENT_USER, &clsid_path)?;

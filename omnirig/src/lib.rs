@@ -1,13 +1,13 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use windows::core::GUID;
 use windows::Win32::System::Com::{
-    CLSCTX_LOCAL_SERVER, COINIT_MULTITHREADED, CoInitializeEx, CoRegisterClassObject,
-    CoRevokeClassObject, CoUninitialize, IClassFactory, REGCLS_MULTIPLEUSE,
+    CoInitializeEx, CoRegisterClassObject, CoRevokeClassObject, CoUninitialize, IClassFactory,
+    CLSCTX_LOCAL_SERVER, COINIT_MULTITHREADED, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
+    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
 };
-use windows::core::GUID;
 
 use crate::omnirig::OmniRigXFactory;
 

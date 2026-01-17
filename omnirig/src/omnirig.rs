@@ -112,8 +112,8 @@ impl crate::com_interface::IOmniRigX_Impl for OmniRigX_Impl {
         *value = self.get_DialogVisible().unwrap();
         HRESULT(0)
     }
-    unsafe fn put_DialogVisible(&self, value: bool) -> HRESULT {
-        self.put_DialogVisible(value).unwrap();
+    unsafe fn set_DialogVisible(&self, value: bool) -> HRESULT {
+        self.set_DialogVisible(value).unwrap();
         HRESULT(0)
     }
 }
