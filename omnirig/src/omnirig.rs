@@ -6,13 +6,13 @@ use std::sync::RwLock;
 use windows::core::{implement, IUnknown, Interface, GUID};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE};
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IDispatch, IDispatch_Impl};
-use windows_core::BOOL;
-use windows_core::HRESULT;
+use windows_core::{BOOL, HRESULT};
 
+use crate::com_interface::IOmniRigX;
 use crate::rig::RigX;
 use auto_dispatch::auto_dispatch;
 
-#[implement(IDispatch)]
+#[implement(IOmniRigX)]
 pub struct OmniRigX {
     dialog_visible: RwLock<bool>,
     rig1: RwLock<Option<IDispatch>>,
@@ -91,6 +91,33 @@ impl OmniRigX {
     }
 }
 
+impl crate::com_interface::IOmniRigX_Impl for OmniRigX_Impl {
+    unsafe fn get_InterfaceVersion(&self, value: *mut i32) -> HRESULT {
+        *value = self.get_InterfaceVersion().unwrap();
+        HRESULT(0)
+    }
+    unsafe fn get_SoftwareVersion(&self, value: *mut i32) -> HRESULT {
+        *value = self.get_SoftwareVersion().unwrap();
+        HRESULT(0)
+    }
+    unsafe fn get_Rig1(&self, value: *mut Option<IDispatch>) -> HRESULT {
+        *value = Some(self.get_Rig1().unwrap());
+        HRESULT(0)
+    }
+    unsafe fn get_Rig2(&self, value: *mut Option<IDispatch>) -> HRESULT {
+        *value = Some(self.get_Rig2().unwrap());
+        HRESULT(0)
+    }
+    unsafe fn get_DialogVisible(&self, value: *mut bool) -> HRESULT {
+        *value = self.get_DialogVisible().unwrap();
+        HRESULT(0)
+    }
+    unsafe fn put_DialogVisible(&self, value: bool) -> HRESULT {
+        self.put_DialogVisible(value).unwrap();
+        HRESULT(0)
+    }
+}
+
 #[implement(IClassFactory)]
 pub struct OmniRigXFactory;
 
@@ -114,7 +141,7 @@ impl IClassFactory_Impl for OmniRigXFactory_Impl {
             }
 
             println!("OmniRigXFactory: Creating new OmniRigX instance");
-            let instance: IDispatch = OmniRigX::default().into();
+            let instance: IOmniRigX = OmniRigX::default().into();
             *ppvobject = std::mem::transmute_copy(&instance);
             std::mem::forget(instance);
         }

@@ -3,10 +3,22 @@
 
 use std::sync::RwLock;
 use windows::core::implement;
-use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
-use windows_core::HRESULT;
+use windows::Win32::System::Com::{IDispatch, IDispatch_Impl, IDispatch_Vtbl};
+use windows_core::{interface, HRESULT};
 
 use auto_dispatch::auto_dispatch;
+
+#[interface("3DEE2CC8-1EA3-46E7-B8B4-3E7321F2446A")]
+pub unsafe trait IPortBits: IDispatch {
+    fn Lock(&self, ok: *mut bool) -> HRESULT;
+    fn get_Rts(&self, Value: *mut bool) -> HRESULT;
+    fn put_Rts(&self, Value: bool) -> HRESULT;
+    fn get_Dtr(&self, Value: *mut bool) -> HRESULT;
+    fn put_Dtr(&self, Value: bool) -> HRESULT;
+    fn get_Cts(&self, Value: *mut bool) -> HRESULT;
+    fn get_Dsr(&self, Value: *mut bool) -> HRESULT;
+    fn Unlock(&self) -> HRESULT;
+}
 
 #[derive(Default)]
 #[implement(IDispatch)]

@@ -3,12 +3,54 @@
 
 use std::sync::RwLock;
 use windows::core::{implement, BSTR};
-use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
-use windows_core::HRESULT;
+use windows::Win32::System::Com::{IDispatch, IDispatch_Impl, IDispatch_Vtbl};
+use windows_core::{interface, HRESULT};
 
 use crate::enums::{RigParamX, RigStatusX};
 use crate::port_bits::PortBits;
 use auto_dispatch::auto_dispatch;
+
+#[interface("D30A7E51-5862-45B7-BFFA-6415917DA0CF")]
+pub unsafe trait IRigX: IDispatch {
+    fn get_RigType(&self, Value: *mut BSTR) -> HRESULT;
+    fn get_ReadableParams(&self, Value: *mut i32) -> HRESULT;
+    fn get_WriteableParams(&self, Value: *mut i32) -> HRESULT;
+    fn IsParamReadable(&self, Param: i32, Value: *mut bool) -> HRESULT;
+    fn IsParamWriteable(&self, Param: i32, Value: *mut bool) -> HRESULT;
+    fn get_Status(&self, Value: *mut i32) -> HRESULT;
+    fn get_StatusStr(&self, Value: *mut BSTR) -> HRESULT;
+    fn get_Freq(&self, Value: *mut i32) -> HRESULT;
+    fn put_Freq(&self, Value: i32) -> HRESULT;
+    fn get_FreqA(&self, Value: *mut i32) -> HRESULT;
+    fn put_FreqA(&self, Value: i32) -> HRESULT;
+    fn get_FreqB(&self, Value: *mut i32) -> HRESULT;
+    fn put_FreqB(&self, Value: i32) -> HRESULT;
+    fn get_RitOffset(&self, Value: *mut i32) -> HRESULT;
+    fn put_RitOffset(&self, Value: i32) -> HRESULT;
+    fn get_Pitch(&self, Value: *mut i32) -> HRESULT;
+    fn put_Pitch(&self, Value: i32) -> HRESULT;
+    fn get_Vfo(&self, Value: *mut i32) -> HRESULT;
+    fn put_Vfo(&self, Value: i32) -> HRESULT;
+    fn get_Split(&self, Value: *mut i32) -> HRESULT;
+    fn put_Split(&self, Value: i32) -> HRESULT;
+    fn get_Rit(&self, Value: *mut i32) -> HRESULT;
+    fn put_Rit(&self, Value: i32) -> HRESULT;
+    fn get_Xit(&self, Value: *mut i32) -> HRESULT;
+    fn put_Xit(&self, Value: i32) -> HRESULT;
+    fn get_Tx(&self, Value: *mut i32) -> HRESULT;
+    fn put_Tx(&self, Value: i32) -> HRESULT;
+    fn get_Mode(&self, Value: *mut i32) -> HRESULT;
+    fn put_Mode(&self, Value: i32) -> HRESULT;
+    fn ClearRit(&self) -> HRESULT;
+    fn SetSimplexMode(&self, Freq: i32) -> HRESULT;
+    fn SetSplitMode(&self, RxFreq: i32, TxFreq: i32) -> HRESULT;
+    fn FrequencyOfTone(&self, Tone: i32, Value: *mut i32) -> HRESULT;
+    // TODO: SendCustomCommand requires VARIANT support in auto_dispatch
+    // fn SendCustomCommand(&self, Command: VARIANT, ReplyLength: i32, ReplyEnd: VARIANT) -> HRESULT;
+    fn GetRxFrequency(&self, Value: *mut i32) -> HRESULT;
+    fn GetTxFrequency(&self, Value: *mut i32) -> HRESULT;
+    fn get_PortBits(&self, Value: *mut Option<IDispatch>) -> HRESULT;
+}
 
 #[implement(IDispatch)]
 pub struct RigX {
@@ -316,6 +358,21 @@ impl RigX {
         println!("RigX::FrequencyOfTone called with tone: {}", tone);
         Ok(tone * 10)
     }
+
+    // TODO: auto_dispatch doesn't support VARIANT parameters yet
+    // #[id(0x17)]
+    // fn SendCustomCommand(
+    //     &self,
+    //     command: VARIANT,
+    //     reply_length: i32,
+    //     reply_end: VARIANT,
+    // ) -> Result<(), HRESULT> {
+    //     println!(
+    //         "RigX::SendCustomCommand called with reply_length: {}",
+    //         reply_length
+    //     );
+    //     Ok(())
+    // }
 
     #[id(0x18)]
     fn GetRxFrequency(&self) -> Result<i32, HRESULT> {

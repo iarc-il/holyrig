@@ -188,7 +188,7 @@ impl AutoDispatch {
                     "u64" => PropertyType::U64,
                     "i64" => PropertyType::I64,
                     "f64" => PropertyType::F64,
-                    other => PropertyType::Other(segment),
+                    _ => PropertyType::Other(segment),
                 };
                 Ok(Some(property_type))
             }
