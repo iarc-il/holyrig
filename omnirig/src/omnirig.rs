@@ -9,20 +9,20 @@ use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IDispatch, 
 use windows_core::{BOOL, HRESULT};
 
 use crate::com_interface::IOmniRigX;
-use crate::rig::RigX;
+use crate::rig::{IRigX, RigX};
 use auto_dispatch::auto_dispatch;
 
 #[implement(IOmniRigX)]
 pub struct OmniRigX {
     dialog_visible: RwLock<bool>,
-    rig1: RwLock<Option<IDispatch>>,
-    rig2: RwLock<Option<IDispatch>>,
+    rig1: RwLock<Option<IRigX>>,
+    rig2: RwLock<Option<IRigX>>,
 }
 
 impl Default for OmniRigX {
     fn default() -> Self {
-        let rig1: IDispatch = RigX::default().into();
-        let rig2: IDispatch = RigX::default().into();
+        let rig1: IRigX = RigX::default().into();
+        let rig2: IRigX = RigX::default().into();
 
         Self {
             dialog_visible: RwLock::new(false),
@@ -52,24 +52,28 @@ impl OmniRigX {
     #[getter]
     fn Rig1(&self) -> Result<IDispatch, HRESULT> {
         println!("OmniRigX::Rig1 getter called");
-        self.rig1
+        let rig = self
+            .rig1
             .read()
             .unwrap()
             .as_ref()
             .cloned()
-            .ok_or(windows::Win32::Foundation::E_FAIL)
+            .ok_or(windows::Win32::Foundation::E_FAIL)?;
+        Ok(rig.cast()?)
     }
 
     #[id(0x04)]
     #[getter]
     fn Rig2(&self) -> Result<IDispatch, HRESULT> {
         println!("OmniRigX::Rig2 getter called");
-        self.rig2
+        let rig = self
+            .rig2
             .read()
             .unwrap()
             .as_ref()
             .cloned()
-            .ok_or(windows::Win32::Foundation::E_FAIL)
+            .ok_or(windows::Win32::Foundation::E_FAIL)?;
+        Ok(rig.cast()?)
     }
 
     #[id(0x05)]
@@ -100,12 +104,14 @@ impl crate::com_interface::IOmniRigX_Impl for OmniRigX_Impl {
         *value = self.get_SoftwareVersion().unwrap();
         HRESULT(0)
     }
-    unsafe fn get_Rig1(&self, value: *mut Option<IDispatch>) -> HRESULT {
-        *value = Some(self.get_Rig1().unwrap());
+    unsafe fn get_Rig1(&self, value: *mut Option<IRigX>) -> HRESULT {
+        let disp = self.get_Rig1().unwrap();
+        *value = Some(disp.cast().unwrap());
         HRESULT(0)
     }
-    unsafe fn get_Rig2(&self, value: *mut Option<IDispatch>) -> HRESULT {
-        *value = Some(self.get_Rig2().unwrap());
+    unsafe fn get_Rig2(&self, value: *mut Option<IRigX>) -> HRESULT {
+        let disp = self.get_Rig2().unwrap();
+        *value = Some(disp.cast().unwrap());
         HRESULT(0)
     }
     unsafe fn get_DialogVisible(&self, value: *mut bool) -> HRESULT {

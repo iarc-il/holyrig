@@ -12,47 +12,47 @@ use auto_dispatch::auto_dispatch;
 
 #[interface("D30A7E51-5862-45B7-BFFA-6415917DA0CF")]
 pub unsafe trait IRigX: IDispatch {
-    fn get_RigType(&self, Value: *mut BSTR) -> HRESULT;
-    fn get_ReadableParams(&self, Value: *mut i32) -> HRESULT;
-    fn get_WriteableParams(&self, Value: *mut i32) -> HRESULT;
-    fn IsParamReadable(&self, Param: i32, Value: *mut bool) -> HRESULT;
-    fn IsParamWriteable(&self, Param: i32, Value: *mut bool) -> HRESULT;
-    fn get_Status(&self, Value: *mut i32) -> HRESULT;
-    fn get_StatusStr(&self, Value: *mut BSTR) -> HRESULT;
-    fn get_Freq(&self, Value: *mut i32) -> HRESULT;
-    fn put_Freq(&self, Value: i32) -> HRESULT;
-    fn get_FreqA(&self, Value: *mut i32) -> HRESULT;
-    fn put_FreqA(&self, Value: i32) -> HRESULT;
-    fn get_FreqB(&self, Value: *mut i32) -> HRESULT;
-    fn put_FreqB(&self, Value: i32) -> HRESULT;
-    fn get_RitOffset(&self, Value: *mut i32) -> HRESULT;
-    fn put_RitOffset(&self, Value: i32) -> HRESULT;
-    fn get_Pitch(&self, Value: *mut i32) -> HRESULT;
-    fn put_Pitch(&self, Value: i32) -> HRESULT;
-    fn get_Vfo(&self, Value: *mut i32) -> HRESULT;
-    fn put_Vfo(&self, Value: i32) -> HRESULT;
-    fn get_Split(&self, Value: *mut i32) -> HRESULT;
-    fn put_Split(&self, Value: i32) -> HRESULT;
-    fn get_Rit(&self, Value: *mut i32) -> HRESULT;
-    fn put_Rit(&self, Value: i32) -> HRESULT;
-    fn get_Xit(&self, Value: *mut i32) -> HRESULT;
-    fn put_Xit(&self, Value: i32) -> HRESULT;
-    fn get_Tx(&self, Value: *mut i32) -> HRESULT;
-    fn put_Tx(&self, Value: i32) -> HRESULT;
-    fn get_Mode(&self, Value: *mut i32) -> HRESULT;
-    fn put_Mode(&self, Value: i32) -> HRESULT;
+    fn get_RigType(&self, value: *mut BSTR) -> HRESULT;
+    fn get_ReadableParams(&self, value: *mut i32) -> HRESULT;
+    fn get_WriteableParams(&self, value: *mut i32) -> HRESULT;
+    fn IsParamReadable(&self, Param: i32, value: *mut bool) -> HRESULT;
+    fn IsParamWriteable(&self, Param: i32, value: *mut bool) -> HRESULT;
+    fn get_Status(&self, value: *mut i32) -> HRESULT;
+    fn get_StatusStr(&self, value: *mut BSTR) -> HRESULT;
+    fn get_Freq(&self, value: *mut i32) -> HRESULT;
+    fn put_Freq(&self, value: i32) -> HRESULT;
+    fn get_FreqA(&self, value: *mut i32) -> HRESULT;
+    fn put_FreqA(&self, value: i32) -> HRESULT;
+    fn get_FreqB(&self, value: *mut i32) -> HRESULT;
+    fn put_FreqB(&self, value: i32) -> HRESULT;
+    fn get_RitOffset(&self, value: *mut i32) -> HRESULT;
+    fn put_RitOffset(&self, value: i32) -> HRESULT;
+    fn get_Pitch(&self, value: *mut i32) -> HRESULT;
+    fn put_Pitch(&self, value: i32) -> HRESULT;
+    fn get_Vfo(&self, value: *mut i32) -> HRESULT;
+    fn put_Vfo(&self, value: i32) -> HRESULT;
+    fn get_Split(&self, value: *mut i32) -> HRESULT;
+    fn put_Split(&self, value: i32) -> HRESULT;
+    fn get_Rit(&self, value: *mut i32) -> HRESULT;
+    fn put_Rit(&self, value: i32) -> HRESULT;
+    fn get_Xit(&self, value: *mut i32) -> HRESULT;
+    fn put_Xit(&self, value: i32) -> HRESULT;
+    fn get_Tx(&self, value: *mut i32) -> HRESULT;
+    fn put_Tx(&self, value: i32) -> HRESULT;
+    fn get_Mode(&self, value: *mut i32) -> HRESULT;
+    fn put_Mode(&self, value: i32) -> HRESULT;
     fn ClearRit(&self) -> HRESULT;
     fn SetSimplexMode(&self, Freq: i32) -> HRESULT;
     fn SetSplitMode(&self, RxFreq: i32, TxFreq: i32) -> HRESULT;
-    fn FrequencyOfTone(&self, Tone: i32, Value: *mut i32) -> HRESULT;
+    fn FrequencyOfTone(&self, Tone: i32, value: *mut i32) -> HRESULT;
     // TODO: SendCustomCommand requires VARIANT support in auto_dispatch
     // fn SendCustomCommand(&self, Command: VARIANT, ReplyLength: i32, ReplyEnd: VARIANT) -> HRESULT;
-    fn GetRxFrequency(&self, Value: *mut i32) -> HRESULT;
-    fn GetTxFrequency(&self, Value: *mut i32) -> HRESULT;
-    fn get_PortBits(&self, Value: *mut Option<IDispatch>) -> HRESULT;
+    fn GetRxFrequency(&self, value: *mut i32) -> HRESULT;
+    fn GetTxFrequency(&self, value: *mut i32) -> HRESULT;
+    fn get_PortBits(&self, value: *mut Option<IDispatch>) -> HRESULT;
 }
 
-#[implement(IDispatch)]
+#[implement(IRigX)]
 pub struct RigX {
     rig_type: RwLock<String>,
     status_str: RwLock<String>,
@@ -401,5 +401,326 @@ impl RigX {
             .as_ref()
             .cloned()
             .ok_or(windows::Win32::Foundation::E_FAIL)
+    }
+}
+
+// Manual IRigX_Impl implementation to bridge COM interface with auto_dispatch methods
+impl crate::rig::IRigX_Impl for RigX_Impl {
+    unsafe fn get_RigType(&self, value: *mut BSTR) -> HRESULT {
+        match self.get_RigType() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_ReadableParams(&self, value: *mut i32) -> HRESULT {
+        match self.get_ReadableParams() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_WriteableParams(&self, value: *mut i32) -> HRESULT {
+        match self.get_WriteableParams() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn IsParamReadable(&self, Param: i32, value: *mut bool) -> HRESULT {
+        match self.IsParamReadable(Param) {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn IsParamWriteable(&self, Param: i32, value: *mut bool) -> HRESULT {
+        match self.IsParamWriteable(Param) {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Status(&self, value: *mut i32) -> HRESULT {
+        match self.get_Status() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_StatusStr(&self, value: *mut BSTR) -> HRESULT {
+        match self.get_StatusStr() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Freq(&self, value: *mut i32) -> HRESULT {
+        match self.get_Freq() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Freq(&self, value: i32) -> HRESULT {
+        match self.set_Freq(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_FreqA(&self, value: *mut i32) -> HRESULT {
+        match self.get_FreqA() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_FreqA(&self, value: i32) -> HRESULT {
+        match self.set_FreqA(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_FreqB(&self, value: *mut i32) -> HRESULT {
+        match self.get_FreqB() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_FreqB(&self, value: i32) -> HRESULT {
+        match self.set_FreqB(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_RitOffset(&self, value: *mut i32) -> HRESULT {
+        match self.get_RitOffset() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_RitOffset(&self, value: i32) -> HRESULT {
+        match self.set_RitOffset(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Pitch(&self, value: *mut i32) -> HRESULT {
+        match self.get_Pitch() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Pitch(&self, value: i32) -> HRESULT {
+        match self.set_Pitch(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Vfo(&self, value: *mut i32) -> HRESULT {
+        match self.get_Vfo() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Vfo(&self, value: i32) -> HRESULT {
+        match self.set_Vfo(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Split(&self, value: *mut i32) -> HRESULT {
+        match self.get_Split() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Split(&self, value: i32) -> HRESULT {
+        match self.set_Split(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Rit(&self, value: *mut i32) -> HRESULT {
+        match self.get_Rit() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Rit(&self, value: i32) -> HRESULT {
+        match self.set_Rit(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Xit(&self, value: *mut i32) -> HRESULT {
+        match self.get_Xit() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Xit(&self, value: i32) -> HRESULT {
+        match self.set_Xit(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Tx(&self, value: *mut i32) -> HRESULT {
+        match self.get_Tx() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Tx(&self, value: i32) -> HRESULT {
+        match self.set_Tx(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_Mode(&self, value: *mut i32) -> HRESULT {
+        match self.get_Mode() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn put_Mode(&self, value: i32) -> HRESULT {
+        match self.set_Mode(value) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn ClearRit(&self) -> HRESULT {
+        match self.ClearRit() {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn SetSimplexMode(&self, Freq: i32) -> HRESULT {
+        match self.SetSimplexMode(Freq) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn SetSplitMode(&self, RxFreq: i32, TxFreq: i32) -> HRESULT {
+        match self.SetSplitMode(RxFreq, TxFreq) {
+            Ok(_) => HRESULT(0),
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn FrequencyOfTone(&self, Tone: i32, value: *mut i32) -> HRESULT {
+        match self.FrequencyOfTone(Tone) {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn GetRxFrequency(&self, value: *mut i32) -> HRESULT {
+        match self.GetRxFrequency() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn GetTxFrequency(&self, value: *mut i32) -> HRESULT {
+        match self.GetTxFrequency() {
+            Ok(v) => {
+                *value = v;
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn get_PortBits(&self, value: *mut Option<IDispatch>) -> HRESULT {
+        match self.get_PortBits() {
+            Ok(v) => {
+                *value = Some(v);
+                HRESULT(0)
+            }
+            Err(e) => e,
+        }
     }
 }
