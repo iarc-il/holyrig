@@ -11,7 +11,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::omnirig::OmniRigXFactory;
 
-pub mod com_interface;
 mod enums;
 mod omnirig;
 mod port_bits;

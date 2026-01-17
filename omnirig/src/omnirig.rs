@@ -5,12 +5,23 @@ use std::ffi::c_void;
 use std::sync::RwLock;
 use windows::core::{implement, IUnknown, Interface, GUID};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE};
-use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IDispatch, IDispatch_Impl};
-use windows_core::{BOOL, HRESULT};
+use windows::Win32::System::Com::{
+    IClassFactory, IClassFactory_Impl, IDispatch, IDispatch_Impl, IDispatch_Vtbl,
+};
+use windows_core::{interface, BOOL, HRESULT};
 
-use crate::com_interface::IOmniRigX;
 use crate::rig::{IRigX, RigX};
 use auto_dispatch::auto_dispatch;
+
+#[interface("501A2858-3331-467A-837A-989FDEDACC7D")]
+pub unsafe trait IOmniRigX: IDispatch {
+    fn get_InterfaceVersion(&self, Value: *mut i32) -> HRESULT;
+    fn get_SoftwareVersion(&self, Value: *mut i32) -> HRESULT;
+    fn get_Rig1(&self, Value: *mut Option<IRigX>) -> HRESULT;
+    fn get_Rig2(&self, Value: *mut Option<IRigX>) -> HRESULT;
+    fn get_DialogVisible(&self, Value: *mut bool) -> HRESULT;
+    fn set_DialogVisible(&self, Value: bool) -> HRESULT;
+}
 
 #[implement(IOmniRigX)]
 pub struct OmniRigX {
@@ -95,7 +106,7 @@ impl OmniRigX {
     }
 }
 
-impl crate::com_interface::IOmniRigX_Impl for OmniRigX_Impl {
+impl IOmniRigX_Impl for OmniRigX_Impl {
     unsafe fn get_InterfaceVersion(&self, value: *mut i32) -> HRESULT {
         *value = self.get_InterfaceVersion().unwrap();
         HRESULT(0)
