@@ -7,6 +7,7 @@ use windows::core::{implement, IUnknown, Interface, GUID};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_NOINTERFACE};
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl, IDispatch, IDispatch_Impl};
 use windows_core::BOOL;
+use windows_core::HRESULT;
 
 use crate::rig::RigX;
 use auto_dispatch::auto_dispatch;

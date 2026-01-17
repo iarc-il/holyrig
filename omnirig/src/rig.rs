@@ -4,6 +4,7 @@
 use std::sync::RwLock;
 use windows::core::{implement, BSTR};
 use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
+use windows_core::HRESULT;
 
 use crate::enums::{RigParamX, RigStatusX};
 use crate::port_bits::PortBits;

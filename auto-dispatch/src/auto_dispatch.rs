@@ -27,7 +27,7 @@ enum PropertyType {
 impl ToTokens for PropertyType {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let result = match self {
-            PropertyType::IUnknown => quote! { IUnknown },
+            PropertyType::IUnknown => quote! { windows::core::IUnknown },
             PropertyType::IDispatch => quote! { IDispatch },
             PropertyType::Bstr => quote! { BSTR },
             PropertyType::Bool => quote! { bool },
@@ -317,7 +317,7 @@ impl AutoDispatch {
                 };
 
                 processed_func.sig.ident = Ident::new(
-                    format!("{}_getter", processed_func.sig.ident).as_str(),
+                    format!("get_{}", processed_func.sig.ident).as_str(),
                     processed_func.sig.ident.span(),
                 );
 
@@ -353,7 +353,7 @@ impl AutoDispatch {
                 };
 
                 processed_func.sig.ident = Ident::new(
-                    format!("{}_setter", processed_func.sig.ident).as_str(),
+                    format!("set_{}", processed_func.sig.ident).as_str(),
                     processed_func.sig.ident.span(),
                 );
 
@@ -381,10 +381,6 @@ impl AutoDispatch {
                 }
             }
             FuncType::Method => {
-                processed_func.sig.ident = Ident::new(
-                    format!("{}_method", processed_func.sig.ident).as_str(),
-                    processed_func.sig.ident.span(),
-                );
 
                 if let Some(dispatch_func) = self.dispatch_funcs.get_mut(&id) {
                     if dispatch_func.method_func.is_some() {
@@ -456,15 +452,15 @@ impl AutoDispatch {
         quote! {
             fn GetIDsOfNames(
                 &self,
-                _riid: *const GUID,
-                rgsznames: *const PCWSTR,
+                _riid: *const windows::core::GUID,
+                rgsznames: *const windows::core::PCWSTR,
                 cnames: u32,
                 _lcid: u32,
                 rgdispid: *mut i32,
             ) -> windows::core::Result<()> {
                 unsafe {
                     if rgsznames.is_null() || rgdispid.is_null() {
-                        return Err(E_INVALIDARG.into());
+                        return Err(windows::Win32::Foundation::E_INVALIDARG.into());
                     }
 
                     for i in 0..cnames {
@@ -473,7 +469,7 @@ impl AutoDispatch {
 
                         let dispid = match name.as_str() {
                             #(#match_arms)*
-                            _ => return Err(DISP_E_MEMBERNOTFOUND.into()),
+                            _ => return Err(windows::Win32::Foundation::DISP_E_MEMBERNOTFOUND.into()),
                         };
 
                         *rgdispid.add(i as usize) = dispid;
@@ -499,9 +495,9 @@ impl AutoDispatch {
                     let func_name = &get_func.sig.ident;
 
                     quote! {
-                        if wflags.contains(DISPATCH_PROPERTYGET) {
+                        if wflags.contains(windows::Win32::System::Com::DISPATCH_PROPERTYGET) {
                             if !pvarresult.is_null() {
-                                *pvarresult = self.#func_name().map_err(Error::from_hresult)?.into();
+                                *pvarresult = self.#func_name().map_err(windows_core::Error::from_hresult)?.into();
                             }
                             Ok(())
                         } else
@@ -514,20 +510,20 @@ impl AutoDispatch {
                     let func_name = &set_func.sig.ident;
 
                     quote! {
-                        if wflags.contains(DISPATCH_PROPERTYPUT) {
+                        if wflags.contains(windows::Win32::System::Com::DISPATCH_PROPERTYPUT) {
                             if pdispparams.is_null() {
-                                return Err(E_INVALIDARG.into());
+                                return Err(windows::Win32::Foundation::E_INVALIDARG.into());
                             }
                             let params = &*pdispparams;
                             if params.cArgs == 0 || params.rgvarg.is_null() {
-                                return Err(DISP_E_PARAMNOTFOUND.into());
+                                return Err(windows::Win32::Foundation::DISP_E_PARAMNOTFOUND.into());
                             }
                             let value = &*params.rgvarg;
                             let value = value
                                 .try_into()
-                                .or(Err(Error::from_hresult(E_INVALIDARG)))?;
+                                .or(Err(windows_core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG)))?;
 
-                            self.#func_name(value).map_err(Error::from_hresult)
+                            self.#func_name(value).map_err(windows_core::Error::from_hresult)
                         } else
                     }
                 } else {
@@ -558,7 +554,7 @@ impl AutoDispatch {
                         quote! {
                             let params = &*pdispparams;
                             if params.cArgs != #params_len || params.rgvarg.is_null() {
-                                return Err(DISP_E_PARAMNOTFOUND.into());
+                                return Err(windows::Win32::Foundation::DISP_E_PARAMNOTFOUND.into());
                             }
                         }
                     } else {
@@ -574,7 +570,7 @@ impl AutoDispatch {
                                 let #name = &*params.rgvarg.add(#index);
                                 let #name: #param_type = #name
                                     .try_into()
-                                    .or(Err(Error::from_hresult(E_INVALIDARG)))?;
+                                    .or(Err(windows_core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG)))?;
                             }
                         })
                         .collect();
@@ -582,7 +578,7 @@ impl AutoDispatch {
                     let arg_names: Vec<_> = params.iter().map(|(name, _)| name.clone()).collect();
 
                     let func_call = quote! {
-                        self.#func_name(#(#arg_names),*).map_err(Error::from_hresult)?
+                        self.#func_name(#(#arg_names),*).map_err(windows_core::Error::from_hresult)?
                     };
 
                     let func_call = if dispatch_func.property_type.is_some() {
@@ -596,9 +592,9 @@ impl AutoDispatch {
                     };
 
                     quote! {
-                        if wflags.contains(DISPATCH_METHOD) {
+                        if wflags.contains(windows::Win32::System::Com::DISPATCH_METHOD) {
                             if pdispparams.is_null() {
-                                return Err(E_INVALIDARG.into());
+                                return Err(windows::Win32::Foundation::E_INVALIDARG.into());
                             }
                             #check_args
                             #(#unwrap_args)*
@@ -616,7 +612,7 @@ impl AutoDispatch {
                         #property_set
                         #method
                         {
-                            Err(E_INVALIDARG.into())
+                            Err(windows::Win32::Foundation::E_INVALIDARG.into())
                         }
                     }
                 }
@@ -627,18 +623,18 @@ impl AutoDispatch {
             fn Invoke(
                 &self,
                 dispidmember: i32,
-                _riid: *const GUID,
+                _riid: *const windows::core::GUID,
                 _lcid: u32,
-                wflags: DISPATCH_FLAGS,
-                pdispparams: *const DISPPARAMS,
-                pvarresult: *mut VARIANT,
-                _pexcepinfo: *mut EXCEPINFO,
+                wflags: windows::Win32::System::Com::DISPATCH_FLAGS,
+                pdispparams: *const windows::Win32::System::Com::DISPPARAMS,
+                pvarresult: *mut windows::Win32::System::Variant::VARIANT,
+                _pexcepinfo: *mut windows::Win32::System::Com::EXCEPINFO,
                 _puargerr: *mut u32,
             ) -> windows::core::Result<()> {
                 unsafe {
                     match dispidmember {
                         #(#match_arms)*
-                        _ => Err(DISP_E_MEMBERNOTFOUND.into())
+                        _ => Err(windows::Win32::Foundation::DISP_E_MEMBERNOTFOUND.into())
                     }
                 }
             }
@@ -698,32 +694,22 @@ impl ToTokens for AutoDispatch {
         let invoke = self.generate_invoke();
 
         let result = quote! {
-            mod idispatch_impl {
-                use super::*;
+            impl #impl_struct_ident {
+                #dispids_consts
+                #inner_funcs_impl
+            }
 
-                use windows_core::{HRESULT, Error};
-                use windows::core::{IUnknown, GUID, PCWSTR};
-                use windows::Win32::System::Com::{ITypeInfo, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_METHOD};
-                use windows::Win32::Foundation::{E_NOTIMPL, E_INVALIDARG, DISP_E_MEMBERNOTFOUND, DISP_E_PARAMNOTFOUND};
-                use windows::Win32::System::Variant::VARIANT;
-
-                impl #impl_struct_ident {
-                    #dispids_consts
-                    #inner_funcs_impl
+            impl IDispatch_Impl for #impl_struct_ident {
+                fn GetTypeInfoCount(&self) -> windows::core::Result<u32> {
+                    Ok(0)
                 }
 
-                impl IDispatch_Impl for #impl_struct_ident {
-                    fn GetTypeInfoCount(&self) -> windows::core::Result<u32> {
-                        Ok(0)
-                    }
-
-                    fn GetTypeInfo(&self, _itinfo: u32, _lcid: u32) -> windows::core::Result<ITypeInfo> {
-                        Err(E_NOTIMPL.into())
-                    }
-
-                    #get_ids_of_names
-                    #invoke
+                fn GetTypeInfo(&self, _itinfo: u32, _lcid: u32) -> windows::core::Result<windows::Win32::System::Com::ITypeInfo> {
+                    Err(windows::Win32::Foundation::E_NOTIMPL.into())
                 }
+
+                #get_ids_of_names
+                #invoke
             }
         };
         tokens.extend(result);

@@ -4,6 +4,7 @@
 use std::sync::RwLock;
 use windows::core::implement;
 use windows::Win32::System::Com::{IDispatch, IDispatch_Impl};
+use windows_core::HRESULT;
 
 use auto_dispatch::auto_dispatch;
 
