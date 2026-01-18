@@ -22,6 +22,7 @@ enum PropertyType {
     U64,
     I64,
     F64,
+    Variant,
     Other(String),
 }
 
@@ -39,6 +40,7 @@ impl ToTokens for PropertyType {
             PropertyType::U64 => quote! { u64 },
             PropertyType::I64 => quote! { i64 },
             PropertyType::F64 => quote! { f64 },
+            PropertyType::Variant => quote! { windows::Win32::System::Variant::VARIANT },
             PropertyType::Other(other) => {
                 let ident = Ident::new(other, Span::call_site());
                 quote! { #ident }
@@ -188,6 +190,7 @@ impl AutoDispatch {
                     "u64" => PropertyType::U64,
                     "i64" => PropertyType::I64,
                     "f64" => PropertyType::F64,
+                    "VARIANT" => PropertyType::Variant,
                     _ => PropertyType::Other(segment),
                 };
                 Ok(Some(property_type))
@@ -568,11 +571,31 @@ impl AutoDispatch {
                         .enumerate()
                         .map(|(index, (name, param_type))| {
                             let index = params.len() - 1 - index;
-                            quote! {
-                                let #name = &*params.rgvarg.add(#index);
-                                let #name: #param_type = #name
-                                    .try_into()
-                                    .or(Err(windows_core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG)))?;
+
+                            // Check if this parameter is a VARIANT.
+                            // VARIANT parameters need to be cloned, not converted
+                            let is_variant = if let syn::Type::Path(type_path) = param_type {
+                                if let Some(segment) = type_path.path.segments.last() {
+                                    segment.ident == "VARIANT"
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+
+                            if is_variant {
+                                quote! {
+                                    let #name = &*params.rgvarg.add(#index);
+                                    let #name: #param_type = #name.clone();
+                                }
+                            } else {
+                                quote! {
+                                    let #name = &*params.rgvarg.add(#index);
+                                    let #name: #param_type = #name
+                                        .try_into()
+                                        .or(Err(windows_core::Error::from_hresult(windows::Win32::Foundation::E_INVALIDARG)))?;
+                                }
                             }
                         })
                         .collect();
