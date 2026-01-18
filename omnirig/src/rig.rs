@@ -4,6 +4,7 @@
 use std::sync::RwLock;
 use windows::core::{implement, BSTR};
 use windows::Win32::System::Com::{IDispatch, IDispatch_Impl, IDispatch_Vtbl};
+use windows::Win32::System::Variant::VARIANT;
 use windows_core::{interface, HRESULT};
 
 use crate::enums::{RigParamX, RigStatusX};
@@ -45,8 +46,7 @@ pub unsafe trait IRigX: IDispatch {
     fn SetSimplexMode(&self, Freq: i32) -> HRESULT;
     fn SetSplitMode(&self, RxFreq: i32, TxFreq: i32) -> HRESULT;
     fn FrequencyOfTone(&self, Tone: i32, value: *mut i32) -> HRESULT;
-    // TODO: SendCustomCommand requires VARIANT support in auto_dispatch
-    // fn SendCustomCommand(&self, Command: VARIANT, ReplyLength: i32, ReplyEnd: VARIANT) -> HRESULT;
+    fn SendCustomCommand(&self, Command: VARIANT, ReplyLength: i32, ReplyEnd: VARIANT) -> HRESULT;
     fn GetRxFrequency(&self, value: *mut i32) -> HRESULT;
     fn GetTxFrequency(&self, value: *mut i32) -> HRESULT;
     fn get_PortBits(&self, value: *mut Option<IDispatch>) -> HRESULT;
@@ -359,20 +359,19 @@ impl RigX {
         Ok(tone * 10)
     }
 
-    // TODO: auto_dispatch doesn't support VARIANT parameters yet
-    // #[id(0x17)]
-    // fn SendCustomCommand(
-    //     &self,
-    //     command: VARIANT,
-    //     reply_length: i32,
-    //     reply_end: VARIANT,
-    // ) -> Result<(), HRESULT> {
-    //     println!(
-    //         "RigX::SendCustomCommand called with reply_length: {}",
-    //         reply_length
-    //     );
-    //     Ok(())
-    // }
+    #[id(0x17)]
+    fn SendCustomCommand(
+        &self,
+        command: VARIANT,
+        reply_length: i32,
+        reply_end: VARIANT,
+    ) -> Result<(), HRESULT> {
+        println!(
+            "RigX::SendCustomCommand called with reply_length: {}",
+            reply_length
+        );
+        Ok(())
+    }
 
     #[id(0x18)]
     fn GetRxFrequency(&self) -> Result<i32, HRESULT> {
@@ -720,6 +719,18 @@ impl crate::rig::IRigX_Impl for RigX_Impl {
                 *value = Some(v);
                 HRESULT(0)
             }
+            Err(e) => e,
+        }
+    }
+
+    unsafe fn SendCustomCommand(
+        &self,
+        Command: VARIANT,
+        ReplyLength: i32,
+        ReplyEnd: VARIANT,
+    ) -> HRESULT {
+        match self.SendCustomCommand(Command, ReplyLength, ReplyEnd) {
+            Ok(_) => HRESULT(0),
             Err(e) => e,
         }
     }
